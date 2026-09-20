@@ -1,0 +1,52 @@
+/*
+ * Design-system base styles.
+ *
+ * Tokens are exposed as CSS custom properties so they are usable from
+ * Tailwind, raw CSS and (later) React Native via the same JSON source
+ * (docs/17-DESIGN-SYSTEM.md §10).
+ *
+ * Deliberately NOT wrapped in `@layer base`: postcss-import hoists `@import`
+ * to the top of the file per the CSS spec, so this content lands *above*
+ * `@tailwind base` and the layer would have no matching definition. Plain
+ * declarations placed after the Tailwind directives also give exactly the
+ * precedence we want — these override preflight rather than competing with it.
+ */
+
+:root {
+  --color-brand: #2e8b57;
+  --color-brand-action: #256f46;
+  --color-surface: #ffffff;
+  --color-background: #faf9f7;
+  --color-text: #33302b;
+  --color-text-muted: #6b6760;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-feature-settings: 'cv11', 'ss01';
+  text-rendering: optimizeLegibility;
+}
+
+/* Prices and quantities must not jitter as digits change (docs/17 §3). */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Honoured globally so no component can opt out by accident (docs/17 §6).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

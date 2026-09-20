@@ -1,0 +1,11 @@
+# Default owner for everything.
+*                       @healthy-aahar/maintainers
+
+# Architecture and contracts — changes here ripple across every surface,
+# so they get a deliberate second pair of eyes (docs/26 section 9).
+/docs/                  @healthy-aahar/maintainers
+/packages/db/           @healthy-aahar/maintainers
+/packages/auth/         @healthy-aahar/maintainers
+/packages/payments/     @healthy-aahar/maintainers
+/packages/contracts/    @healthy-aahar/maintainers
+/.github/workflows/     @healthy-aahar/maintainers

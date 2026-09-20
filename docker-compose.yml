@@ -1,0 +1,122 @@
+# Local development infrastructure.
+#
+# Mirrors production services closely enough that the code paths exercised
+# locally are the ones that run in production:
+#   - PostgreSQL 16, the same major version as Railway
+#   - MinIO, S3-compatible, standing in for Cloudflare R2 so the presigned
+#     upload path is genuinely exercised rather than stubbed (docs/27 §7)
+#   - Firebase Auth emulator, so OTP flows are testable without sending SMS
+#
+# This file is for LOCAL DEVELOPMENT ONLY. Nothing here is deployed.
+
+name: healthy-aahar
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: healthy-aahar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: healthy_aahar
+      POSTGRES_PASSWORD: healthy_aahar_local
+      POSTGRES_DB: healthy_aahar
+      # Deterministic collation so ORDER BY matches production exactly.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U healthy_aahar -d healthy_aahar']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    command:
+      - postgres
+      # UTC at the server level. Business-day logic converts to Asia/Kolkata
+      # in application code, never by relying on a server timezone (ADR-007).
+      - -c
+      - timezone=UTC
+      - -c
+      - log_statement=none
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+
+  # Shadow database for `prisma migrate dev` and the CI migration check.
+  # Keeping it separate means a migration experiment can never corrupt the
+  # development database.
+  postgres-shadow:
+    image: postgres:16-alpine
+    container_name: healthy-aahar-postgres-shadow
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: healthy_aahar
+      POSTGRES_PASSWORD: healthy_aahar_local
+      POSTGRES_DB: healthy_aahar_shadow
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5434:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U healthy_aahar -d healthy_aahar_shadow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: healthy-aahar-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: healthyaahar
+      MINIO_ROOT_PASSWORD: healthyaahar_local
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # Console
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Creates the media bucket on first start so uploads work immediately.
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: healthy-aahar-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 healthyaahar healthyaahar_local &&
+      mc mb --ignore-existing local/healthy-aahar-media-local &&
+      mc anonymous set download local/healthy-aahar-media-local &&
+      echo 'MinIO bucket ready'
+      "
+    restart: 'no'
+
+  firebase-auth:
+    image: andreysenov/firebase-tools:latest
+    container_name: healthy-aahar-firebase
+    restart: unless-stopped
+    working_dir: /home/node
+    ports:
+      - '9099:9099' # Auth emulator
+      - '4400:4400' # Emulator hub
+      # 4000 is taken by the API, so the emulator UI is moved to 4001.
+      - '4001:4000' # Emulator UI
+    volumes:
+      # Not :ro — the emulator writes a cache into its home directory.
+      - ./scripts/firebase:/home/node
+    command: >
+      firebase emulators:start
+      --only auth
+      --project healthy-aahar-local
+
+volumes:
+  postgres-data:
+  minio-data:

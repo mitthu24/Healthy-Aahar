@@ -1,0 +1,137 @@
+{
+  "_comment": [
+    "DEVELOPMENT / STAGING BOOTSTRAP DATA.",
+    "",
+    "This file is DATA, not application logic. Nothing in the codebase may",
+    "branch on any value in it. Production seed values are supplied separately",
+    "and the admin panel becomes the source of truth from that point onward",
+    "(BR-SV1, acceptance criteria 27-29).",
+    "",
+    "Changing the launch city, adding a pincode, or changing a slot time must",
+    "NEVER require a code change. If it ever does, that is a bug."
+  ],
+
+  "business": {
+    "name": "Healthy Aahar",
+    "slug": "healthy-aahar",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "supportEmail": "support@healthyaahar.com",
+    "supportPhone": "+911204000000"
+  },
+
+  "cities": [
+    {
+      "name": "Noida",
+      "slug": "noida",
+      "displayName": "Noida",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "timezone": "Asia/Kolkata",
+      "status": "ACTIVE",
+      "displayOrder": 1,
+      "pincodes": [
+        { "pincode": "201301", "areaName": "Sector 1-18", "status": "ACTIVE", "displayOrder": 1 },
+        { "pincode": "201303", "areaName": "Sector 19-40", "status": "ACTIVE", "displayOrder": 2 },
+        { "pincode": "201304", "areaName": "Sector 41-62", "status": "ACTIVE", "displayOrder": 3 },
+        {
+          "pincode": "201305",
+          "areaName": "Sector 63-80",
+          "status": "INACTIVE",
+          "displayOrder": 4
+        },
+        {
+          "pincode": "201309",
+          "areaName": "Sector 100-120",
+          "status": "INACTIVE",
+          "displayOrder": 5
+        }
+      ]
+    },
+    {
+      "_comment": "Seeded INACTIVE on purpose: it exercises the 'city exists but is not serviceable' path in development, and proves expansion is a status change rather than a migration.",
+      "name": "Greater Noida",
+      "slug": "greater-noida",
+      "displayName": "Greater Noida",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "timezone": "Asia/Kolkata",
+      "status": "COMING_SOON",
+      "displayOrder": 2,
+      "pincodes": [
+        {
+          "pincode": "201310",
+          "areaName": "Knowledge Park",
+          "status": "INACTIVE",
+          "displayOrder": 1
+        }
+      ]
+    }
+  ],
+
+  "settings": [
+    {
+      "key": "business.launch_city_slug",
+      "value": "noida",
+      "description": "Informational only. Serviceability is resolved from the cities table, never from this value.",
+      "isPublic": false
+    },
+    {
+      "key": "booking.horizon_days",
+      "value": 7,
+      "description": "How many days ahead a customer may place a one-time order (docs/10 §9).",
+      "isPublic": true
+    },
+    {
+      "key": "subscription.generation_horizon_days",
+      "value": 14,
+      "description": "How far ahead subscription deliveries are planned (docs/11 §9).",
+      "isPublic": false
+    },
+    {
+      "key": "subscription.materialise_horizon_hours",
+      "value": 36,
+      "description": "How close to delivery a subscription delivery becomes a real order.",
+      "isPublic": false
+    },
+    {
+      "key": "delivery.slot_templates",
+      "value": [
+        {
+          "code": "MORNING",
+          "name": "Morning",
+          "startTime": "07:00",
+          "endTime": "09:00",
+          "cutoffTime": "22:00",
+          "cutoffDaysBefore": 1,
+          "availableDays": [1, 2, 3, 4, 5, 6, 7],
+          "defaultCapacity": 60,
+          "displayOrder": 1
+        },
+        {
+          "code": "EVENING",
+          "name": "Evening",
+          "startTime": "18:00",
+          "endTime": "20:00",
+          "cutoffTime": "13:00",
+          "cutoffDaysBefore": 0,
+          "availableDays": [1, 2, 3, 4, 5, 6, 7],
+          "defaultCapacity": 60,
+          "displayOrder": 2
+        }
+      ],
+      "description": "BOOTSTRAP TEMPLATES ONLY. PHASE 06 migrates these into the delivery_slots table, after which the admin panel is the sole source of truth. No code may read slot times from here at runtime (BR-SV7, ADR-026).",
+      "isPublic": false
+    },
+    {
+      "key": "support.contact",
+      "value": {
+        "email": "support@healthyaahar.com",
+        "phone": "+911204000000",
+        "hours": "08:00-20:00 IST"
+      },
+      "description": "Shown on customer-facing surfaces.",
+      "isPublic": true
+    }
+  ]
+}

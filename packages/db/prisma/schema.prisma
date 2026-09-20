@@ -1,0 +1,195 @@
+// Healthy Aahar — database schema
+//
+// PHASE 01 SCOPE: this file contains ONLY the serviceability foundation.
+// The full catalogue / ordering / subscription schema specified in
+// docs/04-DATABASE-DESIGN.md is introduced in PHASE 02. Do not add models
+// here ahead of their phase — see docs/34-PHASED-ROADMAP.md.
+//
+// Conventions (docs/04-DATABASE-DESIGN.md §1), applied without exception:
+//   - snake_case tables (plural), snake_case columns
+//   - UUIDv7 primary keys, generated in the application (ADR-012)
+//   - TIMESTAMPTZ in UTC; business-day logic uses Asia/Kolkata (ADR-007)
+//   - money would be BIGINT paise (ADR-006) — no money in this slice
+//   - business_id on every operational table (ADR-005)
+//   - CHECK constraints live in the migration SQL; Prisma cannot express them
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, citext]
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────────────
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("account_status")
+}
+
+/// Serviceability state for cities and pincodes.
+///
+/// An enum rather than a boolean because the admin UI needs to distinguish
+/// "we have switched this off" from "we have not launched here yet", and a
+/// boolean cannot carry that distinction without a second column.
+/// Turning a city or pincode off NEVER deletes data (BR-SV6).
+enum ServiceabilityStatus {
+  ACTIVE
+  INACTIVE
+  COMING_SOON
+
+  @@map("serviceability_status")
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+
+  @@map("job_run_status")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Governance
+// ──────────────────────────────────────────────────────────────────────────
+
+/// The operating entity. Exactly one row at MVP.
+/// This is the column that makes multi-business expansion a data change
+/// rather than a migration (ADR-005).
+model Business {
+  id           String        @id @db.Uuid
+  name         String
+  slug         String        @db.Citext
+  timezone     String        @default("Asia/Kolkata")
+  currency     String        @default("INR")
+  supportEmail String?       @map("support_email") @db.Citext
+  supportPhone String?       @map("support_phone")
+  status       AccountStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  cities          City[]
+  servicePincodes ServicePincode[]
+  settings        Setting[]
+
+  @@unique([slug])
+  @@map("businesses")
+}
+
+/// Runtime configuration an admin can change without a deploy.
+///
+/// The boundary against environment variables (docs/27 §6): anything the
+/// business might reasonably want to change without an engineer belongs here.
+/// Environment variables only supply the initial seed values.
+model Setting {
+  id          String   @id @db.Uuid
+  businessId  String   @map("business_id") @db.Uuid
+  key         String   @db.Citext
+  value       Json
+  description String?
+  isPublic    Boolean  @default(false) @map("is_public")
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, key])
+  @@index([businessId, isPublic])
+  @@map("settings")
+}
+
+/// Execution record for every scheduled worker job.
+/// Powers the admin job-health screen and the dead-man's-switch alerts
+/// (docs/28-OBSERVABILITY.md §8, docs/04 §3.4).
+model JobRun {
+  id             String       @id @db.Uuid
+  jobName        String       @map("job_name")
+  startedAt      DateTime     @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?    @map("finished_at") @db.Timestamptz(6)
+  status         JobRunStatus @default(RUNNING)
+  itemsProcessed Int          @default(0) @map("items_processed")
+  error          String?
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([jobName, startedAt(sort: Desc)])
+  @@map("job_runs")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Serviceability
+//
+// City -> Pincode is the admin-controlled source of truth for "do we deliver
+// here". Delivery zones and slots attach to these in PHASE 06 and narrow
+// serviceability further; they never widen it. See ADR-023 and ADR-024.
+// ──────────────────────────────────────────────────────────────────────────
+
+/// A city the business operates in, or intends to.
+///
+/// Cities are NEVER deleted. Expansion and retreat are both status changes,
+/// because historical addresses and orders must keep resolving to a real city
+/// row forever (BR-SV6).
+model City {
+  id           String               @id @db.Uuid
+  businessId   String               @map("business_id") @db.Uuid
+  name         String
+  slug         String               @db.Citext
+  displayName  String?              @map("display_name")
+  state        String
+  country      String               @default("IN")
+  timezone     String               @default("Asia/Kolkata")
+  status       ServiceabilityStatus @default(INACTIVE)
+  displayOrder Int                  @default(0) @map("display_order")
+  activatedAt  DateTime?            @map("activated_at") @db.Timestamptz(6)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?              @map("created_by") @db.Uuid
+  updatedBy    String?              @map("updated_by") @db.Uuid
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  pincodes ServicePincode[]
+
+  @@unique([businessId, slug])
+  @@index([businessId, status])
+  @@index([businessId, state])
+  @@map("cities")
+}
+
+/// A pincode the business may deliver to, owned by exactly one city.
+///
+/// UNIQUE (business_id, pincode) keeps serviceability resolution
+/// deterministic: a pincode resolves to one city, so "is this address
+/// serviceable" has exactly one answer. Splitting a pincode across areas
+/// needs geo-polygons and is explicitly PHASE 3 (FR-D8).
+model ServicePincode {
+  id           String               @id @db.Uuid
+  businessId   String               @map("business_id") @db.Uuid
+  cityId       String               @map("city_id") @db.Uuid
+  pincode      String
+  areaName     String?              @map("area_name")
+  status       ServiceabilityStatus @default(INACTIVE)
+  displayOrder Int                  @default(0) @map("display_order")
+  activatedAt  DateTime?            @map("activated_at") @db.Timestamptz(6)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?              @map("created_by") @db.Uuid
+  updatedBy    String?              @map("updated_by") @db.Uuid
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  city     City     @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, pincode])
+  @@index([cityId, status])
+  @@index([businessId, status])
+  @@map("service_pincodes")
+}

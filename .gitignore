@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Environment — ONLY .env.example is committed (BR-ENV6)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Secrets — never commit, regardless of location (BR-SEC16)
+*.pem
+*-service-account*.json
+serviceAccount*.json
+firebase-adminsdk*.json
+
+# Test / coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Turbo / tooling caches
+.turbo/
+.eslintcache
+.cache/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local infrastructure volumes
+.docker-data/
+
+# Prisma
+packages/db/prisma/*.db
+packages/db/prisma/*.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Firebase CLI local runtime state (created inside the emulator container
+# via a bind mount). Machine-local cache/telemetry, not source.
+scripts/firebase/.config/

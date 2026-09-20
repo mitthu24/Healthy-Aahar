@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9.12.3'
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ── Fast static gates ─────────────────────────────────────────────────────
+  # These catch more real defects per second than any test, so they run first
+  # and the rest of the pipeline only runs if they pass (docs/24 §2.1).
+  static:
+    name: Lint, format, types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  # ── Secrets and public-env guard ──────────────────────────────────────────
+  security-static:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Fails if any secret-looking variable carries a NEXT_PUBLIC_ prefix.
+      - name: No secrets in public env
+        run: node scripts/check-public-env.mjs
+
+  # ── Unit tests ────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm test
+
+  # ── Database migration check ──────────────────────────────────────────────
+  # Proves migrations apply cleanly to an empty database and that the schema
+  # and migration history have not diverged. A drifted schema is the classic
+  # cause of a deploy that works locally and fails in production.
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: static
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: healthy_aahar
+          POSTGRES_PASSWORD: healthy_aahar_ci
+          POSTGRES_DB: healthy_aahar_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U healthy_aahar"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://healthy_aahar:healthy_aahar_ci@localhost:5432/healthy_aahar_ci?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+
+      - name: Apply migrations to an empty database
+        run: pnpm db:migrate:deploy
+
+      - name: Detect schema drift
+        # Empty diff means schema.prisma and the migration history agree.
+        run: |
+          pnpm --filter @healthy-aahar/db exec prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code
+
+      - name: Seed is idempotent
+        # Running the seed twice must not duplicate rows or fail. A seed that
+        # is only safe once is a seed nobody dares re-run.
+        env:
+          APP_ENV: local
+        run: |
+          pnpm db:seed
+          pnpm db:seed
+
+  # ── Build ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build all apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_APP_ENV: preview
+          NEXT_PUBLIC_API_BASE_URL: https://api.staging.healthyaahar.com
+          NEXT_PUBLIC_MARKETING_URL: https://staging.healthyaahar.com
+          NEXT_PUBLIC_APP_URL: https://app.staging.healthyaahar.com
+        run: pnpm build
+
+  # ── Dependency audit ──────────────────────────────────────────────────────
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=high

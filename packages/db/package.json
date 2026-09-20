@@ -1,0 +1,43 @@
+{
+  "name": "@healthy-aahar/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "prisma generate",
+    "generate": "prisma generate",
+    "migrate:dev": "node ../../scripts/with-env.mjs prisma migrate dev",
+    "migrate:deploy": "node ../../scripts/with-env.mjs prisma migrate deploy",
+    "migrate:status": "node ../../scripts/with-env.mjs prisma migrate status",
+    "migrate:check": "node ../../scripts/with-env.mjs prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url $SHADOW_DATABASE_URL --exit-code",
+    "seed": "node ../../scripts/with-env.mjs tsx prisma/seed.ts",
+    "studio": "node ../../scripts/with-env.mjs prisma studio",
+    "reset": "node ../../scripts/with-env.mjs prisma migrate reset --force",
+    "validate": "prisma validate && prisma format --check",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf .turbo dist node_modules/.prisma"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@healthy-aahar/config": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "uuid": "^11.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "eslint": "^9.13.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

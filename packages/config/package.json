@@ -1,0 +1,52 @@
+{
+  "name": "@healthy-aahar/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/node.json": "./tsconfig/node.json",
+    "./tsconfig/react-library.json": "./tsconfig/react-library.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json",
+    "./eslint/base": "./eslint/base.js",
+    "./eslint/node": "./eslint/node.js",
+    "./eslint/next": "./eslint/next.js",
+    "./tailwind": {
+      "types": "./tailwind/preset.d.ts",
+      "default": "./tailwind/preset.js"
+    },
+    "./tokens": "./tokens/index.js",
+    "./tokens/*": "./tokens/*",
+    "./env/server": "./src/env.server.ts",
+    "./env/client": "./src/env.client.ts",
+    "./app-env": "./src/app-env.ts"
+  },
+  "files": [
+    "tsconfig",
+    "eslint",
+    "tailwind",
+    "tokens",
+    "src"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"config: covered by consumers\" && exit 0",
+    "clean": "rm -rf .turbo"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/node": "^22.8.1",
+    "eslint": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-boundaries": "^4.2.2",
+    "eslint-plugin-import": "^2.31.0",
+    "globals": "^15.11.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.11.0",
+    "tailwindcss": "^3.4.14"
+  }
+}
