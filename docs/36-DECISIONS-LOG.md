@@ -388,6 +388,146 @@ pipeline during the foundation phase for no user-visible gain.
 *Revisit:* PHASE 10, when the customer app's styling surface is largest and a migration can
 be validated against real screens. Doc 03 has been corrected to say 3.4 with this note.
 
+---
+
+### ADR-028 — A provisioned test database, not Testcontainers
+**Status** ACCEPTED (PHASE 02) · **Deviation from** doc 24 §2.3
+
+Doc 24 specified Testcontainers for integration tests.
+
+*Chosen:* a dedicated database (`healthy_aahar_test`) created per run on an
+existing PostgreSQL, with migrations applied and `TRUNCATE ... CASCADE` between tests.
+*Why:* CI already provisions a PostgreSQL service container for the migration job, so
+Testcontainers would start a *second* database inside a job that already has one, paying
+~30s of container startup for identical isolation. Locally, `docker compose` already runs
+PostgreSQL for development. The isolation property that matters — tests never see each
+other's rows and never touch the development database — is fully satisfied by a separate
+database.
+*Trade-off accepted:* tests require a reachable PostgreSQL rather than only a Docker
+socket. In exchange the suite starts in under a second.
+*Revisit if:* tests ever need a different PostgreSQL version from the one CI provisions.
+
+---
+
+### ADR-029 — `addresses` keeps free-text city; `delivery_zones` takes a city FK
+**Status** ACCEPTED (PHASE 02) · **Refines** ADR-023 · **Doc** 04 §4.5, §6.1
+
+ADR-023 said `addresses.city` would become `city_id` in PHASE 02. Implementing it exposed a
+conflict with BR-D1: an **unserviceable address must remain saveable**, because a customer
+may legitimately add an address we do not yet serve, and blocking the save is hostile. A
+`NOT NULL city_id` makes that impossible.
+
+*Chosen:*
+- `addresses` keeps `city TEXT` (what the customer typed — a snapshot) **and** gains
+  `city_id UUID NULL` (the resolved match). This mirrors the existing `delivery_zone_id`
+  pattern exactly: cached on save, re-resolved at checkout.
+- `delivery_zones` replaces `city TEXT` / `state TEXT` with `city_id NOT NULL`. A zone is
+  operational; there is no "unserviceable zone" case, so the FK is unconditional and the
+  city already carries the state.
+
+*Why the asymmetry is correct:* an address is **user input** that may describe anywhere on
+earth; a zone is **operational configuration** that must describe somewhere we know.
+
+---
+
+### ADR-030 — PHASE 02 admin authorization is a development-only bypass
+**Status** ACCEPTED (PHASE 02) · **Superseded by** PHASE 03 · **Security-critical**
+
+Real admin authentication (Firebase admin project + RBAC) is PHASE 03, but PHASE 02 ships
+admin configuration endpoints that need *some* gate. Pretending authentication exists would
+be worse than admitting it does not.
+
+*Chosen:* a shared `ADMIN_DEV_TOKEN` compared in constant time, with three independent
+guarantees that it cannot reach production:
+
+1. `loadServerEnv()` **refuses to boot** when `ADMIN_DEV_TOKEN` is set and
+   `APP_ENV=production`. The process does not start.
+2. The middleware **refuses at request time** if it finds itself running in production —
+   belt and braces, because the cost of being wrong is total.
+3. If the token is **absent, every admin request is rejected**. The failure mode is closed,
+   never open. There is no silent fallback to "allow".
+
+*Why a shared token rather than no gate at all:* an ungated admin endpoint on a staging
+host is a live data-modification surface for anyone who finds it.
+
+*Rejected:* a hard-coded bypass flag (invisible in configuration); an IP allow-list (does
+not survive a container move); disabling the routes entirely (then nothing verifies the
+admin architecture works, which is a PHASE 02 acceptance requirement).
+
+PHASE 03 deletes `dev-admin-auth.ts` and the `ADMIN_DEV_TOKEN` variable outright.
+
+---
+
+### ADR-031 — OpenAPI via `@asteasolutions/zod-to-openapi` and our own route registry
+**Status** ACCEPTED (PHASE 02) · **Refines** doc 03 §4
+
+Doc 03 named `@hono/zod-openapi`.
+
+*Chosen:* wrap `@asteasolutions/zod-to-openapi` (the library `@hono/zod-openapi` is itself
+built on) and drive it from our existing route registry.
+*Why:* the registry already carries `audience` and `permission` for every route, and asserts
+at boot that no admin route is under-declared (BR-SEC12). That assertion is a real security
+control. `@hono/zod-openapi` models neither field, so adopting it would have meant either
+losing the boot-time check or maintaining route metadata in two places — which is exactly
+the duplication the single-source-of-truth requirement forbids.
+*The requirement that actually matters* — one Zod definition serving validation, the OpenAPI
+document and the typed SDK — is fully satisfied. Verified structurally: the generated
+request schema for `POST /v1/admin/cities` has no `status` property, which is how we know
+the document reflects the code rather than a hand-written parallel.
+
+---
+
+### ADR-032 — Anything Prisma can model MUST be modelled in the schema
+**Status** ACCEPTED (PHASE 02) · **Written in response to a real regression**
+
+PHASE 01 created the composite foreign key
+`service_pincodes(city_id, business_id) → cities(id, business_id)` in hand-written migration
+SQL only. The Prisma schema modelled the relation as a plain `city_id` FK.
+
+When `prisma migrate diff` generated the PHASE 02 migration, it reconciled the database down
+to the model and **silently emitted `DROP CONSTRAINT`** — removing the guarantee that a
+pincode cannot be attached to another business's city (BR-SV3). Nothing in review caught it;
+an integration test did.
+
+*The rule:* if Prisma **can** express a constraint — foreign keys, unique indexes, relations
+— it **must** be expressed in `schema.prisma`, not only in SQL. Raw SQL is reserved for what
+Prisma genuinely cannot model: CHECK constraints, partial indexes, generated columns, GIN
+indexes and triggers.
+
+*The safety net:* `packages/db/scripts/check-db-invariants.mjs` asserts that 30 named
+un-modellable objects exist, and CI runs it after every migration. This replaces
+`migrate diff --exit-code`, which cannot serve the purpose: Prisma reports the generated
+`search_vector` column and the GIN indexes as permanent false-positive drift, so the check
+would either always fail or always be ignored.
+
+*Verified:* dropping the constraint makes the check fail with
+`tenant isolation is NOT enforced`; restoring it makes the check pass.
+
+---
+
+### ADR-033 — City and pincode activation must not deadlock
+**Status** ACCEPTED (PHASE 02) · **Written in response to a real design flaw**
+
+Two guards were written independently and, together, made expansion impossible:
+
+- `canActivateCity` required ≥ 1 **ACTIVE** pincode (so an active city always has something
+  to serve — BR-SV4).
+- `canActivatePincode` required the parent city to be **ACTIVE** (so an admin is not misled
+  into thinking a pincode is live when the city gate overrides it).
+
+A brand new city therefore had no path to activation at all. Caught by driving the real API,
+not by reading the code.
+
+*Chosen:* `canActivatePincode` **never blocks**. It returns a `warning` instead, and the
+response's `is_serviceable` already tells the truth, because the city gate is evaluated
+first (BR-SV9).
+*Why this is the right direction:* an ACTIVE pincode inside an INACTIVE city is not a
+dangerous state — it is simply not serviceable. Blocking it removed a legitimate ordering
+(configure the pincodes, then switch the city on) for no safety gain. The city-side guard is
+kept, because an ACTIVE city with nothing to serve genuinely is inconsistent.
+
+A regression test asserts the two rules can no longer deadlock.
+
 ## Pending decisions — require the business owner
 
 | ID | Decision | Blocks | Needed by |

@@ -12,10 +12,10 @@ a PR that updates [36-DECISIONS-LOG.md](36-DECISIONS-LOG.md).
 
 | | |
 |---|---|
-| Phase | **PHASE 01 — Repository & Infrastructure** |
+| Phase | **PHASE 02 — Database & API Foundation** |
 | State | Complete, awaiting approval |
-| Next | PHASE 02 — Database & API Foundation (blocked on approval) |
-| Report | [PHASE-01-IMPLEMENTATION-REPORT](PHASE-01-IMPLEMENTATION-REPORT.md) |
+| Next | PHASE 03 — Authentication & RBAC (blocked on approval) |
+| Reports | [PHASE-01](PHASE-01-IMPLEMENTATION-REPORT.md) · [PHASE-02](PHASE-02-IMPLEMENTATION-REPORT.md) |
 
 ## Reading order
 

@@ -42,11 +42,15 @@ Pure functions with no I/O, run in milliseconds, exhaustively covered.
 test and catastrophic to get wrong.
 
 ### 2.3 Integration — API against a real database
-Vitest + Supertest + Testcontainers PostgreSQL. **Not** a mocked database: the invariants we
+Vitest against a **provisioned PostgreSQL test database** (ADR-028 — Testcontainers was
+specified in PHASE 00 and replaced in PHASE 02; CI already provisions a PostgreSQL service,
+so starting a second one bought nothing). **Not** a mocked database: the invariants we
 rely on are enforced by unique indexes, `CHECK` constraints and row locks, and a mock proves
 nothing about any of them.
 
-Per-test isolation by transaction rollback; migrations run once per container.
+Per-test isolation by `TRUNCATE ... CASCADE`; migrations applied once per run so the suite
+exercises exactly the SQL that runs in production, including the hand-written CHECK
+constraints and triggers Prisma cannot express.
 
 Covered: every endpoint's happy path, validation failures, authentication, authorization,
 ownership isolation, and the concurrency scenarios in §5.

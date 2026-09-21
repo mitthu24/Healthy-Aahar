@@ -17,7 +17,7 @@ Every entry states **what**, **why it beat the alternative**, and **what it cost
 | Animation | Framer Motion | 11.x |
 | Client data | TanStack Query | 5.x |
 | Client forms | React Hook Form + Zod | latest |
-| API framework | Hono + `@hono/zod-openapi` | 4.x |
+| API framework | Hono + `@asteasolutions/zod-to-openapi` (ADR-031) | 4.x |
 | Validation | Zod | 3.x |
 | ORM | Prisma | 5.x |
 | Database | PostgreSQL | 16 |

@@ -85,6 +85,7 @@ The rules that make expansion an admin action rather than a deploy (ADR-023, ADR
 | BR-SV7 | Bootstrap slot templates in `settings` are seed data only. No runtime code reads slot times from `settings`; `delivery_slots` is the sole source from PHASE 06 | Review | ADR-026 |
 | BR-SV8 | Zone and slot checks (PHASE 06) may only **narrow** city/pincode serviceability, never widen it. A zone cannot make an inactive pincode serviceable | Core | 04 §6.4 |
 | BR-SV9 | The city gate is evaluated before the pincode gate, so deactivating a city is sufficient on its own and overrides any pincode left ACTIVE beneath it | Core | 04 §6.4 |
+| BR-SV13 | Activating a pincode is never blocked by its city's status. It returns a warning instead — blocking would deadlock against BR-SV4 and leave a new city permanently unactivatable (ADR-033) | Core | ADR-033 |
 | BR-SV10 | An ACTIVE city or pincode must record `activated_at` | **DB CHECK** | 04 §6.2 |
 | BR-SV11 | A non-serviceable pincode is answered with HTTP 200 and `is_serviceable: false`, never a 404 — the question was answered successfully | API | 06 §4 |
 | BR-SV12 | Serviceability is re-verified at checkout against live data, never trusted from a saved address or a client payload | Core | 04 §6.4 |
@@ -227,6 +228,13 @@ The rules that make expansion an admin action rather than a deploy (ADR-023, ADR
 
 Five statements that must hold at all times. Each is enforced by a database constraint, not
 only by code, and each has a dedicated concurrency test (doc 24 §5).
+
+**They are also guarded against removal.** `packages/db/scripts/check-db-invariants.mjs`
+asserts that the named CHECK constraints, partial unique indexes, composite foreign keys,
+append-only triggers and the generated `search_vector` column are actually present, and CI
+runs it after every migration. This exists because the PHASE 02 migration silently dropped a
+tenant-isolation foreign key that had been created in raw SQL only — a constraint nobody
+notices is missing until it matters (ADR-032).
 
 1. `slot_capacity.booked_count <= capacity` — no over-booking.
 2. `inventory.quantity_on_hand >= 0` — no negative stock.

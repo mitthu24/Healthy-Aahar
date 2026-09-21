@@ -183,8 +183,22 @@ expansion a data change rather than a migration (ADR-005).
 | `status` | account_status | NO | Default `ACTIVE` |
 | `created_at` / `updated_at` | TIMESTAMPTZ | NO | |
 
-Every operational table carries `business_id UUID NOT NULL REFERENCES businesses(id)`.
-In the tables below this column is implied and not repeated.
+**Scope rule (clarified in PHASE 02).** `business_id` is carried by every **aggregate
+root** — the tables that are queried directly and must be scoped: `cities`,
+`service_pincodes`, `categories`, `products`, `product_variants`, `combos`, `tags`,
+`delivery_zones`, `delivery_slots`, `business_holidays`, `carts`, `orders`,
+`subscription_plans`, `subscriptions`, `inventory`, `coupons`, `roles`, `admin_users`,
+`customer_profiles`, `settings`.
+
+Child tables (`order_items`, `cart_items`, `combo_items`, `subscription_items`,
+`inventory_movements`, …) do **not** repeat it: they are only ever reached through a parent
+that is already scoped, and duplicating the column would add foreign keys that no query
+uses while creating a second place for the value to disagree.
+
+`product_variants` is the notable exception among children — it carries `business_id` so
+that the documented per-business SKU uniqueness is an enforceable index, and it uses a
+composite FK to `products(id, business_id)` so a variant cannot cross a tenant boundary
+(ADR-029, ADR-032).
 
 ### 3.2 `settings`
 **Purpose:** runtime configuration an admin can change without a deploy (booking horizon,
@@ -364,7 +378,8 @@ An admin may hold multiple roles; effective permissions are the **union**.
 | `line1` | TEXT | NO | House/flat, building |
 | `line2` | TEXT | YES | Street, area |
 | `landmark` | TEXT | YES | |
-| `city` | TEXT | NO | |
+| `city` | TEXT | NO | What the customer typed — a snapshot |
+| `city_id` | UUID | YES | → `cities.id` `ON DELETE SET NULL`; the resolved match (ADR-029) |
 | `state` | TEXT | NO | |
 | `pincode` | TEXT | NO | `CHECK (pincode ~ '^[1-9][0-9]{5}$')` |
 | `country` | TEXT | NO | Default `'IN'` |
@@ -606,8 +621,7 @@ ship in **PHASE 06**. Behaviour is specified in [10-DELIVERY-SLOT-SYSTEM.md](10-
 | `id` | UUID | NO | PK |
 | `name` | TEXT | NO | `South Bengaluru — Zone 1` |
 | `code` | CITEXT | NO | UNIQUE per business |
-| `city` | TEXT | NO | |
-| `state` | TEXT | NO | |
+| `city_id` | UUID | NO | → `cities.id` `ON DELETE RESTRICT`. Replaces the free-text `city`/`state` columns: a zone is operational configuration and must name a known city (ADR-029) |
 | `delivery_fee_paise` | BIGINT | NO | Default 0 |
 | `free_delivery_above_paise` | BIGINT | YES | Waives the fee above this subtotal |
 | `min_order_value_paise` | BIGINT | NO | Default 0 |
