@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "node ../../scripts/with-env.mjs vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf .turbo dist coverage"
   },

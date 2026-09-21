@@ -18,7 +18,13 @@ import { v7 as uuidv7 } from 'uuid';
  * Testcontainers: CI already provisions a PostgreSQL service container, and a
  * separate database on it gives identical isolation without paying ~30s of
  * container startup on every run (ADR-028).
+ *
+ * This file is TEST INFRASTRUCTURE, not application code. Fixtures read the
+ * wall clock directly because there is no Clock to inject into a fixture and
+ * no cutoff arithmetic to keep testable — the application-code rule
+ * (ADR-007) is about business logic, which none of this is.
  */
+/* eslint-disable no-restricted-syntax */
 
 const TEST_DB_NAME = 'healthy_aahar_test';
 

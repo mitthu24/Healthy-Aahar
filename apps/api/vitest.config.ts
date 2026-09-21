@@ -4,8 +4,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    // Integration tests against a real database land in PHASE 02; PHASE 01
-    // covers the app wiring, route registry and health endpoints.
-    testTimeout: 15_000,
+    testTimeout: 30_000,
+    hookTimeout: 180_000,
+    // Integration files provision a shared database; running them in
+    // parallel causes TRUNCATE contention between files.
+    fileParallelism: false,
   },
 });

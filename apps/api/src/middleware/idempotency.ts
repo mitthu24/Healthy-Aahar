@@ -10,20 +10,24 @@ import type { AppBindings } from '../types.js';
  * Idempotency.
  *
  * PHASE 00 requires this for order and subscription creation (BR-K7), which
- * are PHASE 07 and PHASE 09. The reusable foundation is built here so those
- * phases inherit it rather than each inventing their own.
+ * are PHASE 07 and PHASE 09. The reusable foundation is built and proven
+ * here so those phases inherit a tested mechanism rather than each inventing
+ * their own.
  *
- * Three behaviours, and the third is the one that matters:
+ * Four behaviours:
  *
  *   - Same key, same body, completed  -> replay the stored response.
  *   - Same key, still in flight       -> 409, retry shortly.
+ *   - Same key, previous attempt failed -> genuine retry (a 500 must not
+ *     become permanent for the whole window).
  *   - Same key, DIFFERENT body        -> 422. Never silently serve the first
  *     response for a different request: a silent wrong answer is worse than
  *     an error (docs/04 §7.6).
  *
- * The unique index on (user_id, endpoint, key) is the mutex. Two concurrent
- * requests race to INSERT; exactly one wins, and the loser is told to retry.
- * No application lock is involved, so this holds across processes.
+ * THE MUTEX is the unique index on (user_id, endpoint, key), claimed with
+ * `create`. It must not be an `upsert`: upsert UPDATES on conflict, so every
+ * concurrent caller would believe it had won and run the handler. That bug
+ * was caught by the concurrency test below, not by review.
  */
 
 const IDEMPOTENCY_WINDOW_HOURS = 24;
@@ -31,6 +35,20 @@ const IDEMPOTENCY_WINDOW_HOURS = 24;
 /** SHA-256 of the canonical body, so key reuse with a changed payload is detectable. */
 function hashBody(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
+}
+
+function nextExpiry(): Date {
+  return new Date(now().getTime() + IDEMPOTENCY_WINDOW_HOURS * 3_600_000);
+}
+
+function conflictResponse(requestId: string) {
+  return {
+    error: {
+      code: 'IDEMPOTENT_REQUEST_IN_PROGRESS',
+      message: 'An identical request is already being processed. Retry shortly.',
+      request_id: requestId,
+    },
+  } as const;
 }
 
 export type IdempotencyOptions = {
@@ -80,10 +98,9 @@ export function idempotency(options: IdempotencyOptions) {
     const endpoint = `${c.req.method} ${c.req.routePath}`;
     const rawBody = await c.req.raw.clone().text();
     const requestHash = hashBody(rawBody);
+    const where = { userId_endpoint_key: { userId, endpoint, key } };
 
-    const existing = await prisma.idempotencyKey.findUnique({
-      where: { userId_endpoint_key: { userId, endpoint, key } },
-    });
+    const existing = await prisma.idempotencyKey.findUnique({ where });
 
     if (existing) {
       // Reusing a key with a different payload is always a client bug.
@@ -111,54 +128,36 @@ export function idempotency(options: IdempotencyOptions) {
       }
 
       if (existing.status === 'IN_PROGRESS') {
-        // The first request has not finished. Returning its eventual answer
-        // is impossible, and guessing would be worse than asking for a retry.
-        return c.json(
-          {
-            error: {
-              code: 'IDEMPOTENT_REQUEST_IN_PROGRESS',
-              message: 'An identical request is already being processed. Retry shortly.',
-              request_id: requestId,
-            },
-          },
-          409,
-        );
+        // The first request has not finished. Its eventual answer cannot be
+        // known, and guessing would be worse than asking for a retry.
+        return c.json(conflictResponse(requestId), 409);
       }
-      // status === FAILED falls through and is retried below.
-    }
 
-    const expiresAt = new Date(now().getTime() + IDEMPOTENCY_WINDOW_HOURS * 3_600_000);
-
-    try {
-      await prisma.idempotencyKey.upsert({
-        where: { userId_endpoint_key: { userId, endpoint, key } },
-        create: {
-          id: newId(),
-          key,
-          userId,
-          endpoint,
-          requestHash,
-          status: 'IN_PROGRESS',
-          expiresAt,
-        },
-        update: { status: 'IN_PROGRESS', requestHash, expiresAt },
+      // FAILED: allow a genuine retry rather than replaying the failure.
+      await prisma.idempotencyKey.update({
+        where,
+        data: { status: 'IN_PROGRESS', requestHash, expiresAt: nextExpiry() },
       });
-    } catch (error) {
-      // Two concurrent requests raced the unique index and this one lost.
-      // That is the mutex working, not a failure.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        return c.json(
-          {
-            error: {
-              code: 'IDEMPOTENT_REQUEST_IN_PROGRESS',
-              message: 'An identical request is already being processed. Retry shortly.',
-              request_id: requestId,
-            },
+    } else {
+      try {
+        await prisma.idempotencyKey.create({
+          data: {
+            id: newId(),
+            key,
+            userId,
+            endpoint,
+            requestHash,
+            status: 'IN_PROGRESS',
+            expiresAt: nextExpiry(),
           },
-          409,
-        );
+        });
+      } catch (error) {
+        // Lost the race to claim the key. That is the mutex working.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          return c.json(conflictResponse(requestId), 409);
+        }
+        throw error;
       }
-      throw error;
     }
 
     await next();
@@ -174,7 +173,7 @@ export function idempotency(options: IdempotencyOptions) {
     }
 
     await prisma.idempotencyKey.update({
-      where: { userId_endpoint_key: { userId, endpoint, key } },
+      where,
       data: {
         // Only 2xx is replayable. Replaying a 500 would make a transient
         // failure permanent for the whole 24-hour window.

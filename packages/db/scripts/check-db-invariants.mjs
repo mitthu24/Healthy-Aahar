@@ -157,6 +157,7 @@ async function main() {
     process.exit(1);
   }
 
+  // eslint-disable-next-line no-console -- a CLI check reports success on stdout
   console.log(`Database invariant check passed: ${total} required objects present.`);
 }
 
