@@ -5,7 +5,7 @@
     "buildCommand": "pnpm install --frozen-lockfile && pnpm db:generate"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @healthy-aahar/db migrate:deploy && pnpm --filter @healthy-aahar/api start",
+    "startCommand": "pnpm --filter @healthy-aahar/db migrate:deploy && pnpm --filter @healthy-aahar/db seed && pnpm --filter @healthy-aahar/api start",
     "healthcheckPath": "/v1/health/ready",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
