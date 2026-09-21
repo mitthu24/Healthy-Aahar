@@ -1,4 +1,4 @@
-import type { ErrorCode } from '@healthy-aahar/contracts';
+import type { ErrorCode, OpenApiRouteSpec } from '@healthy-aahar/contracts';
 
 /**
  * Route registry.
@@ -28,6 +28,18 @@ export type RouteDescriptor = {
   errors?: ErrorCode[];
   /** True when the route requires an Idempotency-Key header. */
   idempotent?: boolean;
+  /**
+   * OpenAPI contribution. Present on every implemented route; absent on
+   * routes that are registered for the boot-time audience assertion but not
+   * yet built. Attaching it here keeps ONE definition per route: the
+   * document cannot drift from the implementation (ADR-031).
+   */
+  openapi?: {
+    tags: string[];
+    request?: OpenApiRouteSpec['request'];
+    responses: OpenApiRouteSpec['responses'];
+    description?: string;
+  };
 };
 
 const registry: RouteDescriptor[] = [];
@@ -119,4 +131,26 @@ export function assertRegistryIsSound(routes: readonly RouteDescriptor[] = regis
 /** Test helper. Never call from application code. */
 export function resetRegistry(): void {
   registry.length = 0;
+}
+
+/**
+ * Project registered routes into OpenAPI specs.
+ *
+ * Only routes that declare `openapi` appear — a route registered purely for
+ * the audience assertion is not advertised as available.
+ */
+export function toOpenApiSpecs(routes: readonly RouteDescriptor[] = registry): OpenApiRouteSpec[] {
+  return routes
+    .filter((route) => route.openapi !== undefined)
+    .map((route) => ({
+      method: route.method.toLowerCase() as OpenApiRouteSpec['method'],
+      path: route.path,
+      summary: route.summary,
+      tags: route.openapi!.tags,
+      audience: route.audience,
+      permission: route.permission,
+      ...(route.openapi!.description ? { description: route.openapi!.description } : {}),
+      ...(route.openapi!.request ? { request: route.openapi!.request } : {}),
+      responses: route.openapi!.responses,
+    }));
 }

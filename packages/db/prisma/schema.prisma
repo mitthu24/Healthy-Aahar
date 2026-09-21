@@ -867,8 +867,13 @@ model ServicePincode {
   createdBy      String?              @map("created_by") @db.Uuid
   updatedBy      String?              @map("updated_by") @db.Uuid
 
-  business     Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  city         City          @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  // Composite FK: a pincode and its city must belong to the SAME business.
+  // Declared HERE rather than only in migration SQL — Phase 01 defined it in
+  // raw SQL alone, and `prisma migrate diff` silently dropped it when
+  // generating the Phase 02 migration because the model did not know about
+  // it. Modelling it makes that impossible to repeat (BR-SV3).
+  city         City          @relation(fields: [cityId, businessId], references: [id, businessId], onDelete: Restrict)
   deliveryZone DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
 
   @@unique([businessId, pincode])

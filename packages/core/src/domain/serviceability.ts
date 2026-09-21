@@ -186,18 +186,24 @@ export function canActivateCity(activePincodeCount: number): { ok: boolean; reas
 }
 
 /**
- * A pincode may be activated only if its city is ACTIVE, since the city gate
- * runs first and would override it anyway. Failing loudly here prevents an
- * admin from believing they have enabled a pincode when they have not.
+ * A pincode may always be activated — but activating one inside a city that
+ * is not ACTIVE does not make it serviceable, because the city gate runs
+ * first (BR-SV9).
+ *
+ * This deliberately does NOT block. An earlier version refused activation
+ * unless the city was already ACTIVE, which deadlocked against
+ * `canActivateCity`: a city needs an ACTIVE pincode to activate, so a brand
+ * new city could never be activated at all. Returning a warning instead
+ * keeps the admin informed and the flow possible.
  */
 export function canActivatePincode(cityStatus: ServiceabilityStatus): {
   ok: boolean;
-  reason?: string;
+  warning?: string;
 } {
   if (cityStatus !== 'ACTIVE') {
     return {
-      ok: false,
-      reason: `The parent city is ${cityStatus}. Activate the city first, or this pincode would remain unserviceable despite showing as active.`,
+      ok: true,
+      warning: `This pincode will not be serviceable until its city is activated (city is currently ${cityStatus}).`,
     };
   }
   return { ok: true };

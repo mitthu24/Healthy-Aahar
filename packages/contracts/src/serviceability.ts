@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
 import {
+  paginatedSchema,
+  paginationQuerySchema,
   pincodeSchema,
   serviceabilityStatusSchema,
   slugSchema,
   uuidSchema,
-  paginationQuerySchema,
 } from './common.js';
 
 /**
@@ -150,3 +151,15 @@ export type CityPublic = z.infer<typeof cityPublicSchema>;
 export type CityAdmin = z.infer<typeof cityAdminSchema>;
 export type PincodePublic = z.infer<typeof pincodePublicSchema>;
 export type PincodeAdmin = z.infer<typeof pincodeAdminSchema>;
+
+// ── Paginated responses ───────────────────────────────────────────────────
+
+export const cityListResponseSchema = paginatedSchema(cityAdminSchema);
+export const pincodeListResponseSchema = paginatedSchema(pincodeAdminSchema);
+export const publicCityListResponseSchema = paginatedSchema(cityPublicSchema);
+
+/** Path parameter shared by every `/:id` admin route. */
+export const idParamSchema = z.object({ id: uuidSchema });
+
+export type CityListResponse = z.infer<typeof cityListResponseSchema>;
+export type PincodeListResponse = z.infer<typeof pincodeListResponseSchema>;

@@ -176,13 +176,30 @@ describe('activation guards', () => {
     expect(canActivateCity(3).ok).toBe(true);
   });
 
-  it('refuses to activate a pincode whose city is not active', () => {
-    expect(canActivatePincode('INACTIVE').ok).toBe(false);
-    expect(canActivatePincode('COMING_SOON').ok).toBe(false);
+  it('allows activating a pincode in an active city, with no warning', () => {
+    const result = canActivatePincode('ACTIVE');
+    expect(result.ok).toBe(true);
+    expect(result.warning).toBeUndefined();
   });
 
-  it('allows activating a pincode in an active city', () => {
-    expect(canActivatePincode('ACTIVE').ok).toBe(true);
+  it('allows activating a pincode in a non-active city, but warns', () => {
+    // It must NOT block. Blocking deadlocks against canActivateCity: a city
+    // needs an ACTIVE pincode to activate, so a brand new city could never
+    // be activated at all. The city gate still makes it unserviceable.
+    for (const cityStatus of ['INACTIVE', 'COMING_SOON'] as const) {
+      const result = canActivatePincode(cityStatus);
+      expect(result.ok).toBe(true);
+      expect(result.warning).toContain('not be serviceable');
+      expect(result.warning).toContain(cityStatus);
+    }
+  });
+
+  it('never leaves a new city permanently unactivatable', () => {
+    // The regression this pair of rules exists to prevent: activate the
+    // pincode first (allowed, with a warning), which then satisfies the
+    // city activation guard.
+    expect(canActivatePincode('INACTIVE').ok).toBe(true);
+    expect(canActivateCity(1).ok).toBe(true);
   });
 });
 

@@ -1,3 +1,4 @@
+import { healthResponseSchema, readinessResponseSchema } from '@healthy-aahar/contracts';
 import { now } from '@healthy-aahar/core';
 import { checkDatabaseHealth } from '@healthy-aahar/db';
 import { Hono } from 'hono';
@@ -23,6 +24,11 @@ registerRoute({
   audience: 'public',
   summary: 'Liveness probe',
   phase: '01',
+  openapi: {
+    description: 'Touches nothing, so a database outage never makes the container look dead.',
+    tags: ['Health'],
+    responses: { 200: { description: 'Process is alive', schema: healthResponseSchema } },
+  },
 });
 
 registerRoute({
@@ -31,6 +37,17 @@ registerRoute({
   audience: 'public',
   summary: 'Readiness probe including database connectivity',
   phase: '01',
+  openapi: {
+    description:
+      'Also confirms migrations are applied. A database that accepts ' +
+      'connections but has no schema is the exact failure mode of a ' +
+      'half-finished deploy, and a naive ping would report it healthy.',
+    tags: ['Health'],
+    responses: {
+      200: { description: 'Ready (or degraded)', schema: readinessResponseSchema },
+      503: { description: 'Database unreachable', schema: readinessResponseSchema },
+    },
+  },
 });
 
 const bootedAt = Date.now();

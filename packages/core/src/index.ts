@@ -11,6 +11,8 @@ export * from './domain/order-status.js';
 // ── Ports: interfaces the application depends on ────────────────────────
 export type { ServiceabilityRepository } from './ports/serviceability-repository.js';
 export type {
+  CityRow,
+  PincodeRow,
   CityRepository,
   PincodeRepository,
   CityListFilter,

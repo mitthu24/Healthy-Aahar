@@ -71,6 +71,16 @@ export const serverEnvSchema = z
     // ── Worker to API internal auth ──────────────────────────────────────
     INTERNAL_SERVICE_TOKEN: z.string().min(16),
 
+    // ── PHASE 02 ONLY: development admin token ───────────────────────────
+    // Real admin authentication is PHASE 03 (Firebase + RBAC). Until then
+    // admin configuration endpoints are reachable only with this shared
+    // token, and ONLY outside production — the refinement below refuses to
+    // boot if it is present in production (ADR-030).
+    //
+    // This is deliberately NOT a silent fallback: if the variable is absent,
+    // admin routes reject every request rather than allowing them through.
+    ADMIN_DEV_TOKEN: z.string().min(24).optional(),
+
     // ── Business defaults ────────────────────────────────────────────────
     // These SEED the settings table on first run; afterwards the database is
     // authoritative (docs/27 §6). They are defaults, not business logic:
@@ -158,6 +168,19 @@ export const serverEnvSchema = z
           code: z.ZodIssueCode.custom,
           path: ['FIREBASE_AUTH_EMULATOR_HOST'],
           message: 'The Firebase auth emulator must never be configured in production',
+        });
+      }
+
+      // The PHASE 02 admin bypass must be structurally incapable of reaching
+      // production. Refusing to boot is the only enforcement that cannot be
+      // forgotten during a deploy (ADR-030, acceptance criterion 24).
+      if (env.ADMIN_DEV_TOKEN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ADMIN_DEV_TOKEN'],
+          message:
+            'ADMIN_DEV_TOKEN is a PHASE 02 development-only bypass and must never be set in ' +
+            'production. Real admin authentication arrives in PHASE 03 (ADR-030).',
         });
       }
     }

@@ -1,5 +1,5 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
-import type { ServiceabilityService } from '@healthy-aahar/core';
+import type { ServiceabilityAdminService, ServiceabilityService } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 
@@ -24,6 +24,7 @@ export type Actor =
 
 export type AppServices = {
   serviceability: ServiceabilityService;
+  serviceabilityAdmin: ServiceabilityAdminService;
 };
 
 export type AppBindings = {

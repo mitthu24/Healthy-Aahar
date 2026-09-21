@@ -1,4 +1,9 @@
-import { serviceabilityQuerySchema } from '@healthy-aahar/contracts';
+import {
+  errorResponseSchema,
+  publicCityListResponseSchema,
+  serviceabilityQuerySchema,
+  serviceabilityResponseSchema,
+} from '@healthy-aahar/contracts';
 import { Hono } from 'hono';
 
 import { registerRoute } from '../../lib/route-registry.js';
@@ -23,6 +28,19 @@ registerRoute({
   summary: 'Check whether a pincode is serviceable',
   phase: '01',
   errors: ['INVALID_PINCODE'],
+  openapi: {
+    description:
+      'A non-serviceable pincode returns HTTP 200 with is_serviceable=false, ' +
+      'NOT a 404: the question was answered successfully (BR-SV11). The ' +
+      'answer is recomputed from the database on every call; a client-supplied ' +
+      'serviceability flag is never read (BR-SV1).',
+    tags: ['Serviceability'],
+    request: { query: serviceabilityQuerySchema },
+    responses: {
+      200: { description: 'Serviceability decision', schema: serviceabilityResponseSchema },
+      422: { description: 'Malformed pincode', schema: errorResponseSchema },
+    },
+  },
 });
 
 registerRoute({
@@ -31,6 +49,12 @@ registerRoute({
   audience: 'public',
   summary: 'List serviceable cities',
   phase: '01',
+  openapi: {
+    tags: ['Serviceability'],
+    responses: {
+      200: { description: 'Active and coming-soon cities', schema: publicCityListResponseSchema },
+    },
+  },
 });
 
 export function publicServiceabilityRoutes(): Hono<AppBindings> {

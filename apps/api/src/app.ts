@@ -1,16 +1,23 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
-import { ServiceabilityService } from '@healthy-aahar/core';
+import { buildOpenApiDocument } from '@healthy-aahar/contracts';
+import { ServiceabilityAdminService, ServiceabilityService } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
-import { assertRegistryIsSound, listRoutes } from './lib/route-registry.js';
+import { assertRegistryIsSound, listRoutes, toOpenApiSpecs } from './lib/route-registry.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { InMemoryRateLimitStore, rateLimit } from './middleware/rate-limit.js';
 import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
+import { devAdminAuth } from './middleware/dev-admin-auth.js';
+import {
+  PrismaCityRepository,
+  PrismaPincodeRepository,
+} from './repositories/prisma-serviceability-admin-repository.js';
 import { PrismaServiceabilityRepository } from './repositories/prisma-serviceability-repository.js';
+import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { healthRoutes } from './routes/health.js';
 import { publicServiceabilityRoutes } from './routes/public/serviceability.js';
 import type { AppBindings } from './types.js';
@@ -40,6 +47,10 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     serviceability: new ServiceabilityService({
       repository: new PrismaServiceabilityRepository(prisma),
       brandName: 'Healthy Aahar',
+    }),
+    serviceabilityAdmin: new ServiceabilityAdminService({
+      cities: new PrismaCityRepository(prisma),
+      pincodes: new PrismaPincodeRepository(prisma),
     }),
   };
 
@@ -116,9 +127,39 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.onError(errorHandler);
   app.notFound(notFoundHandler);
 
+  // Admin write limits are tighter than public reads.
+  app.use(
+    '/v1/admin/*',
+    rateLimit({
+      store: rateLimitStore,
+      limit: env.RATE_LIMIT_WRITE_PER_MIN,
+      enabled: env.RATE_LIMIT_ENABLED,
+      bucket: 'admin-write',
+    }),
+  );
+
+  // PHASE 02 development bypass. Refuses in production and refuses when no
+  // token is configured — the failure mode is closed, not open (ADR-030).
+  app.use('/v1/admin/*', devAdminAuth);
+
   // ── Routes ──────────────────────────────────────────────────────────────
   app.route('/v1', healthRoutes());
   app.route('/v1/public', publicServiceabilityRoutes());
+  app.route('/v1/admin', adminServiceabilityRoutes());
+
+  /**
+   * OpenAPI 3.1, generated from the same Zod schemas the API validates with.
+   * There is no second hand-written document to drift (docs/03 §2).
+   */
+  app.get('/v1/openapi.json', (c) =>
+    c.json(
+      buildOpenApiDocument(toOpenApiSpecs(), {
+        version: env.APP_VERSION,
+        serverUrl: env.API_BASE_URL,
+        environment: env.APP_ENV,
+      }),
+    ),
+  );
 
   /**
    * Route manifest.

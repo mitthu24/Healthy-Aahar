@@ -69,8 +69,27 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: static
+    # Integration tests run against a REAL PostgreSQL. The invariants they
+    # verify are CHECK constraints, partial unique indexes and triggers — a
+    # mocked database proves nothing about any of them (ADR-028).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: healthy_aahar
+          POSTGRES_PASSWORD: healthy_aahar_ci
+          POSTGRES_DB: healthy_aahar_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U healthy_aahar"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://healthy_aahar:healthy_aahar_ci@localhost:5432/healthy_aahar_ci?schema=public
+      APP_ENV: local
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -83,6 +102,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+
+      # The integration suite provisions its own test database from these
+      # migrations, so the base database only needs to exist.
+      - name: Apply migrations
+        run: pnpm db:migrate:deploy
+
       - run: pnpm test
 
   # ── Database migration check ──────────────────────────────────────────────
@@ -125,13 +150,16 @@ jobs:
       - name: Apply migrations to an empty database
         run: pnpm db:migrate:deploy
 
-      - name: Detect schema drift
-        # Empty diff means schema.prisma and the migration history agree.
-        run: |
-          pnpm --filter @healthy-aahar/db exec prisma migrate diff \
-            --from-schema-datasource prisma/schema.prisma \
-            --to-schema-datamodel prisma/schema.prisma \
-            --exit-code
+      - name: Assert database invariants survive migration
+        # NOT `migrate diff --exit-code`: Prisma cannot model generated
+        # columns, GIN indexes, CHECK constraints or triggers, so a diff
+        # reports them as permanent false-positive drift.
+        #
+        # This asks the question that actually matters — are the guarantees
+        # still there. The Phase 02 migration silently dropped a tenant
+        # isolation FK that existed only in raw SQL; this check is what stops
+        # that recurring (ADR-032).
+        run: pnpm db:check
 
       - name: Seed is idempotent
         # Running the seed twice must not duplicate rows or fail. A seed that

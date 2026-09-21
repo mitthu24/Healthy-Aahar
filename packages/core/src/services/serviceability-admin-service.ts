@@ -211,21 +211,19 @@ export class ServiceabilityAdminService {
     scope: BusinessScope,
     id: string,
     actorUserId?: string,
-  ): Promise<PincodeRow> {
-    const pincode = await this.getPincode(scope, id);
-    const check = canActivatePincode(pincode.city.status);
+  ): Promise<{ pincode: PincodeRow; warning?: string }> {
+    const existing = await this.getPincode(scope, id);
+    const check = canActivatePincode(existing.city.status);
 
-    if (!check.ok) {
-      // Failing loudly here stops an admin believing they have enabled a
-      // pincode when the city gate would override it anyway.
-      throw new DomainError('CITY_INACTIVE', check.reason ?? 'Cannot activate pincode.', {
-        details: [{ field: 'status', issue: check.reason ?? '' }],
-        context: { cityStatus: pincode.city.status },
-      });
-    }
+    // Never blocks: an ACTIVE pincode in a non-ACTIVE city is simply not
+    // serviceable, because the city gate is evaluated first (BR-SV9).
+    // Blocking here would deadlock against canActivateCity.
+    const pincode =
+      existing.status === 'ACTIVE'
+        ? existing
+        : await this.pincodes.setStatus(scope, id, 'ACTIVE', actorUserId);
 
-    if (pincode.status === 'ACTIVE') return pincode;
-    return this.pincodes.setStatus(scope, id, 'ACTIVE', actorUserId);
+    return check.warning ? { pincode, warning: check.warning } : { pincode };
   }
 
   async deactivatePincode(

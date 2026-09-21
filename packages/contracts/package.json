@@ -15,6 +15,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^7.3.0",
     "@healthy-aahar/config": "workspace:*",
     "zod": "^3.23.8"
   },
