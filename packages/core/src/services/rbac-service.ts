@@ -1,23 +1,35 @@
-import { randomBytes } from 'node:crypto';
-
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
 import { isKnownPermission } from '../domain/permissions.js';
-import type { AdminIdentityProvider } from '../ports/admin-identity-provider.js';
 import type { AdminRepository, AdminUserRow, RoleRepository, RoleRow } from '../ports/admin-repository.js';
 import type { AuditLogRepository } from '../ports/audit-log-repository.js';
+import type { PasswordResetRepository } from '../ports/password-reset-repository.js';
+import type { SessionRepository } from '../ports/session-repository.js';
+import type { SessionTokenHasher } from '../ports/session-token-hasher.js';
+
+/** How long an invited admin has to set their password before the link expires. */
+const PASSWORD_SETUP_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 /**
  * RBAC administration: invite/deactivate staff, assign roles, manage roles
  * (docs/08 §6). Every write here is audited and every invariant in docs/08
  * §6 is enforced in this layer, not trusted to callers.
+ *
+ * PHASE 03 (email/password): inviting an admin no longer calls out to
+ * Firebase — it creates the `users` row directly (no password yet) and
+ * issues a password-setup token through the same mechanism a "forgot
+ * password" flow would use (`PasswordResetRepository`). Deactivating an
+ * admin revokes every DB-backed session for that user instead of disabling
+ * a Firebase account.
  */
 export class RbacService {
   constructor(
     /** Exposed read-only for simple list/find routes that need no invariant checks. */
     readonly admins: AdminRepository,
     readonly roles: RoleRepository,
-    private readonly identity: AdminIdentityProvider,
+    private readonly passwordResets: PasswordResetRepository,
+    private readonly sessions: SessionRepository,
+    private readonly tokenHasher: SessionTokenHasher,
     private readonly audit: AuditLogRepository,
   ) {}
 
@@ -30,21 +42,14 @@ export class RbacService {
       roleIds: string[];
       invitedByUserId: string;
       invitedByIsSuperAdmin: boolean;
+      /** Base URL the caller appends `?token=<raw>` to, e.g. the admin app's "set password" page. */
       passwordResetContinueUrl?: string;
     },
   ): Promise<{ admin: AdminUserRow; passwordResetLink: string }> {
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.invitedByIsSuperAdmin);
 
-    const tempPassword = randomBytes(24).toString('base64url');
-    const firebaseUid = await this.identity.createUser({
-      email: params.email,
-      password: tempPassword,
-      displayName: params.fullName,
-    });
-
     const admin = await this.admins.invite(scope, {
-      firebaseUid,
       email: params.email,
       fullName: params.fullName,
       designation: params.designation,
@@ -52,8 +57,9 @@ export class RbacService {
       invitedByUserId: params.invitedByUserId,
     });
 
-    const passwordResetLink = await this.identity.generatePasswordResetLink(
-      params.email,
+    const passwordResetLink = await this.issuePasswordSetupLink(
+      admin.userId,
+      'SETUP',
       params.passwordResetContinueUrl,
     );
 
@@ -117,7 +123,7 @@ export class RbacService {
 
   async deactivate(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; targetFirebaseUid: string; actorUserId: string },
+    params: { targetAdminUserId: string; actorUserId: string },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
@@ -132,9 +138,9 @@ export class RbacService {
 
     const updated = await this.admins.deactivate(scope, params.targetAdminUserId);
 
-    // BR-SEC10: revoke every Firebase session in the same operation, not a
+    // BR-SEC10: revoke every DB-backed session in the same operation, not a
     // best-effort follow-up.
-    await this.identity.disableUser(params.targetFirebaseUid);
+    await this.sessions.revokeAllForUser(target.userId);
 
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
@@ -194,6 +200,26 @@ export class RbacService {
     });
 
     return updated;
+  }
+
+  private async issuePasswordSetupLink(
+    userId: string,
+    purpose: 'SETUP' | 'RESET',
+    continueUrl: string | undefined,
+  ): Promise<string> {
+    const rawToken = this.tokenHasher.generate();
+    await this.passwordResets.create({
+      userId,
+      tokenHash: this.tokenHasher.hash(rawToken),
+      purpose,
+      expiresAt: new Date(Date.now() + PASSWORD_SETUP_TOKEN_TTL_MS),
+    });
+    // No email is sent here (NOTIFICATIONS_ENABLED / Brevo wiring is out of
+    // this phase's scope) — the caller (the admin console, or an ops
+    // process today) is responsible for delivering this link. Returning it
+    // in the API response is the same contract the Firebase-era
+    // `generatePasswordResetLink` had.
+    return continueUrl ? `${continueUrl}?token=${rawToken}` : rawToken;
   }
 
   private assertMayGrant(roles: RoleRow[], actorIsSuperAdmin: boolean): void {

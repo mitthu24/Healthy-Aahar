@@ -17,7 +17,6 @@ import type { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
-import { fakeToken, FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
 import { loginAsAdmin } from './test-support/admin-session.js';
 import type { AppBindings } from './types.js';
 
@@ -34,10 +33,8 @@ let app: Hono<AppBindings>;
 let businessId: string;
 /** A second business, to prove nothing leaks between tenants. */
 let otherBusinessId: string;
-/** Session + CSRF headers for a real admin actor, obtained via a fake but end-to-end login. */
+/** Session + CSRF headers for a real admin actor, obtained via a real end-to-end login. */
 let adminHeaders: Record<string, string>;
-const fakeAdminSession = new FakeAdminSession();
-const fakeAdminVerifier = new FakeTokenVerifier();
 
 function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   return {
@@ -50,10 +47,10 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     DATABASE_POOL_SIZE: 5,
     DATABASE_STATEMENT_TIMEOUT_MS: 10_000,
     ALLOWED_ORIGINS: ['http://localhost:3002'],
-    FIREBASE_CUSTOMER_PROJECT_ID: 'customer-test',
-    FIREBASE_ADMIN_PROJECT_ID: 'admin-test',
     ADMIN_SESSION_MAX_AGE_SECONDS: 43_200,
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
+    CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
+    LOGIN_RATE_LIMIT_PER_MIN: 5,
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
     R2_BUCKET_NAME: 'test',
@@ -89,11 +86,6 @@ function buildApp(env = testEnv(), scopedBusinessId = businessId) {
     prisma,
     logger: createLogger({ service: 'api-it', env: 'local', version: 'test', level: 'silent' }),
     businessId: scopedBusinessId,
-    authOverrides: {
-      customerVerifier: new FakeTokenVerifier(),
-      adminVerifier: fakeAdminVerifier,
-      adminSession: fakeAdminSession,
-    },
   });
 }
 
@@ -125,7 +117,7 @@ beforeEach(async () => {
     permissionKeys: ['delivery:read', 'delivery:manage'],
   });
   const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
-  const session = await loginAsAdmin(app, admin.firebaseUid);
+  const session = await loginAsAdmin(app, admin);
   adminHeaders = session.headers;
 });
 
@@ -147,7 +139,7 @@ describe('admin authorization (real RBAC)', () => {
     // apply) but is forbidden from every permissioned route (403) — the
     // authentication/authorization distinction docs/07 §7 insists on.
     const bareAdmin = await seedAdminUser(prisma, businessId, {});
-    const session = await loginAsAdmin(app, bareAdmin.firebaseUid);
+    const session = await loginAsAdmin(app, bareAdmin);
 
     const res = await app.request('/v1/admin/cities', { headers: session.headers });
     expect(res.status).toBe(403);
@@ -170,7 +162,7 @@ describe('admin authorization (real RBAC)', () => {
 
   it('allows a super admin through with no explicit role permissions', async () => {
     const superAdmin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
-    const session = await loginAsAdmin(app, superAdmin.firebaseUid);
+    const session = await loginAsAdmin(app, superAdmin);
 
     const res = await app.request('/v1/admin/cities', { headers: session.headers });
     expect(res.status).toBe(200);
@@ -188,10 +180,10 @@ describe('admin authorization (real RBAC)', () => {
     });
     const foreignAdmin = await seedAdminUser(prisma, otherBusinessId, { roleIds: [role.id] });
 
-    const res = await app.request('/v1/admin/auth/session', {
+    const res = await app.request('/v1/admin/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_token: fakeToken({ uid: foreignAdmin.firebaseUid }) }),
+      body: JSON.stringify({ email: foreignAdmin.email, password: foreignAdmin.password }),
     });
     expect(res.status).toBe(401);
   });
@@ -200,7 +192,7 @@ describe('admin authorization (real RBAC)', () => {
     const suspended = await seedAdminUser(prisma, businessId, {
       roleIds: [(await seedRole(prisma, businessId, { key: 'SUSPENDED_ROLE', permissionKeys: ['delivery:read'] })).id],
     });
-    const session = await loginAsAdmin(app, suspended.firebaseUid);
+    const session = await loginAsAdmin(app, suspended);
 
     // Session cookie is still cryptographically valid; only OUR status flips.
     await prisma.user.update({ where: { id: suspended.userId }, data: { status: 'SUSPENDED' } });

@@ -1,5 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 
+import { DomainError } from '@healthy-aahar/core';
+
 import type { AppBindings } from '../types.js';
 
 /**
@@ -105,4 +107,37 @@ export function rateLimit(options: RateLimitOptions) {
     await next();
     return undefined;
   });
+}
+
+/**
+ * Brute-force protection for login endpoints (Step 6, docs/07 §5).
+ *
+ * Called explicitly from each login route handler, not mounted as
+ * app-wide middleware: the limit key needs the request BODY (the email
+ * being attempted), and a generic middleware would have to read the body
+ * stream before the route handler does, which Hono (and the underlying Web
+ * Streams API) does not allow twice.
+ *
+ * Keyed by IP *and* email together (two independent buckets) so neither a
+ * single attacker rotating emails behind one IP nor a distributed attack
+ * hammering one specific account slips through on the other axis alone.
+ *
+ * In-process, like the rest of this file (PD-14): correct for a single API
+ * instance, and the store is the one seam that changes to Redis if the API
+ * ever scales horizontally — nothing here assumes in-memory storage beyond
+ * that one injected `store`.
+ */
+export async function assertLoginNotRateLimited(
+  store: RateLimitStore,
+  options: { enabled: boolean; limit: number; windowMs?: number; ip: string; email: string },
+): Promise<void> {
+  if (!options.enabled) return;
+  const windowMs = options.windowMs ?? 60_000;
+
+  const byIp = await store.hit(`login-attempt:ip:${options.ip}`, windowMs);
+  const byEmail = await store.hit(`login-attempt:email:${options.email.toLowerCase()}`, windowMs);
+
+  if (byIp.count > options.limit || byEmail.count > options.limit) {
+    throw new DomainError('RATE_LIMITED', 'Too many login attempts. Please wait a moment and try again.');
+  }
 }

@@ -91,8 +91,8 @@ Three rules that decide every scope argument:
 
 | Feature | MVP | P2 | P3 | P4 | P5 | P6 |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
-| Phone OTP auth | ● | | | | | |
-| Email/password auth | | ● | | | | |
+| Email/password auth | ● | | | | | |
+| Phone OTP auth (Firebase, deferred — docs/07 §11, ADR-037) | | ● | | | | |
 | Catalogue with variants | ● | | | | | |
 | Nutrition and allergens | ● | | | | | |
 | Search (FTS + fuzzy) | ● | | | | | |

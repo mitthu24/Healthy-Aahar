@@ -28,7 +28,8 @@ export type {
   AccountStatus,
   UserRow,
   CustomerProfileRow,
-  CreateCustomerInput,
+  CreateCustomerWithPasswordInput,
+  CreateCustomerWithPasswordResult,
   UserRepository,
 } from './ports/user-repository.js';
 export type {
@@ -39,7 +40,15 @@ export type {
   RoleRow,
   RoleRepository,
 } from './ports/admin-repository.js';
-export type { AdminIdentityProvider } from './ports/admin-identity-provider.js';
+export type { PasswordHasher } from './ports/password-hasher.js';
+export type { SessionTokenHasher } from './ports/session-token-hasher.js';
+export type { SessionRow, CreateSessionInput, SessionRepository } from './ports/session-repository.js';
+export type {
+  PasswordResetPurpose,
+  PasswordResetTokenRow,
+  CreatePasswordResetTokenInput,
+  PasswordResetRepository,
+} from './ports/password-reset-repository.js';
 export type { AuditEvent, AuditLogRepository } from './ports/audit-log-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
@@ -51,6 +60,19 @@ export {
   ServiceabilityAdminService,
   type ServiceabilityAdminDeps,
 } from './services/serviceability-admin-service.js';
-export { CustomerAuthService, type CustomerActor, type CustomerSessionResult } from './services/customer-auth-service.js';
-export { AdminAuthService, type AdminActor } from './services/admin-auth-service.js';
+export {
+  CustomerAuthService,
+  type CustomerActor,
+  type CustomerAuthResult,
+  type RegisterParams as CustomerRegisterParams,
+  type LoginParams as CustomerLoginParams,
+} from './services/customer-auth-service.js';
+export {
+  AdminAuthService,
+  type AdminActor,
+  type AdminLoginParams,
+  type AdminLoginResult,
+} from './services/admin-auth-service.js';
 export { RbacService } from './services/rbac-service.js';
+export { PasswordResetService } from './services/password-reset-service.js';
+export { validateSession, type ValidatedSession } from './services/session-validation.js';

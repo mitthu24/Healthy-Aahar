@@ -33,8 +33,8 @@ import type { AppBindings } from '../../types.js';
  *
  * Authentication and authorization are real as of PHASE 03: the
  * `delivery:read` / `delivery:manage` permissions declared below are
- * enforced by `requirePermission` against a Firebase-session-resolved
- * admin actor (docs/07 §5, docs/08 §5.1) — there is no bypass.
+ * enforced by `requirePermission` against a session-resolved admin actor
+ * (docs/07 §5, docs/08 §5.1) — there is no bypass.
  */
 
 const jsonError = (description: string) => ({ description, schema: errorResponseSchema });

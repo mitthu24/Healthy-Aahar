@@ -61,16 +61,17 @@ DATABASE_STATEMENT_TIMEOUT_MS=10000
 # ── CORS ──────────────────────────────────────────────────────
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002
 
-# ── Firebase: CUSTOMER project (server-side verification) ─────
-FIREBASE_CUSTOMER_PROJECT_ID=healthly-customer-local
-FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64=          # base64 of the service-account JSON
-
-# ── Firebase: ADMIN project (server-side verification) ────────
-FIREBASE_ADMIN_PROJECT_ID=healthly-admin-local
+# ── Firebase (NOT part of the active PHASE 03 auth path — docs/07 §11) ──
+# Optional, unvalidated. Left unset; see docs/36 ADR-037/038.
+FIREBASE_CUSTOMER_PROJECT_ID=
+FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64=
+FIREBASE_ADMIN_PROJECT_ID=
 FIREBASE_ADMIN_SERVICE_ACCOUNT_B64=
-FIREBASE_AUTH_EMULATOR_HOST=localhost:9099      # local only; unset elsewhere
+FIREBASE_AUTH_EMULATOR_HOST=
 
-# ── Sessions ──────────────────────────────────────────────────
+# ── Sessions (PHASE 03 — DB-backed, docs/07 §5) ────────────────
+CUSTOMER_SESSION_MAX_AGE_SECONDS=2592000        # 30d, no idle timeout (mobile-readiness)
+LOGIN_RATE_LIMIT_PER_MIN=5                      # per IP AND per email independently
 ADMIN_SESSION_MAX_AGE_SECONDS=43200             # 12h
 ADMIN_SESSION_IDLE_TIMEOUT_SECONDS=1800         # 30m
 ADMIN_COOKIE_DOMAIN=                            # empty for __Host- prefix
@@ -140,21 +141,9 @@ NEXT_PUBLIC_CDN_BASE_URL=http://localhost:9000/healthly-media-local
 NEXT_PUBLIC_SENTRY_DSN=
 SENTRY_AUTH_TOKEN=                       # server-only, for source-map upload
 
-# ── apps/customer — Firebase CUSTOMER web config ──────────────
-# These are public by design: Firebase web config is not a secret.
-# Security comes from Firebase rules, App Check and our API.
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=healthly-customer-local.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=healthly-customer-local
-NEXT_PUBLIC_FIREBASE_APP_ID=
-NEXT_PUBLIC_RECAPTCHA_SITE_KEY=          # App Check
-NEXT_PUBLIC_USE_AUTH_EMULATOR=true       # local only
-
-# ── apps/admin — Firebase ADMIN web config (separate project) ─
-NEXT_PUBLIC_FIREBASE_ADMIN_API_KEY=
-NEXT_PUBLIC_FIREBASE_ADMIN_AUTH_DOMAIN=healthly-admin-local.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_ADMIN_PROJECT_ID=healthly-admin-local
-NEXT_PUBLIC_FIREBASE_ADMIN_APP_ID=
+# PHASE 03: no client-side auth SDK config for apps/customer or apps/admin —
+# both sign in against our own API with email/password (docs/07). A prior
+# Firebase web config lived here; see docs/36 ADR-037/038.
 
 # ── apps/marketing ────────────────────────────────────────────
 REVALIDATE_SECRET=                       # server-only; on-demand ISR webhook
@@ -165,8 +154,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 | Variable | Local | Preview | Staging | Production |
 |---|---|---|---|---|
-| `DATABASE_URL` | Docker | Staging DB | Staging DB | Production DB (private network) |
-| Firebase projects | Emulator | `*-staging` | `*-staging` | `*-prod` |
+| `DATABASE_URL` | Local Postgres | Staging DB | Staging DB | Production DB (private network) |
 | `NOTIFICATIONS_ENABLED` | `false` | `false` | `false` | **`true`** |
 | `BREVO_API_KEY` | unset | unset | unset | set |
 | `LOG_LEVEL` | `debug` | `info` | `info` | `info` |
@@ -197,7 +185,7 @@ Environment variables provide the *defaults* that seed `settings` on first run; 
 git clone … && cd healthly
 pnpm install
 cp .env.example .env.local            # repeat per app
-docker compose up -d                  # postgres + minio (R2-compatible) + firebase emulator
+docker compose up -d                  # postgres + minio (R2-compatible)
 pnpm db:migrate
 pnpm db:seed                          # business, zone, slots, roles, super admin, sample catalogue
 pnpm dev                              # turbo runs all apps + api + worker
@@ -211,11 +199,10 @@ pnpm dev                              # turbo runs all apps + api + worker
 | 4000 | api |
 | 5432 | postgres |
 | 9000 | minio (R2-compatible object storage) |
-| 9099 | firebase auth emulator |
 
 MinIO stands in for R2 so the upload path — presign, direct upload, worker validation — is
-exercised locally rather than stubbed. The Firebase emulator means OTP flows are testable
-without sending SMS or paying for it.
+exercised locally rather than stubbed. Authentication (PHASE 03, email/password) needs no
+emulator — it runs against this same local Postgres.
 
 ## 8. Rules
 

@@ -30,6 +30,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@healthy-aahar/auth": "workspace:*",
     "@healthy-aahar/config": "workspace:*",
     "@healthy-aahar/core": "workspace:*",
     "@prisma/client": "^5.22.0",

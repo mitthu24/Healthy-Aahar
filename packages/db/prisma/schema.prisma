@@ -60,6 +60,15 @@ enum UserType {
   @@map("user_type")
 }
 
+enum PasswordResetPurpose {
+  /// A newly invited admin establishing their first password (no prior hash).
+  SETUP
+  /// An existing user resetting a forgotten password.
+  RESET
+
+  @@map("password_reset_purpose")
+}
+
 enum ProductStatus {
   DRAFT
   ACTIVE
@@ -362,30 +371,94 @@ model JobRun {
 /// If this database leaks, nobody can authenticate with it (doc 07 §1).
 model User {
   id            String        @id @db.Uuid
-  firebaseUid   String        @map("firebase_uid")
+  /// PHASE 01–02: the Firebase UID that uniquely identified this user.
+  /// PHASE 03 (email/password): nullable — new rows never populate it, it
+  /// is kept only for rows provisioned before the PHASE 03 auth migration
+  /// and as the re-entry point if Firebase is reintroduced later (docs/07).
+  firebaseUid   String?       @map("firebase_uid")
   userType      UserType      @map("user_type")
+  /// PHASE 03: the password login identifier. Nullable because (a) legacy
+  /// phone-only customers never had an email, and (b) a freshly invited
+  /// admin has a row before they have set a password (passwordHash is
+  /// null until the password-setup flow completes).
   email         String?       @db.Citext
   phone         String?
   emailVerified Boolean       @default(false) @map("email_verified")
   phoneVerified Boolean       @default(false) @map("phone_verified")
+  /// scrypt-encoded: "scrypt:N:r:p:<saltHex>:<hashHex>". Never a plaintext
+  /// password, never read back by any API response (packages/auth/src/password.ts).
+  passwordHash  String?       @map("password_hash")
   status        AccountStatus @default(ACTIVE)
   lastLoginAt   DateTime?     @map("last_login_at") @db.Timestamptz(6)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  customerProfile CustomerProfile?
-  adminUser       AdminUser?              @relation("AdminUserAccount")
-  invitedAdmins   AdminUser[]             @relation("AdminUserInvitedBy")
-  auditLogs       AuditLog[]
-  notifications   Notification[]
-  notifPrefs      NotificationPreference[]
-  idempotencyKeys IdempotencyKey[]
+  customerProfile    CustomerProfile?
+  adminUser          AdminUser?              @relation("AdminUserAccount")
+  invitedAdmins      AdminUser[]             @relation("AdminUserInvitedBy")
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  notifPrefs         NotificationPreference[]
+  idempotencyKeys    IdempotencyKey[]
+  sessions           Session[]
+  passwordResetTokens PasswordResetToken[]
 
-  // The same person can be both a customer and an admin: two rows, two
-  // Firebase identities, two projects (ADR-010).
+  // The same person can be both a customer and an admin: two rows. Postgres
+  // treats every NULL as distinct from every other NULL, so this constraint
+  // is a no-op for legacy Firebase-less/email-less rows and a real uniqueness
+  // guarantee for every row that does have one of these identifiers.
   @@unique([firebaseUid, userType])
+  @@unique([email, userType])
   @@index([userType, status])
   @@map("users")
+}
+
+/// Server-side session (PHASE 03, replaces the Firebase session
+/// cookie/bearer-token model). One row per signed-in device/browser.
+///
+/// The raw token is NEVER stored — only `tokenHash` (SHA-256 of the random
+/// token). The token's 256 bits of entropy is the security property; the
+/// hash only needs to be a fast, deterministic lookup key, which is why this
+/// is SHA-256 and not scrypt (scrypt is for low-entropy human passwords,
+/// where the slow KDF IS the security property — using it here would just be
+/// a per-request latency tax with no benefit, see docs/07 §4/§5).
+model Session {
+  id         String    @id @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// One-time, expiring token for establishing or resetting a password
+/// (PHASE 03). Used for both the initial admin-invite "set your password"
+/// link and a future self-service "forgot password" flow — same mechanism,
+/// `purpose` only distinguishes them for audit/analytics, not behaviour.
+///
+/// Only `tokenHash` is stored, never the raw token, for the same reason as
+/// `Session.tokenHash`.
+model PasswordResetToken {
+  id        String    @id @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  purpose   PasswordResetPurpose @default(RESET)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 /// Customer business data. Separated from `users` so identity and commercial

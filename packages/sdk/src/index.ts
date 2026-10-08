@@ -1,6 +1,8 @@
 import type {
+  AdminMe,
   CityListResponse,
   CityPublic,
+  CustomerSessionResponse,
   PincodeListResponse,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';
@@ -18,10 +20,19 @@ import type {
 
 export type ApiClientOptions = {
   baseUrl: string;
-  /** Returns a fresh Firebase ID token, or null when signed out. */
+  /**
+   * Returns the customer's current bearer session token (from
+   * `customerLogin`/`customerRegister`), or null when signed out (PHASE 03
+   * — docs/30 §2). The caller owns where this is stored (memory, secure
+   * native storage); the SDK never persists it.
+   */
   getToken?: () => Promise<string | null>;
-  /** PHASE 02 only: development admin token (ADR-030). Removed in PHASE 03. */
-  devAdminToken?: string;
+  /**
+   * Reads the non-HttpOnly CSRF cookie value set alongside the admin
+   * session cookie, echoed back as `X-CSRF-Token` on mutating admin
+   * requests (docs/23 §6). Only relevant to admin methods.
+   */
+  getCsrfToken?: () => string | undefined;
   /** Identifies the caller, enabling minimum-version gating later (docs/06 §1.2). */
   clientId?: string;
   fetchImpl?: typeof fetch;
@@ -49,14 +60,14 @@ export type PageParams = {
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly getToken?: () => Promise<string | null>;
-  private readonly devAdminToken?: string;
+  private readonly getCsrfToken?: () => string | undefined;
   private readonly clientId: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.getToken = options.getToken;
-    this.devAdminToken = options.devAdminToken;
+    this.getCsrfToken = options.getCsrfToken;
     this.clientId = options.clientId ?? 'web/0.2.0';
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
@@ -74,12 +85,25 @@ export class ApiClient {
     const headers = new Headers(init.headers);
     headers.set('Accept', 'application/json');
     headers.set('X-Client', this.clientId);
+    if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
 
     const token = await this.getToken?.();
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    if (this.devAdminToken) headers.set('X-Dev-Admin-Token', this.devAdminToken);
 
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
+    const method = (init.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      const csrfToken = this.getCsrfToken?.();
+      if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
+    }
+
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      ...init,
+      headers,
+      // The admin session is an HttpOnly cookie (PHASE 03) — browser fetch
+      // needs this explicitly or it never sends/receives it cross-origin
+      // between a Vercel-hosted app and the API's own domain.
+      credentials: 'include',
+    });
 
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
@@ -128,6 +152,40 @@ export class ApiClient {
     return this.request('/v1/public/cities');
   }
 
+  // ── Customer auth (PHASE 03 — email/password, bearer session token) ─────
+
+  customerRegister(body: {
+    email: string;
+    password: string;
+    phone?: string;
+    first_name?: string;
+    last_name?: string;
+  }): Promise<CustomerSessionResponse> {
+    return this.request('/v1/auth/register', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  customerLogin(body: { email: string; password: string }): Promise<CustomerSessionResponse> {
+    return this.request('/v1/auth/login', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  customerLogout(): Promise<{ signed_out: boolean }> {
+    return this.request('/v1/auth/logout', { method: 'POST' });
+  }
+
+  // ── Admin auth (PHASE 03 — email/password, DB-backed session cookie) ────
+
+  adminLogin(body: { email: string; password: string }): Promise<AdminMe> {
+    return this.request('/v1/admin/auth/login', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  adminLogout(): Promise<{ signed_out: boolean }> {
+    return this.request('/v1/admin/auth/logout', { method: 'POST' });
+  }
+
+  adminMe(): Promise<AdminMe> {
+    return this.request('/v1/admin/auth/me');
+  }
+
   // ── Admin (PHASE 02 foundation) ─────────────────────────────────────────
 
   listCities(
@@ -157,8 +215,10 @@ export class ApiClient {
 }
 
 export type {
+  AdminMe,
   CityListResponse,
   CityPublic,
+  CustomerSessionResponse,
   PincodeListResponse,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';

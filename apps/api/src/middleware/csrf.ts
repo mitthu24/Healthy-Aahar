@@ -7,7 +7,7 @@ import { CSRF_COOKIE, CSRF_HEADER, verifyCsrfToken } from '@healthy-aahar/auth';
 import type { AppBindings } from '../types.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const LOGIN_PATH = '/v1/admin/auth/session';
+const LOGIN_PATH = '/v1/admin/auth/login';
 
 /**
  * Double-submit CSRF check for mutating admin requests (docs/07 §5.2,

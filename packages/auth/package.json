@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "@healthy-aahar/config": "workspace:*",
-    "@healthy-aahar/core": "workspace:*",
-    "firebase-admin": "^13.0.1"
+    "@healthy-aahar/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.8.1",

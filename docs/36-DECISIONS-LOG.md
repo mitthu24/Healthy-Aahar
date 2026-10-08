@@ -589,6 +589,83 @@ to clear one. `POST /v1/admin/auth/logout` called `deleteCookie(c, SESSION_COOKI
 returns 200 and a subsequent request is rejected — the kind of test that only exists because
 the real route was driven end to end rather than unit-tested in isolation.
 
+---
+
+### ADR-037 — PHASE 03 authentication is email/password with DB-backed sessions, not Firebase
+**Status** ACCEPTED (PHASE 03, supersedes ADR-009 and ADR-010 for the CURRENT phase)
+**Security-critical**
+
+ADR-009 and ADR-010 committed this project to Firebase Authentication (phone OTP for
+customers, email+password *inside* Firebase for admins, two separate projects for audience
+separation). That design was implemented — `packages/auth`'s `FirebaseTokenVerifier`,
+`FirebaseAdminSessionAdapter`, the dual-project verification, the Firebase Auth emulator in
+`docker-compose.yml` — and verified end to end before this ADR.
+
+A later architectural decision (business owner directive, not a technical failure of the
+Firebase design) requires the CURRENT implementation to run on email/password credentials
+owned entirely by this system, with deployment restricted to GitHub + Railway Postgres +
+Vercel + local Node/pnpm — no external auth provider, no Docker in the development loop.
+
+*Chosen:*
+- `users.password_hash` (nullable, scrypt-encoded) replaces the Firebase credential as the
+  login secret, verified in `packages/auth/src/password.ts`.
+- A new `sessions` table (DB-backed, hashed-token) replaces both the Firebase session cookie
+  (admin) and the Firebase ID-token-as-bearer pattern (customer). See ADR-038 for why the two
+  audiences still differ in HOW the token travels, even though both are now DB-backed.
+- `users.firebase_uid` is **not dropped** — it becomes nullable and unused by any PHASE 03 code
+  path. Firebase remains a documented FUTURE option (deferred, not rejected): the column, the
+  `FIREBASE_*` environment variables (now optional/unvalidated), and the architecture
+  described in docs/07 §2–§3 are the reconnection point if a later phase reintroduces it. This
+  is the same "no silent fallback, no blind deletion of forward-looking architecture"
+  principle ADR-030 established for the PHASE 02 dev-token bypass, applied here to a
+  deliberately-deferred integration rather than a deliberately-removed bypass.
+- `RbacService.inviteAdmin` no longer calls an external identity provider — it creates the
+  `users` row directly with no password, then issues a one-time password-setup token through
+  the same mechanism (`PasswordResetRepository`) a future "forgot password" flow would use.
+  Deactivation revokes every DB session for the user instead of disabling a Firebase account.
+  Both are *simpler* under this design, not merely different — there is no longer an external
+  service call on either path.
+
+*Rejected:* keeping Firebase for admin only and switching customers to passwords (ADR-010's
+two-Firebase-project security property depends on BOTH audiences living there; splitting them
+would mean maintaining the Firebase integration for a shrinking fraction of auth while gaining
+none of this phase's "no external provider" goal).
+
+*What did NOT change:* RBAC (`packages/core/src/services/rbac-service.ts`'s invariants
+BR-SEC6/7/8), the route-registry permission-enforcement layer
+(`apps/api/src/middleware/require-permission.ts`), business isolation, or the `Actor` model's
+shape (`AdminActor`/`CustomerActor` are structurally identical to before — only how a request
+arrives at one changed).
+
+### ADR-038 — Customer sessions stay bearer-token; admin sessions stay cookie-based
+**Status** ACCEPTED (PHASE 03) · **Refines** ADR-037, docs/30 §2
+
+Under DB-backed sessions, both audiences COULD use either transport — the Firebase-era
+constraint (a browser-only SDK vs. a server-verifiable ID token) no longer applies. This ADR
+is about which transport to keep anyway, now that it is a free choice.
+
+*Chosen:* no change to either audience's transport.
+- **Admin** (`apps/admin`, a browser-only console with no mobile-client future planned):
+  keeps the `__Host-admin_session` `HttpOnly`, `Secure`, `SameSite=Strict` cookie, now holding
+  a DB-backed opaque token instead of a Firebase session cookie. CSRF double-submit
+  (`packages/auth/src/csrf.ts`) is unchanged and still required — it protects against exactly
+  the same cookie-based forgery regardless of what the cookie's value means internally.
+- **Customer** (`apps/customer` today; native Android/iOS explicitly planned — docs/30):
+  keeps `Authorization: Bearer <token>`, cookie-free, per docs/30 §2's mobile-readiness claim
+  and its own enforcement test (an integration suite driving the API with no cookies, no
+  Origin header, bearer token only — "exactly a mobile client"). Moving the customer API to a
+  cookie now would pass that test trivially today and then have to be undone the moment a
+  native client needs the SAME endpoints, since native apps do not carry a browser's cookie
+  jar. The token is returned once, in the login/register response body; the client is
+  responsible for storage (web: memory; native: platform secure storage), and this API never
+  persists more than the token's hash.
+
+*Rejected:* cookies for both audiences (simpler to reason about, but revisits a decision
+docs/30 already made and tested, for no PHASE-03-specific reason — the "do not store a session
+token" instinct is about NOT putting it in `localStorage`/`sessionStorage`/a
+JS-readable cookie, which this design already avoids by keeping it in the response body only,
+not in doubling down on cookies specifically).
+
 ## Pending decisions — require the business owner
 
 | ID | Decision | Blocks | Needed by |

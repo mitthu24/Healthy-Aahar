@@ -5,7 +5,6 @@ export type AdminUserRow = {
   id: string;
   businessId: string;
   userId: string;
-  firebaseUid: string;
   email: string | null;
   fullName: string;
   designation: string | null;
@@ -22,7 +21,6 @@ export type EffectivePermissions = {
 };
 
 export type InviteAdminInput = {
-  firebaseUid: string;
   email: string;
   fullName: string;
   designation?: string | undefined;
@@ -31,14 +29,18 @@ export type InviteAdminInput = {
 };
 
 export interface AdminRepository {
-  findByFirebaseUid(scope: BusinessScope, firebaseUid: string): Promise<{ user: UserRow; admin: AdminUserRow } | null>;
+  findByUserId(scope: BusinessScope, userId: string): Promise<{ user: UserRow; admin: AdminUserRow } | null>;
   findById(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow | null>;
   list(scope: BusinessScope): Promise<AdminUserRow[]>;
 
   /** Effective permissions = union across every role the admin holds. */
   loadEffectivePermissions(scope: BusinessScope, adminUserId: string): Promise<EffectivePermissions>;
 
-  /** Creates users + admin_users + admin_user_roles in one transaction. */
+  /**
+   * Creates `users` (no `firebase_uid`, no `password_hash` — set later via
+   * the password-setup token flow) + `admin_users` + `admin_user_roles` in
+   * one transaction.
+   */
   invite(scope: BusinessScope, input: InviteAdminInput): Promise<AdminUserRow>;
 
   /** BR-SEC6: count of ACTIVE (not deleted, not suspended) super admins. */

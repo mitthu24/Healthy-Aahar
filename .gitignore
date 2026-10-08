@@ -61,3 +61,6 @@ pnpm-debug.log*
 # Firebase CLI local runtime state (created inside the emulator container
 # via a bind mount). Machine-local cache/telemetry, not source.
 scripts/firebase/.config/
+
+# Local AI assistant session state (scheduling locks, etc.) — machine-local, not source.
+.claude/

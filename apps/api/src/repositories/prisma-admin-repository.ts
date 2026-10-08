@@ -14,7 +14,7 @@ import type { PrismaClient } from '@healthy-aahar/db';
  * Prisma implementation of admin identity + role assignment (docs/07 §3,
  * docs/08 §5.2). `is_super_admin` is derived from — and kept in sync with —
  * holding the `SUPER_ADMIN` role, so there is exactly one place that grants
- * it (role assignment), not two mechanisms that can drift apart.
+ * it (role assignment), not two mechanisms that can drift apart (ADR-035).
  */
 
 function toAdminUserRow(admin: {
@@ -27,14 +27,13 @@ function toAdminUserRow(admin: {
   invitedBy: string | null;
   invitationAcceptedAt: Date | null;
   deletedAt: Date | null;
-  user: { firebaseUid: string; email: string | null };
+  user: { email: string | null };
   roles: { role: { key: string } }[];
 }): AdminUserRow {
   return {
     id: admin.id,
     businessId: admin.businessId,
     userId: admin.userId,
-    firebaseUid: admin.user.firebaseUid,
     email: admin.user.email,
     fullName: admin.fullName,
     designation: admin.designation,
@@ -47,20 +46,15 @@ function toAdminUserRow(admin: {
 }
 
 const ADMIN_INCLUDE = {
-  user: { select: { firebaseUid: true, email: true } },
+  user: { select: { email: true } },
   roles: { include: { role: { select: { key: true } } } },
 } as const;
 
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async findByFirebaseUid(
-    scope: BusinessScope,
-    firebaseUid: string,
-  ): Promise<{ user: UserRow; admin: AdminUserRow } | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { firebaseUid_userType: { firebaseUid, userType: 'ADMIN' } },
-    });
+  async findByUserId(scope: BusinessScope, userId: string): Promise<{ user: UserRow; admin: AdminUserRow } | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
 
     const admin = await this.prisma.adminUser.findFirst({
@@ -73,6 +67,7 @@ export class PrismaAdminRepository implements AdminRepository {
       user: {
         id: user.id,
         firebaseUid: user.firebaseUid,
+        passwordHash: user.passwordHash,
         userType: 'ADMIN',
         email: user.email,
         phone: user.phone,
@@ -136,10 +131,12 @@ export class PrismaAdminRepository implements AdminRepository {
       const userId = newId();
       const adminUserId = newId();
 
+      // No `firebase_uid`, no `password_hash` — PHASE 03 admins exist
+      // without a credential until they complete the password-setup flow
+      // (RbacService.inviteAdmin issues the token for that separately).
       await tx.user.create({
         data: {
           id: userId,
-          firebaseUid: input.firebaseUid,
           userType: 'ADMIN',
           email: input.email,
           emailVerified: false,

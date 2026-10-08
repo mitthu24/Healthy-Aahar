@@ -3,6 +3,11 @@
 Execution tracker. Each phase's items become GitHub issues at the start of that phase.
 Tick items only when they are **done and verified**, not when they are written.
 
+> **PHASE 03 note:** items below mentioning Firebase describe this checklist's ORIGINAL plan.
+> The actual PHASE 03 implementation is email/password with DB-backed sessions (docs/07,
+> docs/36 ADR-037/038) — Firebase is a documented future option, not part of the active path.
+> This checklist is left as the historical record of the original plan rather than rewritten.
+
 ---
 
 ## PHASE 00 — Documentation & Architecture
