@@ -431,7 +431,7 @@ earth; a zone is **operational configuration** that must describe somewhere we k
 ---
 
 ### ADR-030 — PHASE 02 admin authorization is a development-only bypass
-**Status** ACCEPTED (PHASE 02) · **Superseded by** PHASE 03 · **Security-critical**
+**Status** SUPERSEDED (PHASE 03) · **Security-critical**
 
 Real admin authentication (Firebase admin project + RBAC) is PHASE 03, but PHASE 02 ships
 admin configuration endpoints that need *some* gate. Pretending authentication exists would
@@ -454,7 +454,11 @@ host is a live data-modification surface for anyone who finds it.
 not survive a container move); disabling the routes entirely (then nothing verifies the
 admin architecture works, which is a PHASE 02 acceptance requirement).
 
-PHASE 03 deletes `dev-admin-auth.ts` and the `ADMIN_DEV_TOKEN` variable outright.
+**Update (PHASE 03):** `dev-admin-auth.ts` and the `ADMIN_DEV_TOKEN` variable have been
+deleted outright, exactly as planned above — not deprecated, not left as a fallback. Real
+admin authentication (Firebase session cookies + RBAC, docs/07 §5, docs/08) is the only path
+to `/v1/admin/*` now; see ADR-034 for the replacement and the verification it was tested
+against before this bypass was removed.
 
 ---
 
@@ -527,6 +531,63 @@ dangerous state — it is simply not serviceable. Blocking it removed a legitima
 kept, because an ACTIVE city with nothing to serve genuinely is inconsistent.
 
 A regression test asserts the two rules can no longer deadlock.
+
+---
+
+### ADR-034 — Firebase project initialisation is lazy, not eager at boot
+**Status** ACCEPTED (PHASE 03) · **Written in response to a real deploy-breaking bug**
+
+The natural place to construct the two `FirebaseTokenVerifier` instances (customer, admin) is
+`createApp()`, at boot — matching this codebase's stated philosophy of failing the boot, not a
+request, on bad configuration (docs/23). Building `createApp` that way and deploying it to a
+Railway staging environment that has no real Firebase project yet (only placeholder project
+IDs; PHASE 03 was code work, not GCP provisioning) would crash the ENTIRE API at startup —
+health checks, public catalogue and serviceability endpoints included — over a configuration
+gap that only auth actually needs.
+
+*Chosen:* `FirebaseTokenVerifier.auth` is a lazy getter. Construction never touches
+`firebase-admin`; the first real call (`verify`, `createSessionCookie`, …) does, and only
+those call sites fail if the project is unconfigured, mapped to `503 SERVICE_UNAVAILABLE` —
+not a 401 (the caller did nothing wrong) and not a process crash.
+*Rejected:* eager construction (crashes unrelated endpoints on a Firebase gap); a global
+try/catch around `createApp()` that swallows the error and runs with auth silently disabled
+(the "no silent fallback to allow" principle from ADR-030 applies here too — the failure must
+be loud on the affected routes, not invisible everywhere else).
+*Verified:* `app.test.ts` boots the app with zero Firebase configuration and asserts health
+and public routes return 200 while `/v1/auth/session` and `/v1/admin/auth/session` return 503.
+
+---
+
+### ADR-035 — `is_super_admin` is derived from holding the `SUPER_ADMIN` role, not set independently
+**Status** ACCEPTED (PHASE 03) · **Refines** docs/08 §1
+
+`admin_users.is_super_admin` is a real column (bypasses all permission checks), and `roles`
+is a real table with a `SUPER_ADMIN` system role. Two independent places that could each
+grant "bypass everything" is exactly the kind of duplication BR-SEC7 exists to prevent.
+
+*Chosen:* `is_super_admin` is written ONLY as a side effect of role assignment — invite and
+`setRoles` in `PrismaAdminRepository` compute it as `roles.some(r => r.key === 'SUPER_ADMIN')`
+and persist that alongside the role grant, in the same transaction. There is no separate
+"promote to super admin" endpoint.
+*Why the column still exists rather than deriving it at read time:* the boolean is read on
+every admin-authenticated request (`AdminAuthService.resolveActor`); keeping it denormalised
+avoids a second join on that hot path, and the single write path keeps it impossible to drift.
+
+---
+
+### ADR-036 — The `__Host-` cookie prefix's own rules apply to deletion, not just creation
+**Status** ACCEPTED (PHASE 03) · **Written in response to a real bug caught by the test suite**
+
+Hono's cookie serializer enforces the `__Host-` prefix's requirements (`Secure`, `Path=/`, no
+`Domain`) on every cookie it writes — including the zero-`Max-Age` cookie `deleteCookie` sends
+to clear one. `POST /v1/admin/auth/logout` called `deleteCookie(c, SESSION_COOKIE, { path: '/'
+})` with no `secure` flag, which is fine for *setting* a non-prefixed cookie but throws for a
+`__Host-`-prefixed one, turning every logout into a 500.
+
+*Chosen:* `deleteCookie` calls for both cookies pass the same `secure: true, sameSite:
+'Strict'` attributes they were created with. *Caught by:* an integration test asserting logout
+returns 200 and a subsequent request is rejected — the kind of test that only exists because
+the real route was driven end to end rather than unit-tested in isolation.
 
 ## Pending decisions — require the business owner
 

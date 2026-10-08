@@ -50,6 +50,10 @@ export const serverEnvSchema = z
     // ── Sessions ─────────────────────────────────────────────────────────
     ADMIN_SESSION_MAX_AGE_SECONDS: z.coerce.number().int().default(43200),
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: z.coerce.number().int().default(1800),
+    /** HMAC secret for the double-submit CSRF token (docs/07 §5.2). Own
+     *  secret, not reused from INTERNAL_SERVICE_TOKEN — a leak of one must
+     *  not compromise the other. */
+    ADMIN_CSRF_SECRET: z.string().min(16),
 
     // ── Email ────────────────────────────────────────────────────────────
     BREVO_API_KEY: z.string().optional(),
@@ -71,15 +75,10 @@ export const serverEnvSchema = z
     // ── Worker to API internal auth ──────────────────────────────────────
     INTERNAL_SERVICE_TOKEN: z.string().min(16),
 
-    // ── PHASE 02 ONLY: development admin token ───────────────────────────
-    // Real admin authentication is PHASE 03 (Firebase + RBAC). Until then
-    // admin configuration endpoints are reachable only with this shared
-    // token, and ONLY outside production — the refinement below refuses to
-    // boot if it is present in production (ADR-030).
-    //
-    // This is deliberately NOT a silent fallback: if the variable is absent,
-    // admin routes reject every request rather than allowing them through.
-    ADMIN_DEV_TOKEN: z.string().min(24).optional(),
+    // NOTE: PHASE 02's ADMIN_DEV_TOKEN bypass (ADR-030) was removed in
+    // PHASE 03. Real admin authentication is Firebase session cookies +
+    // RBAC (docs/07, docs/08) — there is no shared-token fallback anywhere
+    // in this schema, and none may be reintroduced without a new ADR.
 
     // ── Business defaults ────────────────────────────────────────────────
     // These SEED the settings table on first run; afterwards the database is
@@ -168,19 +167,6 @@ export const serverEnvSchema = z
           code: z.ZodIssueCode.custom,
           path: ['FIREBASE_AUTH_EMULATOR_HOST'],
           message: 'The Firebase auth emulator must never be configured in production',
-        });
-      }
-
-      // The PHASE 02 admin bypass must be structurally incapable of reaching
-      // production. Refusing to boot is the only enforcement that cannot be
-      // forgotten during a deploy (ADR-030, acceptance criterion 24).
-      if (env.ADMIN_DEV_TOKEN) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['ADMIN_DEV_TOKEN'],
-          message:
-            'ADMIN_DEV_TOKEN is a PHASE 02 development-only bypass and must never be set in ' +
-            'production. Real admin authentication arrives in PHASE 03 (ADR-030).',
         });
       }
     }

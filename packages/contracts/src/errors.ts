@@ -30,6 +30,16 @@ export const ERROR_CODES = {
   ACCOUNT_SUSPENDED: 403,
   CLIENT_UPGRADE_REQUIRED: 426,
 
+  // ── Auth / RBAC (PHASE 03) ──────────────────────────────────────────────
+  INVALID_CREDENTIALS: 401,
+  SESSION_EXPIRED: 401,
+  CSRF_TOKEN_INVALID: 403,
+  LAST_SUPER_ADMIN: 409,
+  CANNOT_MODIFY_OWN_ROLES: 403,
+  SYSTEM_ROLE_IMMUTABLE: 409,
+  UNKNOWN_PERMISSION: 422,
+  ADMIN_ALREADY_INVITED: 409,
+
   // ── Serviceability (PHASE 01) ───────────────────────────────────────────
   CITY_NOT_FOUND: 404,
   PINCODE_NOT_FOUND: 404,

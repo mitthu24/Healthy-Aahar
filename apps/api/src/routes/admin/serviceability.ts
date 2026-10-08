@@ -31,10 +31,10 @@ import type { AppBindings } from '../../types.js';
  * with separate consequences — deactivating a city stops revenue from an
  * entire market (BR-SV5).
  *
- * Authentication is the PHASE 02 development bypass (ADR-030); real RBAC
- * lands in PHASE 03. Each route declares the permission it WILL require, and
- * the registry asserts it at boot, so PHASE 03 wires enforcement without
- * having to discover the permission map.
+ * Authentication and authorization are real as of PHASE 03: the
+ * `delivery:read` / `delivery:manage` permissions declared below are
+ * enforced by `requirePermission` against a Firebase-session-resolved
+ * admin actor (docs/07 §5, docs/08 §5.1) — there is no bypass.
  */
 
 const jsonError = (description: string) => ({ description, schema: errorResponseSchema });

@@ -196,4 +196,90 @@ export async function seedPincode(
   });
 }
 
+/** Seeds the full static permission catalogue — mirrors the PHASE 03 migration for tests that build their own database rather than migrating one. */
+export async function seedPermissions(
+  prisma: PrismaClient,
+  permissions: readonly { key: string; resource: string; action: string; description: string }[],
+): Promise<void> {
+  await prisma.permission.createMany({
+    data: permissions.map((p) => ({
+      id: uuidv7(),
+      key: p.key,
+      resource: p.resource,
+      action: p.action,
+      description: p.description,
+    })),
+    skipDuplicates: true,
+  });
+}
+
+/** Seeds one system role scoped to a business, wiring the given permission keys. Permissions must already exist (seedPermissions). */
+export async function seedRole(
+  prisma: PrismaClient,
+  businessId: string,
+  overrides: { key: string; name?: string; permissionKeys?: string[]; isSystem?: boolean },
+): Promise<{ id: string; key: string }> {
+  const permissions = overrides.permissionKeys?.length
+    ? await prisma.permission.findMany({ where: { key: { in: overrides.permissionKeys } }, select: { id: true } })
+    : [];
+
+  return prisma.role.create({
+    data: {
+      id: uuidv7(),
+      businessId,
+      key: overrides.key,
+      name: overrides.name ?? overrides.key,
+      isSystem: overrides.isSystem ?? true,
+      permissions: { create: permissions.map((p) => ({ permissionId: p.id })) },
+    },
+    select: { id: true, key: true },
+  });
+}
+
+/** Seeds a full admin identity: users + admin_users (+ optional role grants). */
+export async function seedAdminUser(
+  prisma: PrismaClient,
+  businessId: string,
+  overrides: {
+    firebaseUid?: string;
+    email?: string;
+    fullName?: string;
+    isSuperAdmin?: boolean;
+    roleIds?: string[];
+    status?: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
+  } = {},
+): Promise<{ id: string; userId: string; firebaseUid: string }> {
+  const firebaseUid = overrides.firebaseUid ?? `test-admin-${uuidv7()}`;
+  const userId = uuidv7();
+  const adminUserId = uuidv7();
+
+  await prisma.user.create({
+    data: {
+      id: userId,
+      firebaseUid,
+      userType: 'ADMIN',
+      email: overrides.email ?? `${firebaseUid}@example.test`,
+      status: overrides.status ?? 'ACTIVE',
+    },
+  });
+
+  await prisma.adminUser.create({
+    data: {
+      id: adminUserId,
+      businessId,
+      userId,
+      fullName: overrides.fullName ?? 'Test Admin',
+      isSuperAdmin: overrides.isSuperAdmin ?? false,
+    },
+  });
+
+  if (overrides.roleIds?.length) {
+    await prisma.adminUserRole.createMany({
+      data: overrides.roleIds.map((roleId) => ({ adminUserId, roleId })),
+    });
+  }
+
+  return { id: adminUserId, userId, firebaseUid };
+}
+
 export { uuidv7 as testId };

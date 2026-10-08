@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@healthy-aahar/config": "workspace:*",
+    "@healthy-aahar/core": "workspace:*",
     "@prisma/client": "^5.22.0",
     "uuid": "^11.0.2"
   },

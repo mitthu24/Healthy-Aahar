@@ -1,10 +1,14 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
+import { PERMISSIONS } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 import {
   createTestClient,
+  seedAdminUser,
   seedBusiness,
   seedCity,
+  seedPermissions,
   seedPincode,
+  seedRole,
   setupTestDatabase,
   truncateAll,
 } from '@healthy-aahar/db/testing';
@@ -13,6 +17,8 @@ import type { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
+import { fakeToken, FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
+import { loginAsAdmin } from './test-support/admin-session.js';
 import type { AppBindings } from './types.js';
 
 /**
@@ -23,13 +29,15 @@ import type { AppBindings } from './types.js';
  * which is exactly how a native mobile client will call it (docs/30 §10).
  */
 
-const ADMIN_TOKEN = 'integration-test-admin-token-value';
-
 let prisma: PrismaClient;
 let app: Hono<AppBindings>;
 let businessId: string;
 /** A second business, to prove nothing leaks between tenants. */
 let otherBusinessId: string;
+/** Session + CSRF headers for a real admin actor, obtained via a fake but end-to-end login. */
+let adminHeaders: Record<string, string>;
+const fakeAdminSession = new FakeAdminSession();
+const fakeAdminVerifier = new FakeTokenVerifier();
 
 function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   return {
@@ -52,7 +60,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     R2_UPLOAD_MAX_BYTES: 5_242_880,
     R2_PRESIGN_TTL_SECONDS: 300,
     INTERNAL_SERVICE_TOKEN: 'test-internal-token-value',
-    ADMIN_DEV_TOKEN: ADMIN_TOKEN,
+    ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
     DEFAULT_TIMEZONE: 'Asia/Kolkata',
     DEFAULT_CURRENCY: 'INR',
     BOOKING_HORIZON_DAYS: 7,
@@ -75,17 +83,17 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   } as ServerEnv;
 }
 
-const adminHeaders = {
-  'X-Dev-Admin-Token': ADMIN_TOKEN,
-  'Content-Type': 'application/json',
-};
-
 function buildApp(env = testEnv(), scopedBusinessId = businessId) {
   return createApp({
     env,
     prisma,
     logger: createLogger({ service: 'api-it', env: 'local', version: 'test', level: 'silent' }),
     businessId: scopedBusinessId,
+    authOverrides: {
+      customerVerifier: new FakeTokenVerifier(),
+      adminVerifier: fakeAdminVerifier,
+      adminSession: fakeAdminSession,
+    },
   });
 }
 
@@ -106,40 +114,101 @@ beforeEach(async () => {
   businessId = main.id;
   otherBusinessId = other.id;
   app = buildApp();
+
+  // Real RBAC now gates every /v1/admin/* route: seed the full permission
+  // catalogue, a role that carries what these tests exercise (city/pincode
+  // management), and log in as an admin holding it — mirrors what an actual
+  // client does; there is no dev-token shortcut anymore (ADR-030 superseded).
+  await seedPermissions(prisma, PERMISSIONS);
+  const role = await seedRole(prisma, businessId, {
+    key: 'TEST_SERVICEABILITY_ADMIN',
+    permissionKeys: ['delivery:read', 'delivery:manage'],
+  });
+  const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+  const session = await loginAsAdmin(app, admin.firebaseUid);
+  adminHeaders = session.headers;
 });
 
-describe('admin authorization (PHASE 02 dev bypass)', () => {
-  it('rejects a request with no token', async () => {
+describe('admin authorization (real RBAC)', () => {
+  it('rejects a request with no session', async () => {
     const res = await app.request('/v1/admin/cities');
     expect(res.status).toBe(401);
   });
 
-  it('rejects a wrong token', async () => {
+  it('rejects an unknown/forged session cookie', async () => {
     const res = await app.request('/v1/admin/cities', {
-      headers: { 'X-Dev-Admin-Token': 'wrong-token-value-padding-1234' },
+      headers: { Cookie: '__Host-admin_session=not-a-real-session' },
     });
     expect(res.status).toBe(401);
   });
 
-  it('rejects EVERY request when no token is configured — closed, not open', async () => {
-    // The failure mode must never be "allow". If ADMIN_DEV_TOKEN is absent,
-    // admin routes reject rather than falling through (ADR-030).
-    const noToken = testEnv();
-    delete (noToken as { ADMIN_DEV_TOKEN?: string }).ADMIN_DEV_TOKEN;
+  it('rejects a session belonging to an admin with no permission on this route', async () => {
+    // A logged-in admin with zero roles authenticates fine (401 does not
+    // apply) but is forbidden from every permissioned route (403) — the
+    // authentication/authorization distinction docs/07 §7 insists on.
+    const bareAdmin = await seedAdminUser(prisma, businessId, {});
+    const session = await loginAsAdmin(app, bareAdmin.firebaseUid);
 
-    const res = await buildApp(noToken).request('/v1/admin/cities', { headers: adminHeaders });
-    expect(res.status).toBe(401);
-  });
-
-  it('refuses outright when APP_ENV is production', async () => {
-    // Belt and braces: loadServerEnv already refuses to boot with this set
-    // in production, and the middleware refuses at request time too.
-    const prod = buildApp(testEnv({ APP_ENV: 'production' }));
-    const res = await prod.request('/v1/admin/cities', { headers: adminHeaders });
-
+    const res = await app.request('/v1/admin/cities', { headers: session.headers });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('rejects a mutating request with a missing or wrong CSRF token', async () => {
+    // SameSite=Strict is not trusted alone — the double-submit token is
+    // checked independently (docs/23 §6).
+    const res = await app.request('/v1/admin/cities', {
+      method: 'POST',
+      headers: { Cookie: adminHeaders.Cookie ?? '', 'Content-Type': 'application/json' }, // no X-CSRF-Token
+      body: JSON.stringify({ name: 'No CSRF', slug: 'no-csrf', state: 'X' }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('CSRF_TOKEN_INVALID');
+  });
+
+  it('allows a super admin through with no explicit role permissions', async () => {
+    const superAdmin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const session = await loginAsAdmin(app, superAdmin.firebaseUid);
+
+    const res = await app.request('/v1/admin/cities', { headers: session.headers });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects even LOGGING IN as an admin from a different business context', async () => {
+    // Business isolation applies to the admin's OWN identity, not just the
+    // resources they touch (ADR-005). `app` is scoped to `businessId`; this
+    // admin only exists under `otherBusinessId`, so resolution fails closed
+    // at the earliest possible point — the login itself never issues a
+    // session, rather than issuing one that later 401s on every route.
+    const role = await seedRole(prisma, otherBusinessId, {
+      key: 'OTHER_BIZ_ADMIN',
+      permissionKeys: ['delivery:read'],
+    });
+    const foreignAdmin = await seedAdminUser(prisma, otherBusinessId, { roleIds: [role.id] });
+
+    const res = await app.request('/v1/admin/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: fakeToken({ uid: foreignAdmin.firebaseUid }) }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a suspended admin on the very next request', async () => {
+    const suspended = await seedAdminUser(prisma, businessId, {
+      roleIds: [(await seedRole(prisma, businessId, { key: 'SUSPENDED_ROLE', permissionKeys: ['delivery:read'] })).id],
+    });
+    const session = await loginAsAdmin(app, suspended.firebaseUid);
+
+    // Session cookie is still cryptographically valid; only OUR status flips.
+    await prisma.user.update({ where: { id: suspended.userId }, data: { status: 'SUSPENDED' } });
+
+    const res = await app.request('/v1/admin/cities', { headers: session.headers });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('ACCOUNT_SUSPENDED');
   });
 });
 

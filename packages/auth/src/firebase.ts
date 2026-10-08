@@ -34,6 +34,18 @@ export class TokenVerificationError extends Error {
   }
 }
 
+/**
+ * Distinct from `TokenVerificationError`: this is not a bad TOKEN, it is a
+ * missing or broken Firebase PROJECT credential (env misconfiguration).
+ * Middleware maps it to 503, not 401 — the caller did nothing wrong.
+ */
+export class FirebaseConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FirebaseConfigurationError';
+  }
+}
+
 function decodeServiceAccount(b64: string): Record<string, string> {
   try {
     return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) as Record<string, string>;
@@ -58,19 +70,24 @@ function getOrCreateApp(audience: FirebaseAudience, config: FirebaseProjectConfi
   }
 
   if (!config.serviceAccountB64) {
-    throw new Error(
+    throw new FirebaseConfigurationError(
       `Firebase ${audience} project requires a service account outside the emulator. ` +
         `Set FIREBASE_${audience.toUpperCase()}_SERVICE_ACCOUNT_B64.`,
     );
   }
 
-  const serviceAccount = decodeServiceAccount(config.serviceAccountB64);
+  let serviceAccount: Record<string, string>;
+  try {
+    serviceAccount = decodeServiceAccount(config.serviceAccountB64);
+  } catch (error) {
+    throw new FirebaseConfigurationError((error as Error).message);
+  }
 
   if (serviceAccount.project_id !== config.projectId) {
     // Catches the copy-paste error of pointing the admin verifier at the
     // customer project's credentials, which would silently collapse the
     // audience separation this design depends on.
-    throw new Error(
+    throw new FirebaseConfigurationError(
       `Firebase ${audience} service account belongs to project "${serviceAccount.project_id}" ` +
         `but the configured project is "${config.projectId}".`,
     );
@@ -90,13 +107,94 @@ function getOrCreateApp(audience: FirebaseAudience, config: FirebaseProjectConfi
 }
 
 export class FirebaseTokenVerifier {
-  private readonly auth: Auth;
+  private authInstance: Auth | undefined;
 
   constructor(
     readonly audience: FirebaseAudience,
     private readonly config: FirebaseProjectConfig,
-  ) {
-    this.auth = getAuth(getOrCreateApp(audience, config));
+  ) {}
+
+  /**
+   * Lazy on purpose: constructing this class happens at app-boot time for
+   * every deployed environment (`app.ts`), but a genuinely missing or
+   * misconfigured Firebase credential should not be able to crash the
+   * WHOLE API — health checks, public catalogue/serviceability endpoints
+   * and everything unrelated to auth must keep serving. Initialisation is
+   * therefore deferred to the first real use (`verify`,
+   * `createSessionCookie`, …), where a configuration problem surfaces as a
+   * clean `SERVICE_UNAVAILABLE`-shaped failure on the auth routes only,
+   * not a boot-time crash loop of the entire process.
+   */
+  private get auth(): Auth {
+    if (!this.authInstance) {
+      this.authInstance = getAuth(getOrCreateApp(this.audience, this.config));
+    }
+    return this.authInstance;
+  }
+
+  /**
+   * Create a Firebase session cookie from a fresh, short-lived ID token.
+   * Admin-project only in practice — the customer app never uses cookies
+   * (docs/07 §5.2) — but nothing here assumes the audience, so the type stays
+   * general.
+   */
+  async createSessionCookie(idToken: string, expiresInMs: number): Promise<string> {
+    return this.auth.createSessionCookie(idToken, { expiresIn: expiresInMs });
+  }
+
+  /**
+   * Verify a session cookie previously issued by `createSessionCookie`.
+   * `checkRevoked: true` so that revoking refresh tokens on deactivation
+   * (BR-SEC10) invalidates an already-issued cookie immediately rather than
+   * waiting for its `Max-Age` to lapse.
+   */
+  async verifySessionCookie(cookie: string): Promise<DecodedIdToken> {
+    try {
+      return await this.auth.verifySessionCookie(cookie, true);
+    } catch (error) {
+      // A misconfigured PROJECT, not a bad session — must not be relabelled
+      // as "invalid" (that would surface as 401, hiding a 503-shaped ops
+      // problem behind a customer-facing auth error).
+      if (error instanceof FirebaseConfigurationError) throw error;
+      const code = (error as { code?: string }).code ?? '';
+      if (code.includes('session-cookie-expired')) {
+        throw new TokenVerificationError('EXPIRED', 'Session has expired');
+      }
+      if (code.includes('session-cookie-revoked')) {
+        throw new TokenVerificationError('REVOKED', 'Session has been revoked');
+      }
+      throw new TokenVerificationError('INVALID', 'Session could not be verified');
+    }
+  }
+
+  /** Revokes every refresh token for this Firebase user (BR-SEC10). */
+  async revokeRefreshTokens(uid: string): Promise<void> {
+    await this.auth.revokeRefreshTokens(uid);
+  }
+
+  /**
+   * Create a staff account with a random password and no public sign-up path
+   * (docs/07 §5.1). Returns the new Firebase uid.
+   */
+  async createUser(params: { email: string; password: string; displayName?: string }): Promise<string> {
+    const user = await this.auth.createUser({
+      email: params.email,
+      password: params.password,
+      displayName: params.displayName,
+      emailVerified: false,
+    });
+    return user.uid;
+  }
+
+  /** Disables sign-in and revokes tokens in one call — used on deactivation. */
+  async disableUser(uid: string): Promise<void> {
+    await this.auth.updateUser(uid, { disabled: true });
+    await this.auth.revokeRefreshTokens(uid);
+  }
+
+  /** Password-reset link an invited admin uses to set their own password. */
+  async generatePasswordResetLink(email: string, continueUrl?: string): Promise<string> {
+    return this.auth.generatePasswordResetLink(email, continueUrl ? { url: continueUrl } : undefined);
   }
 
   /**
@@ -123,6 +221,7 @@ export class FirebaseTokenVerifier {
       return decoded;
     } catch (error) {
       if (error instanceof TokenVerificationError) throw error;
+      if (error instanceof FirebaseConfigurationError) throw error;
 
       const code = (error as { code?: string }).code ?? '';
 

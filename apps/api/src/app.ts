@@ -1,6 +1,19 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
 import { buildOpenApiDocument } from '@healthy-aahar/contracts';
-import { ServiceabilityAdminService, ServiceabilityService } from '@healthy-aahar/core';
+import {
+  AdminAuthService,
+  CustomerAuthService,
+  RbacService,
+  ServiceabilityAdminService,
+  ServiceabilityService,
+} from '@healthy-aahar/core';
+import {
+  FirebaseAdminSessionAdapter,
+  FirebaseVerifierAdapter,
+  PermissionCache,
+  type AdminSessionPort,
+  type TokenVerifierPort,
+} from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 import { Hono } from 'hono';
@@ -11,13 +24,24 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { InMemoryRateLimitStore, rateLimit } from './middleware/rate-limit.js';
 import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
-import { devAdminAuth } from './middleware/dev-admin-auth.js';
+import { adminAuth } from './middleware/admin-auth.js';
+import { csrfProtection } from './middleware/csrf.js';
+import { customerAuth } from './middleware/customer-auth.js';
+import { requirePermission } from './middleware/require-permission.js';
 import {
   PrismaCityRepository,
   PrismaPincodeRepository,
 } from './repositories/prisma-serviceability-admin-repository.js';
 import { PrismaServiceabilityRepository } from './repositories/prisma-serviceability-repository.js';
+import { PrismaAdminRepository } from './repositories/prisma-admin-repository.js';
+import { PrismaAuditLogRepository } from './repositories/prisma-audit-log-repository.js';
+import { PrismaRoleRepository } from './repositories/prisma-role-repository.js';
+import { PrismaUserRepository } from './repositories/prisma-user-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
+import { adminAuthRoutes } from './routes/admin/auth.js';
+import { adminUsersRoutes } from './routes/admin/admin-users.js';
+import { rolesRoutes } from './routes/admin/roles.js';
+import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { healthRoutes } from './routes/health.js';
 import { publicServiceabilityRoutes } from './routes/public/serviceability.js';
 import type { AppBindings } from './types.js';
@@ -27,6 +51,20 @@ export type CreateAppOptions = {
   prisma: PrismaClient;
   logger: Logger;
   businessId: string;
+  /**
+   * Test-only seam. Firebase project verification and session-cookie
+   * issuance cannot be exercised against a live project in an automated
+   * suite, so integration tests inject fakes implementing the same ports
+   * (`TokenVerifierPort` / `AdminSessionPort`) the real Firebase adapters
+   * implement. Left undefined, `createApp` builds the real Firebase-backed
+   * adapters — this is what `server.ts` (and therefore every deployed
+   * environment) always does.
+   */
+  authOverrides?: Partial<{
+    customerVerifier: TokenVerifierPort;
+    adminVerifier: TokenVerifierPort;
+    adminSession: AdminSessionPort;
+  }>;
 };
 
 /**
@@ -38,10 +76,42 @@ export type CreateAppOptions = {
  * client could call every endpoint (docs/30 §10).
  */
 export function createApp(options: CreateAppOptions): Hono<AppBindings> {
-  const { env, prisma, logger, businessId } = options;
+  const { env, prisma, logger, businessId, authOverrides } = options;
 
   // Fail the boot, not a request, if any route is under-declared (BR-SEC12).
   assertRegistryIsSound();
+
+  // ── Repositories (Prisma) ─────────────────────────────────────────────
+  const userRepo = new PrismaUserRepository(prisma);
+  const adminRepo = new PrismaAdminRepository(prisma);
+  const roleRepo = new PrismaRoleRepository(prisma);
+  const auditRepo = new PrismaAuditLogRepository(prisma);
+
+  // ── Firebase: two separate projects, one per audience (ADR-010) ───────
+  // See `authOverrides` on `CreateAppOptions` — tests inject fakes here.
+  const customerVerifier =
+    authOverrides?.customerVerifier ??
+    new FirebaseVerifierAdapter('customer', {
+      projectId: env.FIREBASE_CUSTOMER_PROJECT_ID,
+      serviceAccountB64: env.FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64,
+      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
+    });
+  const adminVerifier =
+    authOverrides?.adminVerifier ??
+    new FirebaseVerifierAdapter('admin', {
+      projectId: env.FIREBASE_ADMIN_PROJECT_ID,
+      serviceAccountB64: env.FIREBASE_ADMIN_SERVICE_ACCOUNT_B64,
+      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
+    });
+  const adminSession =
+    authOverrides?.adminSession ??
+    new FirebaseAdminSessionAdapter({
+      projectId: env.FIREBASE_ADMIN_PROJECT_ID,
+      serviceAccountB64: env.FIREBASE_ADMIN_SERVICE_ACCOUNT_B64,
+      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
+    });
+  const permissionCache = new PermissionCache();
+  void permissionCache; // Reserved for a future cached AdminRepository decorator; resolveActor already re-queries per request, which is correct but not yet cache-backed (see PHASE-03 report §"Known limitations").
 
   const services = {
     serviceability: new ServiceabilityService({
@@ -52,6 +122,9 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       cities: new PrismaCityRepository(prisma),
       pincodes: new PrismaPincodeRepository(prisma),
     }),
+    customerAuth: new CustomerAuthService(userRepo),
+    adminAuth: new AdminAuthService(adminRepo),
+    rbac: new RbacService(adminRepo, roleRepo, adminSession, auditRepo),
   };
 
   const app = new Hono<AppBindings>();
@@ -59,7 +132,14 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   // Dependencies are attached per request rather than imported as module
   // singletons, which is what lets tests run against an isolated database.
   app.use('*', async (c, next) => {
-    c.env = { ...c.env, env, prisma, services, businessId };
+    c.env = {
+      ...c.env,
+      env,
+      prisma,
+      services,
+      businessId,
+      auth: { customerVerifier, adminVerifier, adminSession, permissionCache },
+    };
     await next();
   });
 
@@ -91,8 +171,15 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
         'Idempotency-Key',
         'X-Request-Id',
         'X-Client',
+        'X-CSRF-Token',
       ],
-      exposeHeaders: ['X-Request-Id', 'X-RateLimit-Remaining', 'X-RateLimit-Reset', 'Retry-After'],
+      exposeHeaders: [
+        'X-Request-Id',
+        'X-RateLimit-Remaining',
+        'X-RateLimit-Reset',
+        'Retry-After',
+        'X-CSRF-Token',
+      ],
       credentials: true,
       maxAge: 86_400,
     }),
@@ -138,14 +225,34 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     }),
   );
 
-  // PHASE 02 development bypass. Refuses in production and refuses when no
-  // token is configured — the failure mode is closed, not open (ADR-030).
-  app.use('/v1/admin/*', devAdminAuth);
+  // ── Real authentication (PHASE 03) ─────────────────────────────────────
+  // Every /v1/admin/* request resolves a Firebase session cookie to a real
+  // Actor with real permissions (docs/07 §5, §6). requirePermission then
+  // enforces the permission each route declared in the registry — the ONLY
+  // enforcement layer that is security (docs/08 §5.1). csrfProtection guards
+  // every mutating admin request as defence in depth alongside
+  // SameSite=Strict (docs/23 §6).
+  //
+  // This REPLACES the PHASE 02 devAdminAuth bypass and ADMIN_DEV_TOKEN
+  // entirely — neither is wired into the app anymore (ADR-030 superseded).
+  app.use('/v1/admin/*', adminAuth);
+  app.use('/v1/admin/*', csrfProtection);
+  app.use('/v1/admin/*', requirePermission);
+
+  // Every /v1/me/* request resolves a Firebase bearer token to a real
+  // CUSTOMER actor (docs/07 §4, §6). No /v1/me/* routes exist yet (they
+  // arrive with the catalogue/cart/order phases) — wired proactively so a
+  // future route only has to be added to this router, never to auth.
+  app.use('/v1/me/*', customerAuth);
 
   // ── Routes ──────────────────────────────────────────────────────────────
   app.route('/v1', healthRoutes());
   app.route('/v1/public', publicServiceabilityRoutes());
+  app.route('/v1/auth', customerAuthRoutes());
+  app.route('/v1/admin/auth', adminAuthRoutes());
   app.route('/v1/admin', adminServiceabilityRoutes());
+  app.route('/v1/admin/admin-users', adminUsersRoutes());
+  app.route('/v1/admin', rolesRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.
@@ -165,9 +272,9 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
    * Route manifest.
    *
    * Published deliberately: it documents the audience and required permission
-   * of every endpoint, which is the contract PHASE 03's authorization matrix
-   * test is generated from (docs/24 §3). Nothing sensitive is exposed — it is
-   * the same information as the OpenAPI document.
+   * of every endpoint, which is the contract the authorization matrix test is
+   * generated from (docs/24 §3). Nothing sensitive is exposed — it is the
+   * same information as the OpenAPI document.
    */
   app.get('/v1/routes', (c) =>
     c.json({
@@ -176,6 +283,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
         path: r.path,
         audience: r.audience,
         permission: r.permission ?? null,
+        auth_route: r.authRoute ?? false,
         phase: r.phase,
         summary: r.summary,
       })),

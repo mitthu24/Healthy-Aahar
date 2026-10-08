@@ -84,6 +84,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@healthy-aahar/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@healthy-aahar/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -380,6 +383,9 @@ importers:
       '@healthy-aahar/config':
         specifier: workspace:*
         version: link:../config
+      '@healthy-aahar/core':
+        specifier: workspace:*
+        version: link:../core
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)

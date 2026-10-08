@@ -21,6 +21,15 @@ export type RouteDescriptor = {
   audience: Audience;
   /** Required for `admin`; forbidden for every other audience. */
   permission?: string;
+  /**
+   * True for the small set of session-bootstrap endpoints (login, logout,
+   * "who am I") whose entire purpose is establishing identity — a permission
+   * requirement is meaningless before an actor exists. Exempted from the
+   * mandatory-permission check and from `requirePermission` enforcement, but
+   * still requires a verified token/session via the audience's auth
+   * middleware (docs/07 §6).
+   */
+  authRoute?: boolean;
   summary: string;
   /** Phase that introduces the real implementation; informational. */
   phase: string;
@@ -79,8 +88,16 @@ export function assertRegistryIsSound(routes: readonly RouteDescriptor[] = regis
     }
     seen.add(id);
 
-    if (route.audience === 'admin' && !route.permission) {
+    if (route.audience === 'admin' && !route.permission && !route.authRoute) {
       problems.push(`${id} is an admin route but declares no permission`);
+    }
+
+    if (route.authRoute && route.permission) {
+      problems.push(`${id} is an authRoute and must not also declare a permission`);
+    }
+
+    if (route.authRoute && route.audience !== 'admin' && route.audience !== 'customer') {
+      problems.push(`${id} is an authRoute but its audience is "${route.audience}" (expected admin or customer)`);
     }
 
     if (route.audience !== 'admin' && route.permission) {
@@ -114,7 +131,16 @@ export function assertRegistryIsSound(routes: readonly RouteDescriptor[] = regis
       webhook: '/v1/webhooks/',
     };
 
-    const isMetaRoute = route.path.startsWith('/v1/health') || route.path === '/v1/openapi.json';
+    // Session-bootstrap endpoints live at /v1/auth/* (customer) and
+    // /v1/admin/auth/* (admin) rather than under their audience's normal
+    // resource prefix — "where do I get a session" precedes "what can I do
+    // once I have one" (docs/07 §4.2, §5.1).
+    const isMetaRoute =
+      route.path.startsWith('/v1/health') ||
+      route.path === '/v1/openapi.json' ||
+      route.path === '/v1/routes' ||
+      route.path.startsWith('/v1/auth/') ||
+      route.path.startsWith('/v1/admin/auth/');
 
     if (!isMetaRoute && !route.path.startsWith(expectedPrefix[route.audience])) {
       problems.push(

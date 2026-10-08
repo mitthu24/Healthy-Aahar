@@ -4,6 +4,7 @@ import { createLogger } from '@healthy-aahar/observability';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
+import { FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
 
 const BUSINESS_ID = '0193aaaa-0000-7000-8000-00000000000b';
 
@@ -41,6 +42,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     R2_UPLOAD_MAX_BYTES: 5_242_880,
     R2_PRESIGN_TTL_SECONDS: 300,
     INTERNAL_SERVICE_TOKEN: 'test-internal-token-value',
+    ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
     DEFAULT_TIMEZONE: 'Asia/Kolkata',
     DEFAULT_CURRENCY: 'INR',
     BOOKING_HORIZON_DAYS: 7,
@@ -129,6 +131,11 @@ function buildApp(env = testEnv()) {
     prisma: fakePrisma(),
     logger: createLogger({ service: 'api-test', env: 'local', version: 'test', level: 'silent' }),
     businessId: BUSINESS_ID,
+    // No test here exercises auth, but createApp always constructs its
+    // verifiers at boot (fail-fast is deliberate — see docs/23 §"fail the
+    // boot, not a request"), so a fake stands in rather than a real
+    // Firebase project this suite has no credentials for.
+    authOverrides: { customerVerifier: new FakeTokenVerifier(), adminVerifier: new FakeTokenVerifier(), adminSession: new FakeAdminSession() },
   });
 }
 
@@ -287,14 +294,62 @@ describe('GET /v1/routes', () => {
   it('publishes the route manifest with audiences', async () => {
     const res = await buildApp().request('/v1/routes');
     const body = (await res.json()) as {
-      data: Array<{ path: string; audience: string; permission: string | null }>;
+      data: Array<{ path: string; audience: string; permission: string | null; auth_route: boolean }>;
     };
 
     expect(body.data.length).toBeGreaterThan(0);
     for (const route of body.data) {
-      if (route.audience === 'admin') {
+      // Every admin route declares a permission UNLESS it is an authRoute —
+      // a login/logout/me endpoint, where a permission requirement would be
+      // meaningless before an actor exists (route-registry.ts).
+      if (route.audience === 'admin' && !route.auth_route) {
         expect(route.permission).toBeTruthy();
       }
     }
+  });
+});
+
+describe('graceful degradation when Firebase is not configured', () => {
+  // A staging deploy can legitimately have no real Firebase project yet
+  // (the two-project setup is provisioned outside this codebase). Firebase
+  // initialisation is deliberately LAZY (packages/auth/src/firebase.ts) so
+  // this state degrades the auth ROUTES only — it must never crash-loop
+  // the whole API, which would take health checks and every public/
+  // catalogue endpoint down with it.
+  function unconfiguredApp() {
+    return createApp({
+      env: testEnv(), // no authOverrides — builds the REAL Firebase adapters
+      prisma: fakePrisma(),
+      logger: createLogger({ service: 'api-test', env: 'local', version: 'test', level: 'silent' }),
+      businessId: BUSINESS_ID,
+    });
+  }
+
+  it('still boots and serves health checks and public routes', async () => {
+    const app = unconfiguredApp();
+    expect((await app.request('/v1/health')).status).toBe(200);
+    expect((await app.request('/v1/public/serviceability?pincode=201301')).status).toBe(200);
+  });
+
+  it('degrades the customer session route to 503, not a crash', async () => {
+    const res = await unconfiguredApp().request('/v1/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: 'irrelevant' }),
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
+  });
+
+  it('degrades the admin session route to 503, not a crash', async () => {
+    const res = await unconfiguredApp().request('/v1/admin/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: 'irrelevant' }),
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
   });
 });

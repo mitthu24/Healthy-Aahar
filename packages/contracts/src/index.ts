@@ -2,4 +2,5 @@ export * from './common.js';
 export * from './errors.js';
 export * from './health.js';
 export * from './serviceability.js';
+export * from './auth.js';
 export * from './openapi.js';

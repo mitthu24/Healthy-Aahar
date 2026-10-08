@@ -14,6 +14,7 @@
     "clean": "rm -rf .turbo dist coverage"
   },
   "dependencies": {
+    "@healthy-aahar/auth": "workspace:*",
     "@healthy-aahar/config": "workspace:*",
     "@healthy-aahar/contracts": "workspace:*",
     "@healthy-aahar/core": "workspace:*",

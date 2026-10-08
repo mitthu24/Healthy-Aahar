@@ -1,0 +1,291 @@
+import type { ServerEnv } from '@healthy-aahar/config/env/server';
+import { PERMISSIONS } from '@healthy-aahar/core';
+import type { PrismaClient } from '@healthy-aahar/db';
+import {
+  createTestClient,
+  seedAdminUser,
+  seedBusiness,
+  seedPermissions,
+  seedRole,
+  setupTestDatabase,
+  truncateAll,
+} from '@healthy-aahar/db/testing';
+import { createLogger } from '@healthy-aahar/observability';
+import type { Hono } from 'hono';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { createApp } from './app.js';
+import { FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
+import { loginAsAdmin } from './test-support/admin-session.js';
+import type { AppBindings } from './types.js';
+
+/**
+ * PHASE 03 — RBAC integration tests (docs/08 §6). Exercises the real
+ * `/v1/admin/admin-users` and `/v1/admin/roles` routes end to end: invite,
+ * role assignment, the BR-SEC6/7/8/9 invariants, and the permission
+ * enforcement middleware itself (the authorization matrix).
+ */
+
+let prisma: PrismaClient;
+let app: Hono<AppBindings>;
+let businessId: string;
+
+const adminVerifier = new FakeTokenVerifier();
+const adminSession = new FakeAdminSession();
+
+function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
+  return {
+    APP_ENV: 'local',
+    NODE_ENV: 'test',
+    PORT: 4000,
+    LOG_LEVEL: 'error',
+    APP_VERSION: 'test',
+    DATABASE_URL: process.env.DATABASE_URL ?? '',
+    DATABASE_POOL_SIZE: 5,
+    DATABASE_STATEMENT_TIMEOUT_MS: 10_000,
+    ALLOWED_ORIGINS: ['http://localhost:3002'],
+    FIREBASE_CUSTOMER_PROJECT_ID: 'customer-test',
+    FIREBASE_ADMIN_PROJECT_ID: 'admin-test',
+    ADMIN_SESSION_MAX_AGE_SECONDS: 43_200,
+    ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
+    ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
+    BREVO_SENDER_NAME: 'Healthy Aahar',
+    NOTIFICATIONS_ENABLED: false,
+    R2_BUCKET_NAME: 'test',
+    R2_UPLOAD_MAX_BYTES: 5_242_880,
+    R2_PRESIGN_TTL_SECONDS: 300,
+    INTERNAL_SERVICE_TOKEN: 'test-internal-token-value',
+    DEFAULT_TIMEZONE: 'Asia/Kolkata',
+    DEFAULT_CURRENCY: 'INR',
+    BOOKING_HORIZON_DAYS: 7,
+    SUBSCRIPTION_GENERATION_HORIZON_DAYS: 14,
+    SUBSCRIPTION_MATERIALISE_HORIZON_HOURS: 36,
+    RATE_LIMIT_ENABLED: false,
+    RATE_LIMIT_READ_PER_MIN: 300,
+    RATE_LIMIT_WRITE_PER_MIN: 60,
+    RATE_LIMIT_ORDER_PER_MIN: 10,
+    SENTRY_TRACES_SAMPLE_RATE: 0,
+    WORKER_ENABLED: false,
+    API_BASE_URL: 'http://localhost:4000',
+    OUTBOX_DISPATCH_INTERVAL_MS: 15_000,
+    OUTBOX_MAX_ATTEMPTS: 5,
+    FEATURE_COUPONS: false,
+    FEATURE_REVIEWS: false,
+    FEATURE_ONLINE_PAYMENT: false,
+    FEATURE_WHATSAPP: false,
+    ...overrides,
+  } as ServerEnv;
+}
+
+function buildApp() {
+  return createApp({
+    env: testEnv(),
+    prisma,
+    logger: createLogger({ service: 'rbac-it', env: 'local', version: 'test', level: 'silent' }),
+    businessId,
+    authOverrides: { customerVerifier: new FakeTokenVerifier(), adminVerifier, adminSession },
+  });
+}
+
+beforeAll(async () => {
+  const url = await setupTestDatabase();
+  process.env.DATABASE_URL_TEST = url;
+  prisma = createTestClient(url);
+}, 180_000);
+
+afterAll(async () => {
+  await prisma?.$disconnect();
+});
+
+let superAdminHeaders: Record<string, string>;
+let superAdminId: string;
+
+beforeEach(async () => {
+  await truncateAll(prisma);
+  const business = await seedBusiness(prisma, { slug: 'rbac-it', name: 'Healthy Aahar' });
+  businessId = business.id;
+  await seedPermissions(prisma, PERMISSIONS);
+  app = buildApp();
+
+  const superAdmin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true, fullName: 'Root Admin' });
+  superAdminId = superAdmin.id;
+  superAdminHeaders = (await loginAsAdmin(app, superAdmin.firebaseUid)).headers;
+});
+
+describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
+  it('creates a Firebase admin user, assigns roles, and audits the invite', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'INVITE_TEST_ROLE', permissionKeys: ['catalog:read'] });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'newstaff@example.test',
+        full_name: 'New Staff',
+        role_ids: [role.id],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; roles: string[] };
+    expect(body.roles).toContain('INVITE_TEST_ROLE');
+
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'admin_user.invited', resourceId: body.id } });
+    expect(audit).not.toBeNull();
+
+    // The invited admin can now log in — proves the Firebase user + DB rows
+    // are wired together correctly, not just independently created.
+    const invited = await prisma.adminUser.findUniqueOrThrow({
+      where: { id: body.id },
+      include: { user: true },
+    });
+    const session = await loginAsAdmin(app, invited.user.firebaseUid);
+    expect(session.headers.Cookie).toBeTruthy();
+  });
+
+  it('BR-SEC7 — a non-Super-Admin cannot invite a Super Admin', async () => {
+    const plainRole = await seedRole(prisma, businessId, { key: 'PLAIN_ROLE', permissionKeys: ['admin_users:create'] });
+    const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
+    const plainHeaders = (await loginAsAdmin(app, plainAdmin.firebaseUid)).headers;
+
+    const superRole = await seedRole(prisma, businessId, { key: 'SUPER_ADMIN', permissionKeys: [...PERMISSIONS.map((p) => p.key)] });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: plainHeaders,
+      body: JSON.stringify({ email: 'wannabe@example.test', full_name: 'Wannabe', role_ids: [superRole.id] }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('BR-SEC7 — a non-Super-Admin cannot grant roles:manage', async () => {
+    const plainRole = await seedRole(prisma, businessId, { key: 'PLAIN_ROLE_2', permissionKeys: ['admin_users:create'] });
+    const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
+    const plainHeaders = (await loginAsAdmin(app, plainAdmin.firebaseUid)).headers;
+
+    const managerRole = await seedRole(prisma, businessId, { key: 'ROLE_MANAGER_ROLE', permissionKeys: ['roles:manage'] });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: plainHeaders,
+      body: JSON.stringify({ email: 'poweruser@example.test', full_name: 'Power User', role_ids: [managerRole.id] }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('changing roles (docs/08 §6)', () => {
+  it('BR-SEC8 — an admin cannot modify their own roles', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'SELF_ROLE', permissionKeys: ['admin_users:update'] });
+
+    const res = await app.request(`/v1/admin/admin-users/${superAdminId}/roles`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ role_ids: [role.id] }),
+    });
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('CANNOT_MODIFY_OWN_ROLES');
+  });
+
+  it('BR-SEC6 — demoting the last active Super Admin is blocked', async () => {
+    // Demoting yourself would ALSO be blocked by BR-SEC8 (self-modification),
+    // which would prove nothing about BR-SEC6 specifically. To isolate the
+    // invariant, a second super admin is created, the original is stripped
+    // of super-admin status directly (bypassing the API, as a fixture would),
+    // and a THIRD, unrelated actor performs the demotion of the now-only
+    // Super Admin — so the 409 below can only be BR-SEC6, not BR-SEC8.
+    const secondSuper = await seedAdminUser(prisma, businessId, { isSuperAdmin: true, fullName: 'Second Super' });
+    await prisma.adminUser.update({ where: { id: superAdminId }, data: { isSuperAdmin: false } });
+    await prisma.adminUserRole.deleteMany({ where: { adminUserId: superAdminId } });
+
+    const opsRole = await seedRole(prisma, businessId, { key: 'OPS_ACTOR_ROLE', permissionKeys: ['admin_users:update'] });
+    const opsActor = await seedAdminUser(prisma, businessId, { roleIds: [opsRole.id] });
+    const opsHeaders = (await loginAsAdmin(app, opsActor.firebaseUid)).headers;
+
+    const plainRole = await seedRole(prisma, businessId, { key: 'DEMOTE_TARGET_ROLE_2', permissionKeys: ['catalog:read'] });
+
+    const res = await app.request(`/v1/admin/admin-users/${secondSuper.id}/roles`, {
+      method: 'POST',
+      headers: opsHeaders,
+      body: JSON.stringify({ role_ids: [plainRole.id] }),
+    });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('LAST_SUPER_ADMIN');
+  });
+});
+
+describe('deactivation (BR-SEC10)', () => {
+  it('revokes the Firebase session immediately and the admin can no longer authenticate', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'TO_DEACTIVATE_ROLE', permissionKeys: ['catalog:read'] });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const targetSession = await loginAsAdmin(app, target.firebaseUid);
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/deactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(res.status).toBe(200);
+
+    // The existing session cookie must stop working immediately.
+    const after = await app.request('/v1/admin/auth/me', { headers: targetSession.headers });
+    expect(after.status).toBe(401);
+    expect(adminSession.disabled.has(target.firebaseUid)).toBe(true);
+  });
+
+  it('BR-SEC6 — cannot deactivate the last active Super Admin', async () => {
+    const res = await app.request(`/v1/admin/admin-users/${superAdminId}/deactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('roles & permission catalogue', () => {
+  it('rejects creating a role with an unknown permission key', async () => {
+    const res = await app.request('/v1/admin/roles', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ key: 'BOGUS_ROLE', name: 'Bogus', permission_keys: ['not_a_real:permission'] }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('UNKNOWN_PERMISSION');
+  });
+
+  it('GET /v1/admin/permissions returns the full code-defined catalogue', async () => {
+    const res = await app.request('/v1/admin/permissions', { headers: superAdminHeaders });
+    const body = (await res.json()) as { data: Array<{ key: string }> };
+    expect(body.data.length).toBe(PERMISSIONS.length);
+    expect(body.data.map((p) => p.key)).toContain('orders:cancel');
+  });
+});
+
+describe('authorization matrix (docs/08 §5.1 — the only enforcement that is security)', () => {
+  it('an admin holding an UNRELATED permission is forbidden — deny by default, not "any role passes"', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'MATRIX_UNRELATED',
+      permissionKeys: ['notifications:send'],
+    });
+    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const headers = (await loginAsAdmin(app, admin.firebaseUid)).headers;
+
+    const res = await app.request('/v1/admin/cities', { headers });
+    expect(res.status).toBe(403);
+  });
+
+  it('granting the exact permission unblocks the exact route', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'READ_ONLY_DELIVERY', permissionKeys: ['delivery:read'] });
+    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const headers = (await loginAsAdmin(app, admin.firebaseUid)).headers;
+
+    const res = await app.request('/v1/admin/cities', { headers });
+    expect(res.status).toBe(200);
+  });
+});

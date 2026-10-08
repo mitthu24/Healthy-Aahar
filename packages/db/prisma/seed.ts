@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SYSTEM_ROLES } from '@healthy-aahar/core';
 import { PrismaClient, ServiceabilityStatus } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -216,6 +217,57 @@ async function main(): Promise<void> {
       });
     }
     log(`settings=${data.settings.length}`);
+
+    // ── RBAC: seven system roles (docs/08 §3) ───────────────────────────
+    //
+    // Permissions are CODE and were seeded by migration
+    // (20260921060000_phase03_seed_permissions); roles are DATA, seeded here
+    // like everything else business-scoped. `isSystem: true` on create only —
+    // BR-SEC9 forbids renaming or deleting a system role's key, but an owner
+    // may still adjust a role's permission set from the admin panel later, so
+    // we do NOT overwrite `permissions` on re-run (mirrors the city/pincode
+    // `status` rule above: the seed provides the starting point, not a
+    // standing override).
+    const allPermissions = await prisma.permission.findMany({ select: { id: true, key: true } });
+    const permissionIdByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
+
+    let roleCount = 0;
+    for (const roleSeed of SYSTEM_ROLES) {
+      const existing = await prisma.role.findUnique({
+        where: { businessId_key: { businessId: business.id, key: roleSeed.key } },
+      });
+
+      if (existing) {
+        roleCount += 1;
+        continue;
+      }
+
+      const permissionIds = roleSeed.permissions
+        .map((key) => permissionIdByKey.get(key))
+        .filter((id): id is string => Boolean(id));
+
+      if (permissionIds.length !== roleSeed.permissions.length) {
+        const missing = roleSeed.permissions.filter((key) => !permissionIdByKey.has(key));
+        throw new Error(
+          `Role "${roleSeed.key}" references unknown permission key(s): ${missing.join(', ')}. ` +
+            'Has the permissions migration run?',
+        );
+      }
+
+      await prisma.role.create({
+        data: {
+          id: uuidv7(),
+          businessId: business.id,
+          key: roleSeed.key,
+          name: roleSeed.name,
+          description: roleSeed.description,
+          isSystem: true,
+          permissions: { create: permissionIds.map((permissionId) => ({ permissionId })) },
+        },
+      });
+      roleCount += 1;
+    }
+    log(`roles=${roleCount}`);
 
     log('done');
   } finally {

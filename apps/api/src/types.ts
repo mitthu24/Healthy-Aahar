@@ -1,14 +1,20 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
-import type { ServiceabilityAdminService, ServiceabilityService } from '@healthy-aahar/core';
+import type {
+  AdminAuthService,
+  CustomerAuthService,
+  RbacService,
+  ServiceabilityAdminService,
+  ServiceabilityService,
+} from '@healthy-aahar/core';
+import type { AdminSessionPort, PermissionCache, TokenVerifierPort } from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 
 /**
  * Request-scoped context.
  *
- * `actor` is populated by the auth middleware in PHASE 03. It is declared now
- * so route handlers are written against it from the start and never reach for
- * headers or tokens themselves (docs/07 §6).
+ * `actor` is populated by the auth middleware (docs/07 §6). Handlers receive
+ * it; they never read headers or tokens themselves.
  */
 export type Actor =
   | { kind: 'ANONYMOUS' }
@@ -25,6 +31,16 @@ export type Actor =
 export type AppServices = {
   serviceability: ServiceabilityService;
   serviceabilityAdmin: ServiceabilityAdminService;
+  customerAuth: CustomerAuthService;
+  adminAuth: AdminAuthService;
+  rbac: RbacService;
+};
+
+export type AppAuth = {
+  customerVerifier: TokenVerifierPort;
+  adminVerifier: TokenVerifierPort;
+  adminSession: AdminSessionPort;
+  permissionCache: PermissionCache;
 };
 
 export type AppBindings = {
@@ -38,6 +54,7 @@ export type AppBindings = {
     env: ServerEnv;
     prisma: PrismaClient;
     services: AppServices;
+    auth: AppAuth;
     /**
      * The active business. Resolved once at boot from the single seeded row.
      * Carried in context rather than looked up per request so that every query
