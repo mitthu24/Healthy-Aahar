@@ -3,12 +3,8 @@ import { DomainError } from '../domain/errors.js';
 import { isKnownPermission } from '../domain/permissions.js';
 import type { AdminRepository, AdminUserRow, RoleRepository, RoleRow } from '../ports/admin-repository.js';
 import type { AuditLogRepository } from '../ports/audit-log-repository.js';
-import type { PasswordResetRepository } from '../ports/password-reset-repository.js';
 import type { SessionRepository } from '../ports/session-repository.js';
-import type { SessionTokenHasher } from '../ports/session-token-hasher.js';
-
-/** How long an invited admin has to set their password before the link expires. */
-const PASSWORD_SETUP_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+import type { PasswordResetService } from './password-reset-service.js';
 
 /**
  * RBAC administration: invite/deactivate staff, assign roles, manage roles
@@ -17,19 +13,21 @@ const PASSWORD_SETUP_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
  *
  * PHASE 03 (email/password): inviting an admin no longer calls out to
  * Firebase — it creates the `users` row directly (no password yet) and
- * issues a password-setup token through the same mechanism a "forgot
- * password" flow would use (`PasswordResetRepository`). Deactivating an
- * admin revokes every DB-backed session for that user instead of disabling
- * a Firebase account.
+ * issues a password-setup token through `PasswordResetService` (Fix #2 —
+ * the single authorized issuance path; see that class's doc comment).
+ * Deactivating an admin revokes every DB-backed session for that user
+ * instead of disabling a Firebase account. `resetAdminPassword` (Fix #2)
+ * is the authorized workflow for an EXISTING admin who needs a new
+ * password-setup token — invite cannot be reused for this (it always
+ * creates a new user row, which collides on the existing one's email).
  */
 export class RbacService {
   constructor(
     /** Exposed read-only for simple list/find routes that need no invariant checks. */
     readonly admins: AdminRepository,
     readonly roles: RoleRepository,
-    private readonly passwordResets: PasswordResetRepository,
+    private readonly passwordReset: PasswordResetService,
     private readonly sessions: SessionRepository,
-    private readonly tokenHasher: SessionTokenHasher,
     private readonly audit: AuditLogRepository,
   ) {}
 
@@ -49,7 +47,7 @@ export class RbacService {
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.invitedByIsSuperAdmin);
 
-    const admin = await this.admins.invite(scope, {
+    const result = await this.admins.invite(scope, {
       email: params.email,
       fullName: params.fullName,
       designation: params.designation,
@@ -57,11 +55,20 @@ export class RbacService {
       invitedByUserId: params.invitedByUserId,
     });
 
-    const passwordResetLink = await this.issuePasswordSetupLink(
-      admin.userId,
-      'SETUP',
-      params.passwordResetContinueUrl,
-    );
+    // Fix #3: a duplicate (email, user_type) is a real, reachable user
+    // error (re-inviting someone, or inviting an email that is already an
+    // admin) — it must map to the established 409, never fall through to a
+    // raw, unhandled 500.
+    if (!result.ok) {
+      throw new DomainError('ADMIN_ALREADY_INVITED', 'An admin account with this email already exists.');
+    }
+    const admin = result.admin;
+
+    const passwordResetLink = await this.passwordReset.issueToken({
+      userId: admin.userId,
+      purpose: 'SETUP',
+      continueUrl: params.passwordResetContinueUrl,
+    });
 
     await this.audit.write(scope, {
       actorUserId: params.invitedByUserId,
@@ -73,6 +80,41 @@ export class RbacService {
     });
 
     return { admin, passwordResetLink };
+  }
+
+  /**
+   * Fix #2 — the authorized workflow for an EXISTING admin (already has a
+   * `users` + `admin_users` row) to obtain a new password-setup token:
+   * typically because they never completed setup, or forgot their
+   * password. Gated by `admin_users:update` at the route layer — the same
+   * permission that already gates changing another admin's roles, which is
+   * comparably sensitive (it does not reveal or set a password itself,
+   * only mints a token someone must still redeem).
+   */
+  async resetAdminPassword(
+    scope: BusinessScope,
+    params: { targetAdminUserId: string; actorUserId: string; passwordResetContinueUrl?: string },
+  ): Promise<{ passwordResetLink: string }> {
+    const target = await this.admins.findById(scope, params.targetAdminUserId);
+    if (!target || target.deletedAt) {
+      throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    }
+
+    const passwordResetLink = await this.passwordReset.issueToken({
+      userId: target.userId,
+      purpose: 'RESET',
+      continueUrl: params.passwordResetContinueUrl,
+    });
+
+    await this.audit.write(scope, {
+      actorUserId: params.actorUserId,
+      actorType: 'ADMIN',
+      action: 'admin_user.password_reset_issued',
+      resourceType: 'admin_user',
+      resourceId: target.id,
+    });
+
+    return { passwordResetLink };
   }
 
   async setRoles(
@@ -200,26 +242,6 @@ export class RbacService {
     });
 
     return updated;
-  }
-
-  private async issuePasswordSetupLink(
-    userId: string,
-    purpose: 'SETUP' | 'RESET',
-    continueUrl: string | undefined,
-  ): Promise<string> {
-    const rawToken = this.tokenHasher.generate();
-    await this.passwordResets.create({
-      userId,
-      tokenHash: this.tokenHasher.hash(rawToken),
-      purpose,
-      expiresAt: new Date(Date.now() + PASSWORD_SETUP_TOKEN_TTL_MS),
-    });
-    // No email is sent here (NOTIFICATIONS_ENABLED / Brevo wiring is out of
-    // this phase's scope) — the caller (the admin console, or an ops
-    // process today) is responsible for delivering this link. Returning it
-    // in the API response is the same contract the Firebase-era
-    // `generatePasswordResetLink` had.
-    return continueUrl ? `${continueUrl}?token=${rawToken}` : rawToken;
   }
 
   private assertMayGrant(roles: RoleRow[], actorIsSuperAdmin: boolean): void {

@@ -96,6 +96,16 @@ export class AdminAuthService {
     if (!user || user.status !== 'ACTIVE') {
       throw new DomainError('ACCOUNT_SUSPENDED', 'This admin account is suspended or deactivated.');
     }
+    // Fix #4, symmetric case: a customer's session token presented as the
+    // admin cookie resolves to SOME `users` row (the customer's), which is
+    // ACTIVE — so without this check it would proceed to the admin_users
+    // lookup below. That lookup already fails closed today (a customer
+    // never has an `admin_users` row), but this makes the audience check
+    // explicit rather than an accident of a different table's absence, and
+    // keeps both directions of this boundary checked the same way.
+    if (user.userType !== 'ADMIN') {
+      throw new DomainError('UNAUTHENTICATED', 'No admin account exists for this identity.');
+    }
 
     const found = await this.admins.findByUserId(scope, userId);
     if (!found || found.admin.deletedAt) {

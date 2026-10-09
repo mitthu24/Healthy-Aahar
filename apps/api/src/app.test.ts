@@ -35,6 +35,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
     CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
     LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
     R2_BUCKET_NAME: 'test',
@@ -300,6 +301,26 @@ describe('GET /v1/routes', () => {
         expect(route.permission).toBeTruthy();
       }
     }
+  });
+});
+
+describe('OpenAPI document (Fix #5 — contract accuracy)', () => {
+  it('POST /v1/auth/login never documents a 403 it cannot actually return', async () => {
+    // The implementation deliberately collapses a suspended customer
+    // account into the generic 401 INVALID_CREDENTIALS (no enumeration,
+    // Step 5) — this route must not advertise a 403 ACCOUNT_SUSPENDED
+    // response it will never produce. (GET /v1/auth/me legitimately still
+    // declares 403 — a session that WAS valid at login can belong to an
+    // account suspended since — this test is scoped to /login only.)
+    const res = await buildApp().request('/v1/openapi.json');
+    const doc = (await res.json()) as {
+      paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+    };
+
+    const responses = doc.paths['/v1/auth/login']?.post?.responses;
+    expect(responses).toBeDefined();
+    expect(Object.keys(responses!)).not.toContain('403');
+    expect(Object.keys(responses!)).toEqual(expect.arrayContaining(['200', '401']));
   });
 });
 

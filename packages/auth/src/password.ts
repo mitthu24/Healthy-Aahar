@@ -1,11 +1,4 @@
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
-
-const scrypt = promisify(scryptCallback) as (
-  password: string | Buffer,
-  salt: string | Buffer,
-  keylen: number,
-) => Promise<Buffer>;
 
 /**
  * Password hashing (PHASE 03, docs/07).
@@ -23,9 +16,11 @@ const scrypt = promisify(scryptCallback) as (
  * implemented yet because PHASE 03 ships with one parameter set only).
  */
 
-const SCRYPT_N = 16384; // CPU/memory cost (2^14) — OWASP's current minimum for interactive logins.
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
+// Exported so tests can assert the stored hash's label actually matches what
+// was used to compute it (Fix #7) without hardcoding the values twice.
+export const SCRYPT_N = 16384; // CPU/memory cost (2^14) — OWASP's current minimum for interactive logins.
+export const SCRYPT_R = 8;
+export const SCRYPT_P = 1;
 const KEY_LENGTH = 64;
 const SALT_BYTES = 16;
 
@@ -36,9 +31,40 @@ export class PasswordHashError extends Error {
   }
 }
 
+/**
+ * Both `hashPassword` and `verifyPassword` route through this single
+ * function with EXPLICIT `{N, r, p}` — never Node's library defaults.
+ *
+ * `hashPassword` used to call the promisified `scrypt()` with no options,
+ * relying on Node's defaults (16384/8/1) happening to equal the
+ * `SCRYPT_N`/`R`/`P` constants below. That was a latent trap: the stored
+ * hash's label comes from these constants, but the actual computation came
+ * from Node's own defaults — tuning the constants upward (which the format
+ * is explicitly designed to support) would silently keep hashing at the
+ * OLD cost while labelling new hashes with the NEW one, so every
+ * subsequent login would fail to verify until someone noticed. Passing the
+ * constants explicitly here makes the label and the computation the same
+ * value by construction, not by coincidence.
+ */
+function scryptWithParams(
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  N: number,
+  r: number,
+  p: number,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(password, salt, keylen, { N, r, p }, (err, derivedKey) => {
+      if (err) reject(err);
+      else resolve(derivedKey);
+    });
+  });
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
-  const derived = await scrypt(password.normalize('NFKC'), salt, KEY_LENGTH);
+  const derived = await scryptWithParams(password.normalize('NFKC'), salt, KEY_LENGTH, SCRYPT_N, SCRYPT_R, SCRYPT_P);
   return `scrypt:${SCRYPT_N}:${SCRYPT_R}:${SCRYPT_P}:${salt.toString('hex')}:${derived.toString('hex')}`;
 }
 
@@ -83,22 +109,6 @@ export async function verifyPassword(password: string, storedHash: string): Prom
 
   if (derived.length !== expected.length) return false;
   return timingSafeEqual(derived, expected);
-}
-
-function scryptWithParams(
-  password: string,
-  salt: Buffer,
-  keylen: number,
-  N: number,
-  r: number,
-  p: number,
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    scryptCallback(password, salt, keylen, { N, r, p }, (err, derivedKey) => {
-      if (err) reject(err);
-      else resolve(derivedKey);
-    });
-  });
 }
 
 /**

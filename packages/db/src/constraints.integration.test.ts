@@ -433,3 +433,65 @@ describe('search vector', () => {
     expect(after?.sv).not.toContain('chaat');
   });
 });
+
+describe('PHASE 03 migration preflight — duplicate email detection (Fix #6)', () => {
+  it('the documented preflight query finds duplicate (email, user_type) pairs the unique index forbids', async () => {
+    // The real `users_email_user_type_key` index (created by
+    // 20261008120000_phase03_password_auth) makes the very state this test
+    // sets up impossible in the live schema — which is exactly why the
+    // preflight query and the migration's in-SQL guard both exist: to
+    // catch this BEFORE that index is created against a database that
+    // might already be in this state. The index is dropped here only to
+    // reproduce that pre-migration condition, and is always restored
+    // before the test ends (success or failure) so later tests in this
+    // suite see the schema exactly as every migration leaves it.
+    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "users_email_user_type_key"');
+    try {
+      const email = `dup-preflight-${uuidv7()}@example.test`;
+      await prisma.user.create({ data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' } });
+      await prisma.user.create({ data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' } });
+
+      // The EXACT query documented in the migration's guard and in
+      // packages/db/scripts/check-duplicate-emails.mjs — kept identical on
+      // purpose so this test proves what both of those actually detect.
+      const duplicates = await prisma.$queryRaw<Array<{ email: string; user_type: string; row_count: number }>>`
+        SELECT email, user_type, COUNT(*)::int AS row_count
+        FROM users
+        WHERE email IS NOT NULL
+        GROUP BY email, user_type
+        HAVING COUNT(*) > 1
+      `;
+
+      expect(duplicates).toHaveLength(1);
+      expect(duplicates[0]?.email).toBe(email);
+      expect(duplicates[0]?.user_type).toBe('CUSTOMER');
+      expect(duplicates[0]?.row_count).toBe(2);
+    } finally {
+      // The duplicate rows must go before the index can be rebuilt, for
+      // the identical reason the real migration would fail here too.
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM users WHERE email LIKE 'dup-preflight-%@example.test'`,
+      );
+      await prisma.$executeRawUnsafe(
+        'CREATE UNIQUE INDEX "users_email_user_type_key" ON "users"("email", "user_type")',
+      );
+    }
+  });
+
+  it('reports zero duplicates on an otherwise-clean database (no false positives)', async () => {
+    await seedBusiness(prisma, { slug: `clean-${uuidv7()}` });
+    await prisma.user.create({
+      data: { id: uuidv7(), userType: 'CUSTOMER', email: `unique-${uuidv7()}@example.test`, status: 'ACTIVE' },
+    });
+
+    const duplicates = await prisma.$queryRaw<Array<{ email: string }>>`
+      SELECT email, user_type, COUNT(*)::int AS row_count
+      FROM users
+      WHERE email IS NOT NULL
+      GROUP BY email, user_type
+      HAVING COUNT(*) > 1
+    `;
+
+    expect(duplicates).toHaveLength(0);
+  });
+});

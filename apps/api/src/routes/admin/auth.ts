@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
 import { registerRoute } from '../../lib/route-registry.js';
-import { assertLoginNotRateLimited } from '../../middleware/rate-limit.js';
+import { assertAuthRateLimit } from '../../middleware/rate-limit.js';
 import { adminAuth } from '../../middleware/admin-auth.js';
 import type { AdminActor } from '@healthy-aahar/core';
 import type { AppBindings } from '../../types.js';
@@ -109,9 +109,10 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     const body = adminLoginBodySchema.parse(await c.req.json());
 
     const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
-    await assertLoginNotRateLimited(c.env.auth.loginRateLimitStore, {
+    await assertAuthRateLimit(c, c.env.auth.loginRateLimitStore, {
       enabled: c.env.env.RATE_LIMIT_ENABLED,
       limit: c.env.env.LOGIN_RATE_LIMIT_PER_MIN,
+      bucket: 'admin-login',
       ip,
       email: body.email,
     });

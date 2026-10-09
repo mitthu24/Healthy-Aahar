@@ -24,7 +24,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node ../../scripts/with-env.mjs vitest run",
     "clean": "rm -rf .turbo dist node_modules/.prisma",
-    "check:invariants": "node ../../scripts/with-env.mjs node scripts/check-db-invariants.mjs"
+    "check:invariants": "node ../../scripts/with-env.mjs node scripts/check-db-invariants.mjs",
+    "check:duplicate-emails": "node ../../scripts/with-env.mjs node scripts/check-duplicate-emails.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

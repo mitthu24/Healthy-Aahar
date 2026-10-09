@@ -1,6 +1,16 @@
+import { scrypt as scryptCallback } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
-import { assertPasswordStrength, hashPassword, PasswordHashError, verifyPassword } from './password.js';
+import {
+  assertPasswordStrength,
+  hashPassword,
+  PasswordHashError,
+  SCRYPT_N,
+  SCRYPT_P,
+  SCRYPT_R,
+  verifyPassword,
+} from './password.js';
 
 describe('hashPassword / verifyPassword (PHASE 03, docs/07)', () => {
   it('verifies a correct password against its own hash', async () => {
@@ -39,6 +49,39 @@ describe('hashPassword / verifyPassword (PHASE 03, docs/07)', () => {
     const hash = await hashPassword('tamper-test');
     const tampered = hash.slice(0, -4) + '0000';
     await expect(verifyPassword('tamper-test', tampered)).resolves.toBe(false);
+  });
+
+  it('labels the hash with the exact N/r/p module constants (Fix #7)', async () => {
+    const hash = await hashPassword('params-must-match-exactly');
+    const [, nStr, rStr, pStr] = hash.split(':');
+    expect(Number(nStr)).toBe(SCRYPT_N);
+    expect(Number(rStr)).toBe(SCRYPT_R);
+    expect(Number(pStr)).toBe(SCRYPT_P);
+  });
+
+  it('actually computes with the labelled params, not Node defaults (Fix #7 regression)', async () => {
+    // Independently recomputes with the parameters read back out of the
+    // label — NOT via verifyPassword, which would trivially pass even if
+    // hashPassword and verifyPassword both silently drifted from the label
+    // in lockstep. This proves hashPassword's real scrypt() call actually
+    // received {N,r,p} explicitly rather than falling back to whatever
+    // Node's library defaults happen to be.
+    const password = 'independently-recomputed-password';
+    const hash = await hashPassword(password);
+    const parts = hash.split(':');
+    const [, nStr, rStr, pStr, saltHex, hashHex] = parts as [string, string, string, string, string, string];
+
+    const recomputed = await new Promise<Buffer>((resolve, reject) => {
+      scryptCallback(
+        password.normalize('NFKC'),
+        Buffer.from(saltHex, 'hex'),
+        Buffer.from(hashHex, 'hex').length,
+        { N: Number(nStr), r: Number(rStr), p: Number(pStr) },
+        (err, derived) => (err ? reject(err) : resolve(derived)),
+      );
+    });
+
+    expect(recomputed.toString('hex')).toBe(hashHex);
   });
 });
 

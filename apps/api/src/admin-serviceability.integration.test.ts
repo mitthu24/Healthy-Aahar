@@ -51,6 +51,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
     CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
     LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
     R2_BUCKET_NAME: 'test',

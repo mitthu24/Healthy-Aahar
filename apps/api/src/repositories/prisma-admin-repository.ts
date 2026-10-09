@@ -6,9 +6,12 @@ import {
   type BusinessScope,
   type EffectivePermissions,
   type InviteAdminInput,
+  type InviteAdminResult,
 } from '@healthy-aahar/core';
 import type { UserRow } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
+
+import { isUniqueConstraintViolation } from './prisma-errors.js';
 
 /**
  * Prisma implementation of admin identity + role assignment (docs/07 §3,
@@ -120,52 +123,67 @@ export class PrismaAdminRepository implements AdminRepository {
     return { permissions: [...keys], isSuperAdmin: admin.isSuperAdmin };
   }
 
-  async invite(scope: BusinessScope, input: InviteAdminInput): Promise<AdminUserRow> {
+  async invite(scope: BusinessScope, input: InviteAdminInput): Promise<InviteAdminResult> {
     const roles = await this.prisma.role.findMany({
       where: { id: { in: input.roleIds }, businessId: scope },
       select: { id: true, key: true },
     });
     const isSuperAdmin = roles.some((r) => r.key === 'SUPER_ADMIN');
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const userId = newId();
-      const adminUserId = newId();
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const userId = newId();
+        const adminUserId = newId();
 
-      // No `firebase_uid`, no `password_hash` — PHASE 03 admins exist
-      // without a credential until they complete the password-setup flow
-      // (RbacService.inviteAdmin issues the token for that separately).
-      await tx.user.create({
-        data: {
-          id: userId,
-          userType: 'ADMIN',
-          email: input.email,
-          emailVerified: false,
-          status: 'ACTIVE',
-        },
-      });
-
-      await tx.adminUser.create({
-        data: {
-          id: adminUserId,
-          businessId: scope,
-          userId,
-          fullName: input.fullName,
-          designation: input.designation ?? null,
-          isSuperAdmin,
-          invitedBy: input.invitedByUserId,
-        },
-      });
-
-      if (roles.length > 0) {
-        await tx.adminUserRole.createMany({
-          data: roles.map((r) => ({ adminUserId, roleId: r.id, grantedBy: input.invitedByUserId })),
+        // No `firebase_uid`, no `password_hash` — PHASE 03 admins exist
+        // without a credential until they complete the password-setup flow
+        // (RbacService.inviteAdmin issues the token for that separately).
+        await tx.user.create({
+          data: {
+            id: userId,
+            userType: 'ADMIN',
+            email: input.email,
+            emailVerified: false,
+            status: 'ACTIVE',
+          },
         });
+
+        await tx.adminUser.create({
+          data: {
+            id: adminUserId,
+            businessId: scope,
+            userId,
+            fullName: input.fullName,
+            designation: input.designation ?? null,
+            isSuperAdmin,
+            invitedBy: input.invitedByUserId,
+          },
+        });
+
+        if (roles.length > 0) {
+          await tx.adminUserRole.createMany({
+            data: roles.map((r) => ({ adminUserId, roleId: r.id, grantedBy: input.invitedByUserId })),
+          });
+        }
+
+        return tx.adminUser.findUniqueOrThrow({ where: { id: adminUserId }, include: ADMIN_INCLUDE });
+      });
+
+      return { ok: true, admin: toAdminUserRow(created) };
+    } catch (error) {
+      // Fix #3: map ONLY the `(email, user_type)` unique-constraint
+      // violation to EMAIL_TAKEN — not every P2002. The SAME transaction
+      // can also throw P2002 from `adminUserRole`'s composite primary key
+      // `(admin_user_id, role_id)` if the caller supplied a duplicate role
+      // id; that is an unrelated error and must keep failing as one
+      // ("do not convert unrelated database errors into duplicate-invitation
+      // errors" — collapsing it here would silently hide a caller bug
+      // behind a confusing "email already exists" response).
+      if (isUniqueConstraintViolation(error, 'email')) {
+        return { ok: false, reason: 'EMAIL_TAKEN' };
       }
-
-      return tx.adminUser.findUniqueOrThrow({ where: { id: adminUserId }, include: ADMIN_INCLUDE });
-    });
-
-    return toAdminUserRow(created);
+      throw error;
+    }
   }
 
   async countActiveSuperAdmins(scope: BusinessScope): Promise<number> {

@@ -124,26 +124,60 @@ for the customer audience (§10).
 
 ### 4.4 Abuse controls
 
-Login attempts are rate-limited per IP **and** per email independently
-(`LOGIN_RATE_LIMIT_PER_MIN`, `apps/api/src/middleware/rate-limit.ts`#`assertLoginNotRateLimited`)
-— Step 6's brute-force protection. Cloudflare rate-limits the endpoint coarsely at the edge as
-a second, independent layer.
+Login **and registration** attempts are each rate-limited per IP **and** per email
+independently (`LOGIN_RATE_LIMIT_PER_MIN` / `REGISTER_RATE_LIMIT_PER_MIN`,
+`apps/api/src/middleware/rate-limit.ts`#`assertAuthRateLimit`) — Step 6's brute-force
+protection. Registration is checked in its own bucket, separate from login's, so hammering
+one can never lock a caller out of the other; both buckets normalise the email (trim +
+lower-case) so trivial casing/whitespace variants cannot each get a fresh attempt budget.
+Cloudflare rate-limits the endpoint coarsely at the edge as a second, independent layer.
+
+**Known limitation:** the rate-limit store is in-process (`InMemoryRateLimitStore`) — correct
+for today's single API instance (`railway.json`), but each additional instance would enforce
+the configured limit independently rather than sharing one counter, effectively multiplying
+the real limit by the instance count. This must move to a shared store (Redis, PD-14) before
+the API ever runs as more than one instance; see the module doc comment in
+`apps/api/src/middleware/rate-limit.ts` for the full reasoning.
 
 ## 5. Admin authentication
 
 ### 5.1 Flow
 1. Super admin invites a staff member: the API creates the `users` row directly (no
    `password_hash` yet) and the `admin_users` + role-grant rows in one transaction, then issues
-   a one-time password-setup token (`PasswordResetRepository`, 7-day expiry) and returns it to
-   the caller as `password_setup_link` — no external email send is wired into this phase; the
-   caller (today: whoever called the invite API) delivers it. There is no public admin sign-up
-   route.
+   a one-time password-setup token (`PasswordResetService.issueToken`, 7-day expiry, purpose
+   `SETUP`) and returns it to the caller as `password_setup_link` — no external email send is
+   wired into this phase; the caller (today: whoever called the invite API) delivers it. There
+   is no public admin sign-up route.
 2. The staff member calls `POST /v1/auth/password/setup` with that token and their chosen
    password, which sets `users.password_hash` and revokes any session that could otherwise
-   survive the credential being established.
+   survive the credential being established. The token is claimed atomically (one conditional
+   `UPDATE ... WHERE used_at IS NULL`, never a separate read-then-write) — two concurrent
+   requests presenting the same token cannot both succeed.
 3. Sign-in at `admin.healthyaahar.com` calls `POST /v1/admin/auth/login` with email + password.
 4. A successful login creates a `sessions` row and sets the session cookie to the raw token
    (the DB stores only its hash).
+
+**Existing admin, no password (Fix #2):** an admin row created before this credential existed
+— or one who never completed step 2 — has no self-service recovery route; there is
+deliberately no public "forgot password" endpoint for admins (every admin credential action
+requires an already-authenticated, permissioned actor — docs/23 §4). A Super Admin issues them
+a fresh token instead:
+`POST /v1/admin/admin-users/{id}/reset-password` (permission `admin_users:update`, purpose
+`RESET`, same token mechanism as step 1, fully audited as `admin_user.password_reset_issued`).
+This is the one authorized workflow for an admin who already exists to obtain a new setup
+link — `inviteAdmin` cannot be reused for this (it always creates a new `users` row, which
+collides on the existing one's email and returns `ADMIN_ALREADY_INVITED`).
+
+**Customer password reset — foundation only, not yet exposed:** `PasswordResetService` is
+audience-agnostic (the token identifies a `userId` directly, admin or customer), so the same
+mechanism is ready for a customer "forgot password" flow. No route calls it for customers yet.
+Building one safely needs a product decision this system cannot make for itself: how the link
+is delivered (an email/SMS provider — `NOTIFICATIONS_ENABLED`/Brevo wiring is out of this
+phase's scope) and the exact anti-enumeration shape of the response (the standard pattern is
+"if an account with that email exists, a link was sent" regardless of whether it does — but
+committing to that wording, and to a delivery channel, is a product call). Until that decision
+is made, there is no customer-facing route for this — the service-level piece is ready, the
+product decision is not.
 
 ### 5.2 Why the admin panel uses a cookie and the customer app does not
 
@@ -273,7 +307,8 @@ redacted to city + pincode — enough for accounting, insufficient to identify a
 | Stolen session token | Hashed at rest (never stored raw); admin session revocable instantly; HTTPS only; finite lifetime |
 | XSS stealing an admin session | `HttpOnly` cookie, strict CSP, no `dangerouslySetInnerHTML` without sanitisation |
 | CSRF on admin mutations | `SameSite=Strict` + `__Host-` prefix + double-submit CSRF token |
-| Brute force on login | Per-IP and per-email rate limiting (Step 6); Cloudflare rate limiting |
+| Brute force / spam on login AND registration | Per-IP and per-email rate limiting, independent buckets per endpoint (Fix #1); Cloudflare rate limiting |
+| Resource exhaustion via unlimited unauthenticated scrypt computations | Same rate limiting — registration used to have none at all (Fix #1) |
 | Password database leak | scrypt (memory-hard), per-password random salt — not reversible at scale |
 | Privilege escalation via role edit | `roles:*` restricted to Super Admin; last-super-admin invariant; every change audited |
 | Enumerating accounts via login | Generic `INVALID_CREDENTIALS` for unknown email, wrong password, AND no-password-yet — indistinguishable responses, constant-time-equivalent handling |
@@ -281,6 +316,9 @@ redacted to city + pincode — enough for accounting, insufficient to identify a
 | Session fixation via subdomain | `__Host-` cookie prefix |
 | Replay of a captured request | Idempotency keys; TLS |
 | Stale/replayed password-setup link | One-time token (`used_at`), 7-day expiry, hashed at rest |
+| Two concurrent requests both redeeming the same password-setup link | Atomic conditional claim (`consume`, Fix #2) — a separate read-then-write had a real race window here before |
+| Cross-audience session-token reuse (a customer token presented as the admin cookie, or vice versa) | Explicit `userType` check in each `resolveActor` (Fix #4) — the failure mode is the established auth error either way, never a 500 or a granted session |
+| Duplicate admin invite returning an unhandled error that could leak internals | Mapped to the existing `ADMIN_ALREADY_INVITED` 409, matched narrowly so an unrelated database error is never mislabeled as this (Fix #3) |
 
 ## 10. Mobile readiness
 

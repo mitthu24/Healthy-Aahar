@@ -47,6 +47,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
     CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
     LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
@@ -120,6 +121,10 @@ describe('customer registration (docs/07 §4)', () => {
     // The password hash is never returned by any API response (Step 13).
     expect(JSON.stringify(body)).not.toMatch(/scrypt:/);
 
+    // Mobile-readiness (ADR-038): the session is returned in the BODY,
+    // never as a cookie — a native client has no cookie jar to receive one.
+    expect(res.headers.getSetCookie?.() ?? []).toHaveLength(0);
+
     const row = await prisma.user.findUnique({
       where: { email_userType: { email: 'new.customer@example.test', userType: 'CUSTOMER' } },
     });
@@ -192,6 +197,9 @@ describe('customer login (docs/07 §4)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { token: string };
     expect(body.token).toBeTruthy();
+
+    // Mobile-readiness (ADR-038): no cookie, ever, for the customer API.
+    expect(res.headers.getSetCookie?.() ?? []).toHaveLength(0);
   });
 
   it('rejects a wrong password with a generic message — no hint which part failed', async () => {
@@ -253,6 +261,49 @@ describe('customer login (docs/07 §4)', () => {
       body: JSON.stringify({ email: customer.email, password: customer.password }),
     });
     expect(res.status).toBe(401);
+  });
+
+  it('Fix #4 — a valid CUSTOMER session token presented as the ADMIN cookie is rejected with the established auth error, not a session granted', async () => {
+    const customer = await seedCustomerUser(prisma, businessId, { email: 'cross-audience-c-to-a@example.test' });
+    const login = await app.request('/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: customer.email, password: customer.password }),
+    });
+    const { token } = (await login.json()) as { token: string };
+
+    // The exact same raw token, presented as the admin session cookie value.
+    const res = await app.request('/v1/admin/auth/me', {
+      headers: { Cookie: `__Host-admin_session=${token}` },
+    });
+
+    // A customer's session token hashes to a DIFFERENT value than any
+    // admin session ever would (session rows are not shared between the
+    // two login flows), so this is already UNAUTHENTICATED at the
+    // cookie-lookup step, before resolveActor's userType check even runs —
+    // this test exists to pin the OUTCOME (clean 401, never a 200 or 500),
+    // regardless of which layer produces it.
+    expect(res.status).toBe(401);
+  });
+
+  it('Fix #4 — a valid ADMIN session token presented as a CUSTOMER bearer token is rejected as UNAUTHENTICATED, not INTERNAL_ERROR', async () => {
+    const admin = await seedAdminUser(prisma, businessId, {});
+    const adminSession = await loginAsAdmin(app, admin);
+    const rawToken = /__Host-admin_session=([^;]+)/.exec(adminSession.cookieHeader)?.[1];
+    expect(rawToken).toBeTruthy();
+
+    // Before Fix #4, CustomerAuthService.resolveActor had no explicit
+    // userType check: it would find the admin's `users` row (ACTIVE),
+    // then fail to find a `customer_profiles` row for it and throw
+    // INTERNAL_ERROR (500) — a real bug, not a theoretical one. This
+    // pins the fix: the SAME scenario must now produce a clean 401.
+    const res = await app.request('/v1/auth/me', {
+      headers: { Authorization: `Bearer ${rawToken}` },
+    });
+
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('UNAUTHENTICATED');
   });
 
   it('logout revokes the session and a subsequent request is rejected', async () => {
@@ -391,5 +442,108 @@ describe('login rate limiting (Step 6)', () => {
     const statuses = results.map((r) => r.status);
     expect(statuses.filter((s) => s === 401)).toHaveLength(3);
     expect(statuses.filter((s) => s === 429)).toHaveLength(2);
+  });
+
+  it('sets X-RateLimit-* / Retry-After headers consistently on a 429, same as the generic limiter', async () => {
+    const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, LOGIN_RATE_LIMIT_PER_MIN: 1 }));
+    const attempt = () =>
+      limited.request('/v1/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'headers-check@example.test', password: 'guess' }),
+      });
+
+    await attempt();
+    const res = await attempt();
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('X-RateLimit-Limit')).toBe('1');
+    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(res.headers.get('X-RateLimit-Reset')).toBeTruthy();
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('RATE_LIMITED');
+  });
+});
+
+describe('registration rate limiting (Fix #1)', () => {
+  it('rate-limits repeated registration attempts for the same email — registration must not bypass the protection login has', async () => {
+    const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, REGISTER_RATE_LIMIT_PER_MIN: 3 }));
+    const attempt = () =>
+      limited.request('/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'register-flood@example.test', password: 'a-strong-password-1' }),
+      });
+
+    const results = [];
+    for (let i = 0; i < 5; i += 1) results.push(await attempt());
+
+    const statuses = results.map((r) => r.status);
+    // Attempt #1 succeeds (201); attempts #2–3 fail on the real duplicate-
+    // email check (409) — the limiter hasn't tripped yet; #4–5 never reach
+    // the duplicate-email check at all, because the limiter (3/min) fires
+    // first and returns 429 before any lookup or hashing happens.
+    expect(statuses.filter((s) => s === 201)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 409)).toHaveLength(2);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(2);
+
+    // Only the one genuine success actually created a row.
+    expect(await prisma.user.count({ where: { email: 'register-flood@example.test' } })).toBe(1);
+  });
+
+  it('registration and login attempts are counted in independent buckets', async () => {
+    const limited = buildApp(
+      testEnv({ RATE_LIMIT_ENABLED: true, REGISTER_RATE_LIMIT_PER_MIN: 1, LOGIN_RATE_LIMIT_PER_MIN: 1 }),
+    );
+    const email = 'independent-buckets@example.test';
+
+    const firstRegister = await limited.request('/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'a-strong-password-1' }),
+    });
+    expect(firstRegister.status).toBe(201);
+
+    // Registration's own limit (1/min) is now exhausted for this email —
+    // but logging in with it must be unaffected by that.
+    const login = await limited.request('/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'a-strong-password-1' }),
+    });
+    expect(login.status).toBe(200);
+  });
+
+  it('a 429 on registration reveals nothing about whether the email is already registered', async () => {
+    // An email that definitely already exists (from a previous describe
+    // block's registrations would risk cross-test coupling — seed one
+    // explicitly instead) hits the SAME 429, with the SAME body, as a
+    // brand-new email once the limiter trips — the limiter runs before any
+    // lookup, so the response cannot differ based on registration status.
+    const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, REGISTER_RATE_LIMIT_PER_MIN: 0 }));
+    const existing = await seedCustomerUser(prisma, businessId, { email: 'already-exists-429@example.test' });
+
+    const resExisting = await limited.request('/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: existing.email, password: 'a-strong-password-1' }),
+    });
+    const resNew = await limited.request('/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'brand-new-429@example.test', password: 'a-strong-password-1' }),
+    });
+
+    expect(resExisting.status).toBe(429);
+    expect(resNew.status).toBe(429);
+    const [bodyExisting, bodyNew] = (await Promise.all([resExisting.json(), resNew.json()])) as Array<{
+      error: { code: string; message: string; request_id: string };
+    }>;
+    // `request_id` is a fresh UUID per request by design (docs/28 §2) — it
+    // is expected to differ; comparing it would fail this test for a
+    // reason that has nothing to do with enumeration.
+    expect(bodyExisting.error.code).toBe(bodyNew.error.code);
+    expect(bodyExisting.error.message).toBe(bodyNew.error.message);
   });
 });

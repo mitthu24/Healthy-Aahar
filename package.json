@@ -30,7 +30,8 @@
     "infra:reset": "docker compose down -v && docker compose up -d",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "husky",
-    "db:check": "pnpm --filter @healthy-aahar/db check:invariants"
+    "db:check": "pnpm --filter @healthy-aahar/db check:invariants",
+    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",

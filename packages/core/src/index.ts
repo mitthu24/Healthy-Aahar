@@ -36,6 +36,7 @@ export type {
   AdminUserRow,
   EffectivePermissions,
   InviteAdminInput,
+  InviteAdminResult,
   AdminRepository,
   RoleRow,
   RoleRepository,

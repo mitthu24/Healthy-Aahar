@@ -117,6 +117,19 @@ export class CustomerAuthService {
     if (!user) {
       throw new DomainError('UNAUTHENTICATED', 'No account exists for this session.');
     }
+    // Fix #4: a session's `userId` always points at SOME `users` row, but a
+    // bearer token's session row could in principle hold an ADMIN's
+    // `userId` (session rows are not audience-tagged — see docs/07 §3).
+    // Without this explicit check, an admin's session token presented here
+    // would fall through to "no customer profile for this user" below and
+    // throw INTERNAL_ERROR (500) instead of a clean auth failure — wrong
+    // audience is an authentication outcome, not a bug. This can never
+    // actually grant customer access to an admin (no customer_profile row
+    // exists for them either way), but it must fail as UNAUTHENTICATED, not
+    // 500.
+    if (user.userType !== 'CUSTOMER') {
+      throw new DomainError('UNAUTHENTICATED', 'No account exists for this session.');
+    }
     if (user.status !== 'ACTIVE') {
       throw new DomainError('ACCOUNT_SUSPENDED', 'This account is suspended.');
     }

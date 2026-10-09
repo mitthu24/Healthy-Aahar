@@ -12,11 +12,24 @@ import { uuidSchema } from './common.js';
 // creating a dependency cycle); both are exercised by the same test suite.
 const passwordSchema = z.string().min(10).max(256);
 
+// Login never required the 10-char minimum (a too-short guess must still
+// fail with the same generic error as any other wrong password, not a
+// distinguishable 422 — Step 5's no-enumeration rule applies to length too).
+// It DOES share the same 256-char maximum as every other password field
+// (Fix #8): no credential created anywhere in this system — register,
+// admin password-setup, reset — can ever exceed 256 chars, so capping
+// login at 256 rejects nothing a real credential could be, while capping
+// the cheap, unauthenticated cost of hashing an attacker-supplied
+// multi-megabyte string on every login attempt (the same CPU-exhaustion
+// reasoning as `assertPasswordStrength`'s upper bound). Zod `.max()`
+// REJECTS an oversized value with 422 — it never silently truncates.
+const loginPasswordSchema = z.string().min(1).max(256);
+
 // ── Admin: login ─────────────────────────────────────────────────────────
 
 export const adminLoginBodySchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(1), // length is checked at verify time, not here — a short guess must still fail generically.
+  password: loginPasswordSchema,
 });
 
 export const adminMeSchema = z.object({
@@ -42,7 +55,7 @@ export const customerRegisterBodySchema = z.object({
 
 export const customerLoginBodySchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(1),
+  password: loginPasswordSchema,
 });
 
 export const customerSchema = z.object({
@@ -117,6 +130,18 @@ export const inviteAdminResponseSchema = adminUserSchema.extend({
 
 export const setAdminRolesBodySchema = z.object({
   role_ids: z.array(uuidSchema).min(1),
+});
+
+// ── Fix #2: authorized password-reset-token issuance for an EXISTING admin ─
+
+export const resetAdminPasswordBodySchema = z.object({
+  /** Base URL the API appends `?token=<raw>` to — same convention as invite. */
+  password_setup_continue_url: z.string().url().optional(),
+});
+
+export const passwordSetupLinkResponseSchema = z.object({
+  /** One-time, single-use. Never logged; delivered by the caller out of band. */
+  password_setup_link: z.string(),
 });
 
 export const adminUserListResponseSchema = z.object({ data: z.array(adminUserSchema) });

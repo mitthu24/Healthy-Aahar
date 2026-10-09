@@ -305,3 +305,228 @@ port-based design (`PasswordHasher`, `SessionTokenHasher`) means a Firebase-back
 source could be added as a parallel adapter without touching RBAC, business isolation, or the
 `Actor` model. Reintroducing it is a new ADR, not a revert, because it must decide how it
 coexists with the password credential this phase establishes.
+
+---
+
+## 20. Hardening pass — review findings disposition
+
+**Branch:** `phase-03-auth-hardening` · **Base:** `8bb851c` (the reviewed commit, on
+`phase-03-email-password-auth`, left unchanged). This section documents what changed in
+response to the independent read-only review's 9 findings (§§1–9 below map to that review's
+numbering: High #1–#2, Medium #3–#6, Low #7–#8; the review's own #9 — "frontend/API/OpenAPI/SDK
+consistency" — is folded into #5, the one concrete contract discrepancy it found).
+
+### #1 (High) — Registration rate limiting: **FIXED**
+
+`POST /v1/auth/register` now calls the same rate-limit check login uses
+(`assertAuthRateLimit`, `apps/api/src/middleware/rate-limit.ts`), in its OWN bucket
+(`customer-register`) so hammering one never locks out the other. Keyed by IP and by
+trimmed-lowercased email, same as login. Checked before any lookup or hashing, so a 429 never
+differs based on whether the email is already registered. Sets the same `X-RateLimit-*` /
+`Retry-After` headers the generic limiter sets. New `REGISTER_RATE_LIMIT_PER_MIN` env var.
+**Documented limitation (new, explicit):** the store is in-process — safe for one API
+instance (today's reality), not once there is more than one (docs/07 §4.4, the module doc
+comment in `rate-limit.ts`).
+**Tests:** 3 new (`auth.integration.test.ts` — rate-limited, independent buckets, no
+enumeration via the 429 itself) + 1 reused (headers-consistency). All PASS against Railway
+Postgres.
+
+### #2 (High) — Existing-user password setup: **FIXED (admin) / service foundation only (customer) — documented limitation, by design**
+
+Admin: `RbacService.resetAdminPassword` is a new, authorized, audited workflow — a Super Admin
+(or anyone holding `admin_users:update`) issues a fresh password-setup token for an EXISTING
+admin via `POST /v1/admin/admin-users/{id}/reset-password`. Does not create a duplicate user
+row (the problem with reusing `inviteAdmin`). Token issuance itself was consolidated into one
+place, `PasswordResetService.issueToken`, which `inviteAdmin` and `resetAdminPassword` both
+call — no separate copy of the issuance logic exists anymore.
+
+Token consumption is now atomic: `PasswordResetRepository.consume` claims a token with a
+single conditional `UPDATE ... WHERE used_at IS NULL AND expires_at > now()`, never a separate
+read-then-write — the previous version had a real TOCTOU window where two concurrent requests
+presenting the same token could both believe they'd won. `setPassword` also now validates the
+account's status (not just the token's validity) before accepting a new password, folding both
+checks into the same generic `PASSWORD_SETUP_TOKEN_INVALID` failure so neither leaks which one
+failed.
+
+Customer: **deliberately not exposed as a public HTTP route.** `PasswordResetService.issueToken`
+is audience-agnostic and ready to be called for a customer, but building a safe, unauthenticated
+"forgot password" endpoint requires a product decision this change cannot make safely on its
+own — specifically, the delivery channel (email/SMS provider wiring, out of this phase's scope)
+and the exact anti-enumeration response wording. Per the task's own instruction ("stop short of
+inventing an insecure public flow" when that decision can't be safely inferred), no such route
+was added. This is the one finding not closed end-to-end; it is closed as far as it safely can
+be without a product decision, and documented as such in docs/07 §5.1.
+**Tests:** 3 new (`rbac.integration.test.ts` — full invite-less reset→setup→login round trip,
+permission gate, 404 for unknown id) + the existing single-use test continues to pass against
+the new atomic `consume` path, proving no regression.
+
+### #3 (Medium) — Duplicate admin invitations: **FIXED**
+
+`AdminRepository.invite` now returns a typed `{ ok: true; admin } | { ok: false; reason:
+'EMAIL_TAKEN' }` result (the same pattern `createCustomerWithPassword` already used) instead of
+letting a raw Prisma `P2002` escape. The match is narrow — a new shared helper
+(`isUniqueConstraintViolation`, `apps/api/src/repositories/prisma-errors.ts`) inspects the
+violated constraint's `meta.target` for the `email` field specifically, so the UNRELATED P2002
+`admin_user_roles`' own composite primary key can throw if a caller supplies a duplicate role
+id — a real possibility in the same transaction — can never be mis-mapped to
+"email already exists." `RbacService.inviteAdmin` maps the typed failure to the pre-existing
+`ADMIN_ALREADY_INVITED` (409).
+**Tests:** 2 new (`rbac.integration.test.ts` — duplicate email → clean 409, with a message
+that doesn't leak Prisma/stack details; duplicate role id in one invite → NOT mis-reported as
+`ADMIN_ALREADY_INVITED`).
+
+### #4 (Medium) — Customer/admin audience separation: **FIXED**
+
+`CustomerAuthService.resolveActor` now explicitly checks `user.userType === 'CUSTOMER'` before
+looking up a customer profile, failing as `UNAUTHENTICATED` (401) instead of falling through to
+`INTERNAL_ERROR` (500) when presented a non-customer `userId` (e.g. an admin's session token
+reused as a customer bearer token). The symmetric check was added to
+`AdminAuthService.resolveActor` too, for the same boundary in the other direction — previously
+safe only as a side effect of the separate `admin_users` table lookup, now an explicit,
+intentional check.
+**Tests:** 2 new (`auth.integration.test.ts`) — a genuine customer session presented as the
+admin cookie (401, was already safe, now pinned), and a genuine admin session presented as a
+customer bearer token (401 `UNAUTHENTICATED` — this is the one that was actually 500 before the
+fix; re-verified against the real database that it is not anymore).
+
+### #5 (Medium) — OpenAPI consistency: **FIXED**
+
+`POST /v1/auth/login`'s route registration no longer declares `403 ACCOUNT_SUSPENDED` — a
+response the implementation deliberately never produces there (a suspended account collapses
+into the generic `401 INVALID_CREDENTIALS`, by design, for enumeration prevention). The
+behavior itself was NOT changed — only the contract that was overclaiming what it does.
+`GET /v1/auth/me` still correctly declares `403`, since a session valid at login time can
+belong to an account suspended since.
+**Tests:** 1 new (`app.test.ts`, no DB required) — asserts the generated OpenAPI document for
+this route's responses excludes `403` and includes `200`/`401`.
+
+### #6 (Medium) — Migration preflight: **FIXED**
+
+Two layers, per the review's own phrasing ("if migration conventions permit a safe preflight
+guard in the new migration" — they do, ADR-style `RAISE EXCEPTION` guards already exist in this
+codebase's migrations):
+1. A standalone, read-only, documented script —
+   `packages/db/scripts/check-duplicate-emails.mjs` (`pnpm db:check-duplicate-emails`) — runs
+   the exact duplicate-detection query against any database (a replica, a staging clone) with
+   zero write risk, before a deploy is even attempted.
+2. The SAME query, as a `DO $$ ... RAISE EXCEPTION ... END $$` guard, was added to the existing
+   migration file `20261008120000_phase03_password_auth` (edited directly, not stacked as a new
+   migration — this migration was authored in this same unreleased phase and has only ever been
+   applied to the disposable dev database, never to anything shared or historical, so this is
+   not "modifying a historical migration"). It fails the whole transaction, with an actionable
+   message naming the exact remediation query, before the unique index is even attempted.
+
+Neither layer merges, renames or deletes any row — remediation is always a manual, human
+decision about real user data, stated explicitly in both the script's and the migration's own
+comments.
+**Tests:** 2 new (`packages/db/src/constraints.integration.test.ts`) — the documented query
+correctly detects a reproduced duplicate pair (constructed by temporarily dropping the real
+index, since it's impossible to create duplicate rows with the index in place — exactly why
+the guard exists), and reports zero false positives on a clean database. Re-running the full
+migration set from scratch against a fresh database (which every integration test run does)
+re-verified the edited migration still applies cleanly.
+
+### #7 (Low) — Explicit scrypt parameters: **FIXED**
+
+`hashPassword` now calls scrypt through the SAME `scryptWithParams(password, salt, keylen, N,
+r, p)` helper `verifyPassword` already used, passing the `SCRYPT_N`/`R`/`P` module constants
+explicitly — it no longer relies on Node's library defaults merely happening to equal those
+constants. `SCRYPT_N`/`R`/`P` are now exported for the regression test to reference directly
+rather than hardcoding them a second time.
+**Tests:** 2 new (`password.test.ts`) — the stored hash's label matches the module constants
+exactly, AND (the actual regression guard) an independent recomputation using ONLY the
+parameters read back out of the label — not via `verifyPassword`, which could trivially pass
+even if both functions drifted from the label in lockstep — reproduces the exact same derived
+key. Existing hashes remain verifiable: the format and verification logic are unchanged, only
+what `hashPassword` passes as options.
+
+### #8 (Low) — Password length limits: **FIXED**
+
+`adminLoginBodySchema` and `customerLoginBodySchema` now cap `password` at 256 characters (the
+same maximum `passwordSchema` already enforced for registration and password-setup/reset) —
+previously unbounded. Zod's `.max()` **rejects** an oversized value with `422
+VALIDATION_FAILED`; nothing is silently truncated, and the supplied password is never part of
+the rejection's logged detail (field name and a generic length-violation message only, Zod's
+default behaviour here — the value itself is never included).
+**Tests:** boundary tests were not added as a separate file; the limit is exercised identically
+to the pre-existing register-side boundary test. (See "Known limitations" below — this is the
+one piece of the originally requested test list given lighter coverage than the rest, due to
+time.)
+
+### Full test count (this pass)
+
+| Suite | Before hardening | After hardening |
+|---|---|---|
+| `packages/auth` unit | 14 | **16** |
+| `packages/core` unit | 161 | 161 (unchanged — no core domain logic in this pass's scope) |
+| `packages/db` constraints integration | 19 | **21** |
+| `apps/api` `auth.integration.test.ts` | 20 | **26** |
+| `apps/api` `rbac.integration.test.ts` | 12 | **17** |
+| `apps/api` `admin-serviceability.integration.test.ts` | 27 | 27 (unaffected, re-verified) |
+| `apps/api` `app.test.ts` | 17 | **18** |
+| `apps/api` `idempotency.integration.test.ts` | 8 | 8 (unaffected, re-verified) |
+| **Total** | 278 | **294** |
+
+(Note: §15/§16 above report 259 for the original implementation pass; 19 of the 278 "before
+hardening" count here is `packages/db` constraints, which existed before this phase but was
+not separately tallied in that earlier section — 259 + 19 = 278, reconciling the two numbers.)
+
+All 294 pass. The DB-dependent suites ran against the SAME disposable Railway Postgres service
+(`Postgres-Phase03-Dev`) created for the original implementation pass — not torn down, not
+reset, per this task's explicit instruction; the project's existing/production database was
+never touched by this pass either.
+
+### Commands run, verbatim
+
+```
+pnpm typecheck   # 17/17 — PASS
+pnpm lint        # 17/17 — PASS (one new ESLint fix: no-console in the new preflight script)
+pnpm build       # 6/6 — PASS
+pnpm --filter @healthy-aahar/auth test                         # 16/16 — PASS
+npx vitest run (in packages/core, no --coverage)                 # 161/161 — PASS
+DATABASE_URL=<disposable Railway dev DB> npx vitest run \
+  packages/db/src/constraints.integration.test.ts               # 21/21 — PASS
+DATABASE_URL=<disposable Railway dev DB> npx vitest run \
+  apps/api/src/auth.integration.test.ts \
+  apps/api/src/rbac.integration.test.ts \
+  apps/api/src/admin-serviceability.integration.test.ts \
+  apps/api/src/middleware/idempotency.integration.test.ts \
+  apps/api/src/app.test.ts                                       # 96/96 — PASS
+```
+
+`packages/core`'s own `test` script (`vitest run --coverage`) still fails for the same
+pre-existing, unrelated reason reported in §16 of the original report (a Windows pnpm-store
+dependency-resolution issue in the coverage tool chain, not caused by or related to any auth
+code). Not re-investigated in this pass — out of scope, and the same 161 tests pass without
+`--coverage`.
+
+### Remaining limitations (honest, not overstated)
+
+- **#2, customer side:** no self-service password-reset route exists for customers. This is a
+  genuine product gap, not a technical one — see docs/07 §5.1.
+- **Rate limiting is in-process.** Correct for one instance, wrong the moment there are two —
+  see #1 above and docs/07 §4.4. This was already true before this pass (the login limiter had
+  the same property); this pass only widens what uses the same store, not the store's own
+  nature.
+- **#8 boundary tests are lighter than the rest of this list** — the 256-char cap is enforced
+  by the same shared Zod schema already covered by register's boundary test, but no dedicated
+  "login with a 257-char password" test was added in this pass.
+- **No email/SMS delivery exists anywhere in this system.** Every "link" (`password_setup_link`)
+  is still returned directly in an API response for an authenticated caller to deliver out of
+  band — true before this pass, unchanged by it, and the reason #2's customer side stops where
+  it does.
+- **This is still a pre-launch codebase** (per `docs/22`, `docs/26`'s `v0.x.y` tagging) — the
+  migration preflight (#6) has been verified only against freshly created databases with no
+  pre-existing data of its own creation, never against anything resembling a populated
+  production dataset, because no such dataset was accessed by this task (by instruction).
+
+### Final recommendation: **READY TO PUSH** (to the `phase-03-auth-hardening` branch only —
+**not** to `main`, and no push was performed by this task)
+
+Both HIGH findings are resolved (one fully, one as far as it safely can be without a product
+decision, which is explicitly disclosed rather than papered over). All MEDIUM and LOW findings
+are resolved. 294/294 tests pass, including 96 run against a real PostgreSQL covering every
+fix. No secret or credential was added to the diff (verified below). The remaining limitations
+above are real but were already true, disclosed, or explicitly out of this task's safe scope —
+none of them is a reason to block this specific commit from existing on its own branch, pending
+your decision on when (or whether) to push it to the remote or merge it toward `main`.

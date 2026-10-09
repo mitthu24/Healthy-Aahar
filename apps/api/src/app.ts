@@ -79,6 +79,17 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   const permissionCache = new PermissionCache();
   void permissionCache; // Reserved for a future cached AdminRepository decorator; resolveActor already re-queries per request, which is correct but not yet cache-backed (see PHASE-03 report §"Known limitations").
 
+  // Constructed before `rbac` — RbacService delegates ALL token issuance to
+  // it (Fix #2: one authorized-issuance workflow, not two copies of the
+  // same logic in RbacService and here).
+  const passwordReset = new PasswordResetService(
+    userRepo,
+    passwordResetRepo,
+    sessionRepo,
+    scryptPasswordHasher,
+    sha256SessionTokenHasher,
+  );
+
   const services = {
     serviceability: new ServiceabilityService({
       repository: new PrismaServiceabilityRepository(prisma),
@@ -90,14 +101,8 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     }),
     customerAuth: new CustomerAuthService(userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
     adminAuth: new AdminAuthService(adminRepo, userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
-    rbac: new RbacService(adminRepo, roleRepo, passwordResetRepo, sessionRepo, sha256SessionTokenHasher, auditRepo),
-    passwordReset: new PasswordResetService(
-      userRepo,
-      passwordResetRepo,
-      sessionRepo,
-      scryptPasswordHasher,
-      sha256SessionTokenHasher,
-    ),
+    rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
+    passwordReset,
   };
 
   const app = new Hono<AppBindings>();

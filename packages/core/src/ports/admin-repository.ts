@@ -28,6 +28,16 @@ export type InviteAdminInput = {
   invitedByUserId: string;
 };
 
+/**
+ * Fix #3: a duplicate `(email, user_type)` is a real, reachable user error
+ * (re-inviting someone, or inviting an email that is already an admin),
+ * not a bug — it is reported as a typed result rather than a thrown
+ * exception, the same pattern `CreateCustomerWithPasswordResult` already
+ * uses, so the service layer can map it to the established
+ * `ADMIN_ALREADY_INVITED` code instead of an unhandled 500.
+ */
+export type InviteAdminResult = { ok: true; admin: AdminUserRow } | { ok: false; reason: 'EMAIL_TAKEN' };
+
 export interface AdminRepository {
   findByUserId(scope: BusinessScope, userId: string): Promise<{ user: UserRow; admin: AdminUserRow } | null>;
   findById(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow | null>;
@@ -41,7 +51,7 @@ export interface AdminRepository {
    * the password-setup token flow) + `admin_users` + `admin_user_roles` in
    * one transaction.
    */
-  invite(scope: BusinessScope, input: InviteAdminInput): Promise<AdminUserRow>;
+  invite(scope: BusinessScope, input: InviteAdminInput): Promise<InviteAdminResult>;
 
   /** BR-SEC6: count of ACTIVE (not deleted, not suspended) super admins. */
   countActiveSuperAdmins(scope: BusinessScope): Promise<number>;

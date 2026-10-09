@@ -44,6 +44,7 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
     CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
     LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
@@ -210,6 +211,119 @@ describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
     });
 
     expect(res.status).toBe(403);
+  });
+
+  it('Fix #3 — re-inviting an already-invited email returns 409 ADMIN_ALREADY_INVITED, not a raw 500', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'DUP_INVITE_ROLE', permissionKeys: ['catalog:read'] });
+
+    const first = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ email: 'already-invited@example.test', full_name: 'First Invite', role_ids: [role.id] }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ email: 'already-invited@example.test', full_name: 'Second Invite', role_ids: [role.id] }),
+    });
+
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('ADMIN_ALREADY_INVITED');
+    // Not a generic/unhandled error — the response body must look like
+    // every other documented error envelope, not a stack trace or a bare
+    // "Something went wrong" (which is what an uncaught P2002 used to 500 as).
+    expect(body.error.message).not.toMatch(/prisma|P2002|stack/i);
+
+    // Exactly one user row exists — the failed second attempt created nothing.
+    const count = await prisma.user.count({ where: { email: 'already-invited@example.test' } });
+    expect(count).toBe(1);
+  });
+
+  it('Fix #3 — a duplicate ROLE ID in the SAME invite is a validation concern, not ADMIN_ALREADY_INVITED', async () => {
+    // Regression guard for the narrow P2002 matcher: a caller-supplied
+    // duplicate role_id collides on admin_user_roles' OWN composite primary
+    // key, which is an unrelated P2002 — it must never be misreported as
+    // "email already exists" (the two live in the same transaction).
+    const role = await seedRole(prisma, businessId, { key: 'DUP_ROLE_IN_SAME_INVITE', permissionKeys: ['catalog:read'] });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'brand-new-not-taken@example.test',
+        full_name: 'Brand New',
+        role_ids: [role.id, role.id],
+      }),
+    });
+
+    // Whatever this resolves to, it must NOT be mistaken for the
+    // email-conflict path — assert the email really was available and is
+    // not reported as taken.
+    const body = (await res.json()) as { error?: { code: string } };
+    expect(body.error?.code).not.toBe('ADMIN_ALREADY_INVITED');
+  });
+});
+
+describe('existing-admin password reset (Fix #2)', () => {
+  it('a Super Admin can issue a new setup token for an existing admin, who can then complete setup and log in', async () => {
+    const role = await seedRole(prisma, businessId, { key: 'EXISTING_ADMIN_ROLE', permissionKeys: ['catalog:read'] });
+    const existing = await seedAdminUser(prisma, businessId, { roleIds: [role.id], noPassword: true });
+
+    // Cannot log in yet — no password was ever set (simulates a
+    // pre-PHASE-03 admin row, or one who never completed the invite flow).
+    const tooSoon = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: existing.email, password: 'whatever-guess-1' }),
+    });
+    expect(tooSoon.status).toBe(401);
+
+    const res = await app.request(`/v1/admin/admin-users/${existing.id}/reset-password`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const { password_setup_link: token } = (await res.json()) as { password_setup_link: string };
+    expect(token).toBeTruthy();
+
+    const setup = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'a-newly-set-password-1' }),
+    });
+    expect(setup.status).toBe(200);
+
+    const session = await loginAsAdmin(app, { email: existing.email, password: 'a-newly-set-password-1' });
+    expect(session.headers.Cookie).toBeTruthy();
+  });
+
+  it('requires admin_users:update — a plain admin without it cannot issue a reset token for another admin', async () => {
+    const bareRole = await seedRole(prisma, businessId, { key: 'BARE_ROLE_RESET_TEST', permissionKeys: ['catalog:read'] });
+    const bareAdmin = await seedAdminUser(prisma, businessId, { roleIds: [bareRole.id] });
+    const bareHeaders = (await loginAsAdmin(app, bareAdmin)).headers;
+
+    const targetRole = await seedRole(prisma, businessId, { key: 'RESET_TARGET_ROLE', permissionKeys: ['catalog:read'] });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [targetRole.id], noPassword: true });
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/reset-password`, {
+      method: 'POST',
+      headers: bareHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for an unknown admin id, not a crash', async () => {
+    const res = await app.request('/v1/admin/admin-users/00000000-0000-7000-8000-000000000000/reset-password', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
   });
 });
 

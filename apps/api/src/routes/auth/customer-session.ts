@@ -9,7 +9,7 @@ import { businessScope, DomainError } from '@healthy-aahar/core';
 import { Hono } from 'hono';
 
 import { registerRoute } from '../../lib/route-registry.js';
-import { assertLoginNotRateLimited } from '../../middleware/rate-limit.js';
+import { assertAuthRateLimit } from '../../middleware/rate-limit.js';
 import { customerAuth } from '../../middleware/customer-auth.js';
 import type { AppBindings } from '../../types.js';
 
@@ -40,6 +40,7 @@ registerRoute({
       201: { description: 'Account created and signed in', schema: customerSessionResponseSchema },
       409: jsonError('An account with this email already exists'),
       422: jsonError('Password does not meet the minimum requirements'),
+      429: jsonError('Too many attempts'),
     },
   },
 });
@@ -51,14 +52,21 @@ registerRoute({
   authRoute: true,
   summary: 'Email + password login',
   phase: '03',
-  errors: ['INVALID_CREDENTIALS', 'ACCOUNT_SUSPENDED', 'RATE_LIMITED'],
+  // No ACCOUNT_SUSPENDED here: a suspended account is DELIBERATELY
+  // indistinguishable from a wrong password at login (Step 5 — no
+  // enumeration), so this route can never actually return it. It IS
+  // reachable on GET /v1/auth/me (a session that was valid at login time
+  // but belongs to an account suspended since) — that route still declares
+  // it. Fix #5: this list used to claim a response this handler could
+  // never produce; a client coded against it would wait forever.
+  errors: ['INVALID_CREDENTIALS', 'RATE_LIMITED'],
   openapi: {
     tags: ['Auth'],
     request: { body: customerLoginBodySchema },
     responses: {
       200: { description: 'Signed in', schema: customerSessionResponseSchema },
       401: jsonError('Incorrect email or password'),
-      403: jsonError('Account suspended'),
+      429: jsonError('Too many attempts'),
     },
   },
 });
@@ -116,6 +124,22 @@ export function customerAuthRoutes(): Hono<AppBindings> {
 
   app.post('/register', async (c) => {
     const body = customerRegisterBodySchema.parse(await c.req.json());
+
+    // Fix #1: registration previously had NO rate limiting at all — an
+    // unauthenticated caller could force unlimited full-cost scrypt
+    // computations and account-creation attempts. Checked BEFORE any
+    // lookup or hashing, and before the handler ever learns whether the
+    // email is already registered, so the 429 itself reveals nothing about
+    // that — same no-enumeration property the login path already has.
+    const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
+    await assertAuthRateLimit(c, c.env.auth.loginRateLimitStore, {
+      enabled: c.env.env.RATE_LIMIT_ENABLED,
+      limit: c.env.env.REGISTER_RATE_LIMIT_PER_MIN,
+      bucket: 'customer-register',
+      ip,
+      email: body.email,
+    });
+
     const scope = businessScope(c.env.businessId);
 
     const result = await c.env.services.customerAuth.register(scope, {
@@ -125,7 +149,7 @@ export function customerAuthRoutes(): Hono<AppBindings> {
       firstName: body.first_name,
       lastName: body.last_name,
       sessionTtlMs: c.env.env.CUSTOMER_SESSION_MAX_AGE_SECONDS * 1000,
-      ipAddress: c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for'),
+      ipAddress: ip,
       userAgent: c.req.header('user-agent'),
     });
 
@@ -136,9 +160,10 @@ export function customerAuthRoutes(): Hono<AppBindings> {
     const body = customerLoginBodySchema.parse(await c.req.json());
 
     const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'unknown';
-    await assertLoginNotRateLimited(c.env.auth.loginRateLimitStore, {
+    await assertAuthRateLimit(c, c.env.auth.loginRateLimitStore, {
       enabled: c.env.env.RATE_LIMIT_ENABLED,
       limit: c.env.env.LOGIN_RATE_LIMIT_PER_MIN,
+      bucket: 'customer-login',
       ip,
       email: body.email,
     });

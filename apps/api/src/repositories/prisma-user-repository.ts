@@ -12,6 +12,8 @@ import {
 } from '@healthy-aahar/core';
 import type { Prisma, PrismaClient } from '@healthy-aahar/db';
 
+import { isUniqueConstraintViolation } from './prisma-errors.js';
+
 /**
  * Prisma implementation of identity persistence (docs/07 §3, PHASE 03
  * email/password).
@@ -146,8 +148,11 @@ export class PrismaUserRepository implements UserRepository {
         },
       };
     } catch (error) {
-      // P2002 = unique constraint violation on (email, user_type).
-      if ((error as { code?: string }).code === 'P2002') {
+      // This transaction's only unique/PK constraint besides each row's own
+      // generated id is `(email, user_type)` — unlike admin invite, there
+      // is no second constraint a P2002 here could ambiguously belong to,
+      // but the same precise helper is used anyway for consistency.
+      if (isUniqueConstraintViolation(error, 'email')) {
         return { ok: false, reason: 'EMAIL_TAKEN' };
       }
       throw error;

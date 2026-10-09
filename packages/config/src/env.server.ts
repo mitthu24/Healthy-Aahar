@@ -59,8 +59,10 @@ export const serverEnvSchema = z
      *  not compromise the other. */
     ADMIN_CSRF_SECRET: z.string().min(16),
 
-    // ── Login rate limiting (Step 6, docs/07 §5) ─────────────────────────
+    // ── Auth rate limiting (Step 6, docs/07 §5) ──────────────────────────
     LOGIN_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(5),
+    /** Separate from login's limit (Fix #1) so hammering one never locks out the other. */
+    REGISTER_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(5),
 
     // ── Email ────────────────────────────────────────────────────────────
     BREVO_API_KEY: z.string().optional(),
