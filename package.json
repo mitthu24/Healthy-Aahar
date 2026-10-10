@@ -32,7 +32,8 @@
     "prepare": "husky",
     "db:check": "pnpm --filter @healthy-aahar/db check:invariants",
     "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails",
-    "db:seed-demo-catalogue": "pnpm --filter @healthy-aahar/db seed:demo-catalogue"
+    "db:seed-demo-catalogue": "pnpm --filter @healthy-aahar/db seed:demo-catalogue",
+    "db:seed-demo-delivery": "pnpm --filter @healthy-aahar/db seed:demo-delivery"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",

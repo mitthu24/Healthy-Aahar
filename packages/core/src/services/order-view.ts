@@ -34,6 +34,14 @@ export function toOrderView(order: OrderRow) {
     cancellation_reason: order.cancellationReason,
     placed_at: order.placedAt.toISOString(),
     confirmed_at: order.confirmedAt?.toISOString() ?? null,
+    // Customer-facing timeline: each entry's label uses the SAME mapping as
+    // `display_status` above, so an admin-rejected order's history reads
+    // "Rejected" too, not the raw CANCELLED it would otherwise expose.
+    status_history: order.statusHistory.map((entry) => ({
+      status: entry.toStatus,
+      display_status: customerDisplayStatus(entry.toStatus, order.cancelledByType),
+      at: entry.createdAt.toISOString(),
+    })),
   };
 }
 

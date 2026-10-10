@@ -171,3 +171,36 @@ Manually resized at 320/360/375/390/430/768/1024/1440px (same method as §7 — 
 - **No bulk operations** (bulk price update, bulk publish) — one product/variant at a time, matching the acceptance criterion's scope.
 - **Image validation is URL-shape only** — `https://` + a recognised extension. Nothing fetches or inspects the actual bytes (no dimension check, no content-type verification, no malware/format scan) because there is no storage adapter to do that work yet (PHASE 05's documented job).
 - **`next.config.mjs`'s image `remotePatterns` wildcard** (already flagged in §10 for the customer app) now also applies to `apps/admin`, for the same reason.
+
+## 14. Phase 04C — Connecting the journey end-to-end
+
+### Audit findings
+
+Re-read every layer named in the task (customer pages, admin catalogue, cart/checkout, auth/address, order history, contracts/SDK/OpenAPI, and this report). Confirmed in code (not assumed): every customer page added in §4 and every admin page added in §12 calls the real API through `apiClient` — there is no hardcoded product/category array anywhere in `apps/customer` or `apps/admin`. Ownership scoping (`customerProfileId`), the auto-confirm checkout path, and the public-catalogue `status = 'ACTIVE'` filter are all unchanged and still correct on inspection.
+
+**One concrete, journey-blocking gap found**: checkout requires an address to resolve to a `DeliveryZone` (via `ServicePincode.delivery_zone_id`) and a `DeliverySlot` assigned to that zone (`SlotZoneAssignment`). Nothing in the codebase — no admin route, no seed step — has ever created a `DeliveryZone`, `DeliverySlot` or `SlotZoneAssignment` row. PHASE 06 ("Delivery Zones & Slots", docs/34) is where the real admin screen for this belongs and has not been built. Net effect: **in any environment seeded only from `prisma/seed.ts`, checkout cannot succeed for ANY address**, regardless of how correct the UI and APIs are — not a bug in this phase's code, but a missing precondition for the acceptance journey to complete at all.
+
+Fixed with the narrowest possible unblock, not a PHASE 06 front-run: `packages/db/scripts/seed-demo-delivery.mjs` (`pnpm db:seed-demo-delivery`) — one demo zone per ACTIVE city, one wide-open demo slot, the assignment between them, and back-filling `delivery_zone_id` on every ACTIVE pincode that doesn't have one yet. Same safety pattern as the catalogue demo seed: refuses under `APP_ENV=production` (no override — zone fees/capacity/cutoffs are real operational decisions this script has no business inventing for production), idempotent, never resets anything. This is explicitly a staging/demo convenience, documented as such in the script's own header — a real PHASE 06 admin screen is still the actual deliverable that phase owes.
+
+### Gap closed: order status timeline
+
+The task's order-history requirements explicitly list "order status timeline," which did not exist — the order detail page showed only the current status. Added:
+
+- `OrderRepository.getForCustomer`/`getForAdmin` (via the shared `order-row-mapper.ts`) now include `OrderStatusHistory`, ordered oldest-first.
+- `orderSchema` (customer contract) gained `status_history: [{ status, display_status, at }]`. Each entry's `display_status` runs through the same `customerDisplayStatus()` mapping as the order's current status, so a history entry for an admin-rejected order reads "Rejected," never the raw `CANCELLED` enum value — consistent with the existing no-new-status design, and consistent with never exposing an internal detail (no actor, no reason, no internal note) through this list.
+- The customer order-detail page renders it as a simple chronological list, newest entry highlighted.
+- The admin order DTO was deliberately **not** changed — the admin screen already shows current status plus the cancellation reason, and adding a parallel timeline there was not asked for and would be scope creep.
+
+### What was verified, and how
+
+- **Format/lint/typecheck**: clean across all 17 packages.
+- **Build**: all 6 targets pass, including the order-detail page's new section.
+- **Unit tests**: core 167/167, unchanged (the status-history mapping is exercised by existing `customerDisplayStatus` tests — no new domain logic was added, only a new field shaped from existing data).
+- **Mobile viewports — actually resized and screenshotted, not assumed**: customer app at 320×700 (home, `/products`, `/login`, and an unauthenticated `/cart` visit — confirmed it redirects to `/login?next=/cart`, not a broken page), 768×900 (home — bottom nav correctly hidden at the `md:` breakpoint, search bar fully visible in the header), and 1440×900 (home — no overflow; content stays inside the deliberate `max-w-2xl` mobile-first column rather than stretching, which is the existing design, not a bug). Admin app at 320×700 (`/products` — status filter chips wrap to a second row cleanly, no horizontal scroll; the header title wraps to two lines, which is tight but not broken). **Not tested this pass**: 360, 375, 390, 430 and 1024px, and the remaining customer/admin pages beyond those listed above — do not read this as full-matrix coverage. No API server was reachable during this check, so every data-driven state shown was the app's own error/empty/redirect handling, not real product data — layout and navigation chrome were verified; real data rendering at each breakpoint was not.
+- **Database-dependent verification** (the actual acceptance journey — admin publishes → customer discovers → cart → address → COD checkout → CONFIRMED → order history): **BLOCKED/DEFERRED**, not run, per this task's explicit instruction. No database was connected to in this pass.
+
+### Known limitations after Phase 04C
+
+- **The delivery-zone/slot gap is unblocked for demo purposes only** — a real PHASE 06 admin UI for zones, slots, capacity and cutoffs still does not exist. `seed-demo-delivery.mjs` is a stopgap, documented as one.
+- **The full acceptance journey has still never been run against a real database.** Everything above is verified by code inspection, typecheck/lint/build, and layout-only browser checks — not by actually placing an order.
+- **Order status timeline shows status changes only**, not who made them or why (that detail — reason, actor — stays admin-only, matching the "never expose internal notes" requirement, but also means a customer can't see a cancellation's reason inline in the timeline itself; it's already shown separately as `cancellation_reason`).

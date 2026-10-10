@@ -3,11 +3,13 @@ import {
   type OrderAddressSnapshot,
   type OrderItemRow,
   type OrderRow,
+  type OrderStatusHistoryRow,
 } from '@healthy-aahar/core';
 import type { Prisma } from '@healthy-aahar/db';
 
 export const ORDER_INCLUDE = {
   items: true,
+  statusHistory: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.OrderInclude;
 
 export type RawOrder = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -43,12 +45,18 @@ export function toOrderRow(raw: RawOrder): OrderRow {
     lineTotalPaise: item.lineTotalPaise,
   }));
 
+  const statusHistory: OrderStatusHistoryRow[] = raw.statusHistory.map((entry) => ({
+    toStatus: entry.toStatus,
+    createdAt: entry.createdAt,
+  }));
+
   return {
     id: raw.id,
     businessId: raw.businessId,
     customerProfileId: raw.customerProfileId,
     orderNumber: raw.orderNumber,
     status: raw.status,
+    statusHistory,
     paymentMethod: raw.paymentMethod,
     paymentStatus: raw.paymentStatus,
     customerNameSnapshot: raw.customerNameSnapshot,

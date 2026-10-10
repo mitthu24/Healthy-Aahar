@@ -75,6 +75,9 @@ export const orderSchema = z.object({
   cancellation_reason: z.string().nullable(),
   placed_at: z.string(),
   confirmed_at: z.string().nullable(),
+  status_history: z.array(
+    z.object({ status: orderStatusValueSchema, display_status: z.string(), at: z.string() }),
+  ),
 });
 export type OrderDto = z.infer<typeof orderSchema>;
 

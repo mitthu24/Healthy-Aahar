@@ -83,6 +83,35 @@ function OrderDetail() {
         <p className="text-body-sm text-sand-600 mt-3">Reason: {order.cancellation_reason}</p>
       ) : null}
 
+      {order.status_history.length > 0 ? (
+        <section className="mt-6">
+          <h2 className="text-heading-sm text-sand-900">Status</h2>
+          <Card className="mt-3 p-4">
+            <ol className="space-y-3">
+              {order.status_history.map((entry, index) => (
+                <li key={`${entry.status}-${entry.at}`} className="flex items-start gap-3">
+                  <span
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                      index === order.status_history.length - 1 ? 'bg-green-600' : 'bg-sand-300'
+                    }`}
+                    aria-hidden
+                  />
+                  <div>
+                    <p className="text-body-sm text-sand-900 font-medium">{entry.display_status}</p>
+                    <p className="text-caption text-sand-600">
+                      {new Date(entry.at).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </section>
+      ) : null}
+
       <section className="mt-6">
         <h2 className="text-heading-sm text-sand-900">Items</h2>
         <Card className="mt-3 p-4">

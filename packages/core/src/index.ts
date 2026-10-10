@@ -69,6 +69,7 @@ export type { PlaceOrderInput, CheckoutRepository } from './ports/checkout-repos
 export type {
   OrderItemRow,
   OrderAddressSnapshot,
+  OrderStatusHistoryRow,
   OrderRow,
   OrderListFilter,
   TransitionInput,

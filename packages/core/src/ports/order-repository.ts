@@ -27,12 +27,18 @@ export type OrderAddressSnapshot = {
   pincode: string;
 };
 
+export type OrderStatusHistoryRow = {
+  toStatus: OrderStatusValue;
+  createdAt: Date;
+};
+
 export type OrderRow = {
   id: string;
   businessId: string;
   customerProfileId: string;
   orderNumber: string;
   status: OrderStatusValue;
+  statusHistory: OrderStatusHistoryRow[];
   paymentMethod: 'COD' | 'ONLINE' | 'WALLET' | 'CREDIT';
   paymentStatus:
     'DUE' | 'AUTHORIZED' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED' | 'CANCELLED';
