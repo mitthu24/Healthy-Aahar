@@ -40,7 +40,11 @@ function toPathRegex(openApiPath: string): RegExp {
 function buildCompiledRoutes(): CompiledRoute[] {
   return listRoutes()
     .filter((route) => route.audience === 'admin' && route.permission && !route.authRoute)
-    .map((route) => ({ method: route.method, regex: toPathRegex(route.path), permission: route.permission! }));
+    .map((route) => ({
+      method: route.method,
+      regex: toPathRegex(route.path),
+      permission: route.permission!,
+    }));
 }
 
 let compiled: CompiledRoute[] | null = null;

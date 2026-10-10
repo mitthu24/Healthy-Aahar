@@ -43,9 +43,16 @@ export function ProductGrid({
     async (cursor?: string) => {
       setError(null);
       try {
-        const result = await apiClient.listProducts({ category_id: categoryId, q, cursor, limit: 20 });
+        const result = await apiClient.listProducts({
+          category_id: categoryId,
+          q,
+          cursor,
+          limit: 20,
+        });
         setPage((prev) =>
-          cursor && prev ? { data: [...prev.data, ...result.data], pagination: result.pagination } : result,
+          cursor && prev
+            ? { data: [...prev.data, ...result.data], pagination: result.pagination }
+            : result,
         );
       } catch {
         setError('Could not load products. Check your connection and try again.');

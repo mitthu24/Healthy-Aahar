@@ -115,7 +115,7 @@ The local pnpm/corepack installation was broken at the start of this pass (a dan
 ## 10. Known limitations / next steps for staging verification
 
 - **Database-dependent tests are the first thing to run once a database is available** — `checkout.integration.test.ts` specifically proves the auto-confirm/atomicity/idempotency behaviour this phase's prior change required.
-- **No catalogue/admin product-management UI exists yet** — products must be seeded or inserted directly; there is no admin screen to create a Product/Category/Variant. This was out of this pass's scope (customer+order-fulfilment journeys only).
+- ~~No catalogue/admin product-management UI exists yet~~ — **built in Phase 04B, §12 below.**
 - **No slot-capacity enforcement** — `/v1/me/delivery-slots` lists slots assigned to a zone but does not check `SlotCapacity`/cutoffs; a customer can currently book a slot that is operationally full. Flagged as a deliberate scope line (PHASE 06), not an oversight.
 - **No demo-admin bootstrap mechanism was built in this pass** — the change-password enforcement (`must_change_password`) is ready for one, but the actual staging-only seeding of `admin@gmail.com` is not implemented; an admin account must be created through the existing invite flow today.
 - **`next.config.mjs`'s image `remotePatterns` is currently a wildcard (`hostname: '**'`)** because no CDN host exists yet — narrow this to the real host once `packages/storage`'s R2 adapter ships.
@@ -125,4 +125,49 @@ The local pnpm/corepack installation was broken at the start of this pass (a dan
 ## 11. Acceptance journeys — status
 
 - **Customer**: Home → Browse/Category/Search → Product detail → Add to cart → Login/Register → Address → COD checkout (auto-confirmed) → Order confirmation → My orders → Order detail. All pages exist and build; **end-to-end correctness is unverified against a real database** (see §9).
-- **Admin**: Login → forced password change on first login → Orders list → Order detail → Reject/Hold → fulfilment status updates → Record COD collection. All pages exist and build; same caveat applies.
+- **Admin (orders)**: Login → forced password change on first login → Orders list → Order detail → Reject/Hold → fulfilment status updates → Record COD collection. All pages exist and build; same caveat applies.
+- **Admin (catalogue, Phase 04B)**: Login → create category → create product → add a variant with price + stock → publish → product becomes visible through the public catalogue API. All pages exist and build; same database caveat applies (see §13).
+
+## 12. Phase 04B — Admin Catalogue Management
+
+Adds the piece explicitly out of scope in §10 above: admin screens to create categories, products, variants and stock, so the customer storefront can show genuine database-backed products instead of nothing. No new tables or migrations — this is entirely additive on the Phase 02 schema (`Category`, `Product`, `ProductVariant`, `ProductImage`, `Inventory`, `InventoryMovement`), which already had everything needed.
+
+### Audit findings that shaped the design
+
+- **Unique slugs** are enforced by DB-level partial unique indexes (`categories_business_slug_unique`, `products_business_slug_unique`, both `WHERE deleted_at IS NULL`) — not a Prisma `@@unique`. Slug collisions are caught via `isUniqueConstraintViolation` (the same helper Phase 03 built) and mapped to a clean `SLUG_ALREADY_IN_USE` error, not a raw 500.
+- **Inventory already has the CHECK constraints this phase needed**: `quantity_on_hand >= 0`, `quantity_reserved >= 0`, and critically `quantity_reserved <= quantity_on_hand OR allow_backorder` — the exact rule "don't let product editing silently overwrite reserved inventory" requires. Stock is set via a conditional `UPDATE` that mirrors this constraint (`WHERE allow_backorder OR quantity_reserved <= :new_value`); a 0-row result is reported as `STOCK_BELOW_RESERVED` with the exact reserved count, rather than surfacing a raw Postgres constraint error.
+- **RBAC permissions already existed** for every operation needed (`catalog:read/create/update/delete/publish`, `inventory:read/adjust`) — Phase 03's permission catalogue anticipated this phase; no new permission was added.
+- **`packages/storage` is a port only** — no R2/S3 adapter exists (its own doc comment marks that PHASE 05). Rather than inventing an upload pipeline, product images are added by URL: the admin supplies an already-hosted `https://…` link ending in a recognised image extension, validated by the contract (`addProductImageBodySchema`) before the API ever touches it.
+
+### What was built
+
+- **Contracts**: `packages/contracts/src/admin-catalogue.ts` — category/product/variant/image schemas and bodies, plus 6 new error codes (`CATEGORY_NOT_FOUND`, `SLUG_ALREADY_IN_USE`, `CATEGORY_HAS_PRODUCTS`, `PRODUCT_NOT_PUBLISHABLE`, `STOCK_BELOW_RESERVED`, `IMAGE_NOT_FOUND`).
+- **Core**: `AdminCategoryRepository`/`AdminProductRepository`/`AdminVariantRepository` ports and one `AdminCatalogueService` enforcing every business rule — slug uniqueness, "a category with products can't be deleted" (`CATEGORY_HAS_PRODUCTS`, counted live, not cached), "a product with zero variants can't be published" (`PRODUCT_NOT_PUBLISHABLE`), "MRP can't be below the selling price." Every write calls `AuditLogRepository.write()` (category/product/variant create, update, status change, image add/remove, stock set) — the same mechanism Phase 03's RBAC admin actions use, not a new one.
+- **Prisma repositories**: `prisma-admin-catalogue-repository.ts`. `setStock` runs inside a transaction: if no `Inventory` row exists yet it creates one (a brand-new variant has none until this is called), otherwise the conditional `UPDATE` above; either path writes one `InventoryMovement` (`reason: MANUAL_ADJUSTMENT`) with the actual delta, so the ledger stays the single source of truth for "why did stock change" — nothing here introduces a second one.
+- **API routes** (`apps/api/src/routes/admin/catalogue.ts`): `/v1/admin/categories` (list/create/get/update/delete), `/v1/admin/products` (list/create/get/update/status/images), `/v1/admin/products/{id}/variants` (create), `/v1/admin/variants/{id}` (update), `/v1/admin/variants/{id}/stock` (set). Every mutation requires the matching `catalog:*`/`inventory:adjust` permission via the existing route-registry + `requirePermission` mechanism — nothing bypasses it.
+- **Publish guard**: `POST /products/{id}/status` to `ACTIVE` is refused (`PRODUCT_NOT_PUBLISHABLE`) when the product has zero variants — this is what makes the acceptance criterion ("create a product with at least one variant... then publish it") an enforced rule, not just a UI suggestion.
+- **Public-catalogue isolation, unchanged**: `routes/public/catalogue.ts` still reads only `status = 'ACTIVE'`; nothing in Phase 04B touches that filter or exposes `internal_note`/cost price/draft products through it. A product created here is invisible to customers until explicitly published.
+- **SDK**: `packages/sdk` gained typed methods for every route above.
+- **Admin UI** (`apps/admin`): `/categories` (list, create/edit form with client-side slugify, activate/deactivate, delete with a two-click confirm and a surfaced `CATEGORY_HAS_PRODUCTS` error instead of a silent failure), `/products` (status-filterable list), `/products/new` (create — category dropdown, disabled with a clear message if no category exists yet), `/products/[id]` (publish/unpublish/archive buttons, image gallery with add-by-URL and remove, per-variant stock editor showing on-hand/reserved/available, add-variant form). Destructive actions (category delete) require an explicit second click; stock/price changes show inline save state and errors rather than failing silently.
+- **Demo data**: `packages/db/scripts/seed-demo-catalogue.mjs` (`pnpm db:seed-demo-catalogue`) — **not** part of `prisma/seed.ts` and never runs automatically. Refuses outright under `APP_ENV=production` (no override flag, unlike the main seed — there is no legitimate reason to run synthetic demo products against production). Idempotent (find-then-create by slug/SKU, safe to re-run), creates two categories and two DRAFT products with priced, stocked variants; nothing is auto-published — an operator still publishes from `/products` to exercise the acceptance journey.
+
+### Mobile responsiveness
+
+Manually resized at 320/360/375/390/430/768/1024/1440px (same method as §7 — not an automated visual-regression run). The product table becomes a scroll-contained element rather than overflowing the viewport at 320px; forms stack to one column; the variant stock editor's inline inputs/buttons wrap rather than clipping. No horizontal overflow observed at any width tested.
+
+## 13. Tests executed for Phase 04B
+
+| Check | Result |
+|---|---|
+| `pnpm run format:check` / `lint` / `typecheck` (all 17 packages) | **PASS** |
+| `pnpm run build` (all 6 build targets, including admin's 3 new routes) | **PASS** |
+| `pnpm --filter @healthy-aahar/core run test` (unit, no DB) | **PASS** — 167/167, unchanged (no new unit tests were added for the new service — see limitations) |
+| Database-dependent verification (would prove slug-uniqueness, the stock-vs-reserved CHECK, and the publish → public-catalogue-visibility path end to end) | **BLOCKED/DEFERRED** — not run, per this task's explicit instruction; no database was connected to in this pass |
+
+### Known limitations
+
+- **No unit/integration tests were added for `AdminCatalogueService` or the Prisma catalogue repository** in this pass — the acceptance criterion (create category → product → variant → publish → visible in public catalogue) is implemented but **not yet verified against a real database**. This is the first thing to test once database access resumes.
+- **Category deletion count is a live query, not cached** — correct, but means `DELETE /v1/admin/categories/{id}` costs one extra `COUNT` query; negligible at expected catalogue sizes.
+- **No bulk operations** (bulk price update, bulk publish) — one product/variant at a time, matching the acceptance criterion's scope.
+- **Image validation is URL-shape only** — `https://` + a recognised extension. Nothing fetches or inspects the actual bytes (no dimension check, no content-type verification, no malware/format scan) because there is no storage adapter to do that work yet (PHASE 05's documented job).
+- **`next.config.mjs`'s image `remotePatterns` wildcard** (already flagged in §10 for the customer app) now also applies to `apps/admin`, for the same reason.

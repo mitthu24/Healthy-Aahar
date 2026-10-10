@@ -23,7 +23,9 @@ export function AddressForm({
   const [city, setCity] = useState(initial?.city ?? '');
   const [state, setState] = useState(initial?.state ?? '');
   const [pincode, setPincode] = useState(initial?.pincode ?? '');
-  const [deliveryInstructions, setDeliveryInstructions] = useState(initial?.delivery_instructions ?? '');
+  const [deliveryInstructions, setDeliveryInstructions] = useState(
+    initial?.delivery_instructions ?? '',
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,7 +46,9 @@ export function AddressForm({
     };
 
     try {
-      const saved = initial ? await apiClient.updateAddress(initial.id, body) : await apiClient.createAddress(body);
+      const saved = initial
+        ? await apiClient.updateAddress(initial.id, body)
+        : await apiClient.createAddress(body);
       onSaved(saved);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save this address.');
@@ -79,20 +83,43 @@ export function AddressForm({
       </div>
       <div>
         <FieldLabel htmlFor="line1">Address line 1</FieldLabel>
-        <Input id="line1" required className="mt-1" value={line1} onChange={(e) => setLine1(e.target.value)} />
+        <Input
+          id="line1"
+          required
+          className="mt-1"
+          value={line1}
+          onChange={(e) => setLine1(e.target.value)}
+        />
       </div>
       <div>
         <FieldLabel htmlFor="line2">Address line 2 (optional)</FieldLabel>
-        <Input id="line2" className="mt-1" value={line2} onChange={(e) => setLine2(e.target.value)} />
+        <Input
+          id="line2"
+          className="mt-1"
+          value={line2}
+          onChange={(e) => setLine2(e.target.value)}
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel htmlFor="city">City</FieldLabel>
-          <Input id="city" required className="mt-1" value={city} onChange={(e) => setCity(e.target.value)} />
+          <Input
+            id="city"
+            required
+            className="mt-1"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+          />
         </div>
         <div>
           <FieldLabel htmlFor="state">State</FieldLabel>
-          <Input id="state" required className="mt-1" value={state} onChange={(e) => setState(e.target.value)} />
+          <Input
+            id="state"
+            required
+            className="mt-1"
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+          />
         </div>
       </div>
       <div>

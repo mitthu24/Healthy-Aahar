@@ -23,7 +23,10 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
     }
     setIsAdding(true);
     try {
-      const cart = await apiClient.addCartItem({ variant_id: product.default_variant_id, quantity: 1 });
+      const cart = await apiClient.addCartItem({
+        variant_id: product.default_variant_id,
+        quantity: 1,
+      });
       setCartItemCount(cart.item_count);
     } finally {
       setIsAdding(false);
@@ -43,13 +46,18 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
               className="object-cover"
             />
           ) : (
-            <div className="text-sand-400 text-caption flex h-full items-center justify-center">No image</div>
+            <div className="text-sand-400 text-caption flex h-full items-center justify-center">
+              No image
+            </div>
           )}
         </div>
       </Link>
 
       <div className="flex flex-1 flex-col gap-1 p-3">
-        <Link href={`/products/${product.slug}`} className="text-body-sm text-sand-900 line-clamp-2 font-medium">
+        <Link
+          href={`/products/${product.slug}`}
+          className="text-body-sm text-sand-900 line-clamp-2 font-medium"
+        >
           {product.name}
         </Link>
         {product.short_description ? (
@@ -57,7 +65,9 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
         ) : null}
 
         <div className="mt-auto flex items-center justify-between pt-2">
-          <span className="text-body-md tabular text-sand-900 font-semibold">{product.from_price.display}</span>
+          <span className="text-body-md tabular text-sand-900 font-semibold">
+            {product.from_price.display}
+          </span>
           {outOfStock ? (
             <span className="text-caption text-danger-600 font-medium">Out of stock</span>
           ) : (

@@ -58,7 +58,10 @@ const ADMIN_INCLUDE = {
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async findByUserId(scope: BusinessScope, userId: string): Promise<{ user: UserRow; admin: AdminUserRow } | null> {
+  async findByUserId(
+    scope: BusinessScope,
+    userId: string,
+  ): Promise<{ user: UserRow; admin: AdminUserRow } | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
 
@@ -102,14 +105,19 @@ export class PrismaAdminRepository implements AdminRepository {
     return admins.map(toAdminUserRow);
   }
 
-  async loadEffectivePermissions(scope: BusinessScope, adminUserId: string): Promise<EffectivePermissions> {
+  async loadEffectivePermissions(
+    scope: BusinessScope,
+    adminUserId: string,
+  ): Promise<EffectivePermissions> {
     const admin = await this.prisma.adminUser.findFirst({
       where: { id: adminUserId, businessId: scope },
       select: {
         isSuperAdmin: true,
         roles: {
           select: {
-            role: { select: { permissions: { select: { permission: { select: { key: true } } } } } },
+            role: {
+              select: { permissions: { select: { permission: { select: { key: true } } } } },
+            },
           },
         },
       },
@@ -164,11 +172,18 @@ export class PrismaAdminRepository implements AdminRepository {
 
         if (roles.length > 0) {
           await tx.adminUserRole.createMany({
-            data: roles.map((r) => ({ adminUserId, roleId: r.id, grantedBy: input.invitedByUserId })),
+            data: roles.map((r) => ({
+              adminUserId,
+              roleId: r.id,
+              grantedBy: input.invitedByUserId,
+            })),
           });
         }
 
-        return tx.adminUser.findUniqueOrThrow({ where: { id: adminUserId }, include: ADMIN_INCLUDE });
+        return tx.adminUser.findUniqueOrThrow({
+          where: { id: adminUserId },
+          include: ADMIN_INCLUDE,
+        });
       });
 
       return { ok: true, admin: toAdminUserRow(created) };
@@ -199,7 +214,12 @@ export class PrismaAdminRepository implements AdminRepository {
     });
   }
 
-  async setRoles(scope: BusinessScope, adminUserId: string, roleIds: string[], grantedBy: string): Promise<AdminUserRow> {
+  async setRoles(
+    scope: BusinessScope,
+    adminUserId: string,
+    roleIds: string[],
+    grantedBy: string,
+  ): Promise<AdminUserRow> {
     const roles = await this.prisma.role.findMany({
       where: { id: { in: roleIds }, businessId: scope },
       select: { id: true, key: true },
@@ -238,6 +258,9 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void> {
     void scope;
-    await this.prisma.adminUser.update({ where: { id: adminUserId }, data: { lastPasswordChangeAt: now() } });
+    await this.prisma.adminUser.update({
+      where: { id: adminUserId },
+      data: { lastPasswordChangeAt: now() },
+    });
   }
 }

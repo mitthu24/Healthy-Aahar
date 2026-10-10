@@ -63,7 +63,12 @@ function testEnv(): ServerEnv {
 }
 
 async function seedOrderableProduct(
-  overrides: { pricePaise?: bigint; quantityOnHand?: number; allowBackorder?: boolean; maxOrderQuantity?: number | null } = {},
+  overrides: {
+    pricePaise?: bigint;
+    quantityOnHand?: number;
+    allowBackorder?: boolean;
+    maxOrderQuantity?: number | null;
+  } = {},
 ) {
   const category = await prisma.category.create({
     data: { id: testId(), businessId, name: 'Meals', slug: `meals-${testId()}`, displayOrder: 0 },
@@ -121,7 +126,14 @@ async function seedDeliverySetup() {
     },
   });
   const zone = await prisma.deliveryZone.create({
-    data: { id: testId(), businessId, cityId: city.id, name: 'Zone A', code: `ZONE-${testId()}`, isActive: true },
+    data: {
+      id: testId(),
+      businessId,
+      cityId: city.id,
+      name: 'Zone A',
+      code: `ZONE-${testId()}`,
+      isActive: true,
+    },
   });
   const pincode = String(500000 + Math.floor(Math.random() * 90000));
   await prisma.servicePincode.create({
@@ -209,7 +221,17 @@ beforeAll(async () => {
   const url = await setupTestDatabase();
   process.env.DATABASE_URL = url;
   prisma = createTestClient(url);
-  app = createApp({ env: testEnv(), prisma, logger: createLogger({ service: 'checkout-it', env: 'local', version: 'test', level: 'silent' }), businessId: '' });
+  app = createApp({
+    env: testEnv(),
+    prisma,
+    logger: createLogger({
+      service: 'checkout-it',
+      env: 'local',
+      version: 'test',
+      level: 'silent',
+    }),
+    businessId: '',
+  });
 });
 
 afterAll(async () => {
@@ -220,7 +242,17 @@ beforeEach(async () => {
   await truncateAll(prisma);
   const business = await seedBusiness(prisma);
   businessId = business.id;
-  app = createApp({ env: testEnv(), prisma, logger: createLogger({ service: 'checkout-it', env: 'local', version: 'test', level: 'silent' }), businessId });
+  app = createApp({
+    env: testEnv(),
+    prisma,
+    logger: createLogger({
+      service: 'checkout-it',
+      env: 'local',
+      version: 'test',
+      level: 'silent',
+    }),
+    businessId,
+  });
 });
 
 describe('checkout auto-confirmation (Phase 04 requirement change)', () => {
@@ -274,10 +306,15 @@ describe('checkout auto-confirmation (Phase 04 requirement change)', () => {
     });
     expect(inventory?.quantityReserved).toBe(2);
 
-    const cart = await prisma.cart.findUnique({ where: { customerProfileId: dbOrder!.customerProfileId }, include: { items: true } });
+    const cart = await prisma.cart.findUnique({
+      where: { customerProfileId: dbOrder!.customerProfileId },
+      include: { items: true },
+    });
     expect(cart?.items).toHaveLength(0);
 
-    const notifications = await prisma.notification.findMany({ where: { type: 'ORDER_CONFIRMED' } });
+    const notifications = await prisma.notification.findMany({
+      where: { type: 'ORDER_CONFIRMED' },
+    });
     expect(notifications).toHaveLength(1);
   });
 
@@ -312,7 +349,11 @@ describe('checkout auto-confirmation (Phase 04 requirement change)', () => {
     const address = await createAddress(token, pincode);
     await addToCart(token, variant.id, 1);
 
-    const payload = { address_id: address.id, delivery_slot_id: slot.id, service_date: '2026-12-01' };
+    const payload = {
+      address_id: address.id,
+      delivery_slot_id: slot.id,
+      service_date: '2026-12-01',
+    };
 
     const first = await checkout(token, payload, 'checkout-key-dup');
     expect(first.status).toBe(201);

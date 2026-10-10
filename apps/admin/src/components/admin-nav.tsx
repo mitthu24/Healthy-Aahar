@@ -5,7 +5,11 @@ import { usePathname } from 'next/navigation';
 
 import { AuthStatus } from '@/app/auth-status';
 
-const LINKS = [{ href: '/orders', label: 'Orders' }] as const;
+const LINKS = [
+  { href: '/orders', label: 'Orders' },
+  { href: '/products', label: 'Products' },
+  { href: '/categories', label: 'Categories' },
+] as const;
 
 export function AdminNav() {
   const pathname = usePathname();

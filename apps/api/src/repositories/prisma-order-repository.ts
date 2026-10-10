@@ -13,7 +13,10 @@ import type { PrismaClient } from '@healthy-aahar/db';
 
 import { ORDER_INCLUDE, toOrderRow } from './order-row-mapper.js';
 
-const TIMESTAMP_COLUMN: Record<string, 'confirmedAt' | 'preparedAt' | 'dispatchedAt' | 'deliveredAt' | undefined> = {
+const TIMESTAMP_COLUMN: Record<
+  string,
+  'confirmedAt' | 'preparedAt' | 'dispatchedAt' | 'deliveredAt' | undefined
+> = {
   CONFIRMED: 'confirmedAt',
   PREPARING: 'preparedAt',
   OUT_FOR_DELIVERY: 'dispatchedAt',
@@ -41,7 +44,10 @@ export class PrismaOrderRepository implements OrderRepository {
       include: ORDER_INCLUDE,
     });
 
-    return { data: rows.map(toOrderRow), pagination: { limit: filter.limit, next_cursor: null, has_more: false } };
+    return {
+      data: rows.map(toOrderRow),
+      pagination: { limit: filter.limit, next_cursor: null, has_more: false },
+    };
   }
 
   async getForCustomer(
@@ -68,7 +74,10 @@ export class PrismaOrderRepository implements OrderRepository {
       include: ORDER_INCLUDE,
     });
 
-    return { data: rows.map(toOrderRow), pagination: { limit: filter.limit, next_cursor: null, has_more: false } };
+    return {
+      data: rows.map(toOrderRow),
+      pagination: { limit: filter.limit, next_cursor: null, has_more: false },
+    };
   }
 
   async getForAdmin(scope: BusinessScope, orderId: string): Promise<OrderRow | null> {
@@ -79,12 +88,21 @@ export class PrismaOrderRepository implements OrderRepository {
     return row ? toOrderRow(row) : null;
   }
 
-  async transition(scope: BusinessScope, orderId: string, input: TransitionInput): Promise<OrderRow> {
-    const existing = await this.prisma.order.findFirst({ where: { id: orderId, businessId: scope } });
+  async transition(
+    scope: BusinessScope,
+    orderId: string,
+    input: TransitionInput,
+  ): Promise<OrderRow> {
+    const existing = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId: scope },
+    });
     if (!existing) throw new DomainError('NOT_FOUND', 'Order not found.');
 
     const timestampColumn = TIMESTAMP_COLUMN[input.toStatus];
-    const isCancelLike = input.toStatus === 'CANCELLED' || input.toStatus === 'FAILED' || input.toStatus === 'RETURNED';
+    const isCancelLike =
+      input.toStatus === 'CANCELLED' ||
+      input.toStatus === 'FAILED' ||
+      input.toStatus === 'RETURNED';
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -128,7 +146,9 @@ export class PrismaOrderRepository implements OrderRepository {
     note: string,
     actorUserId: string,
   ): Promise<OrderRow> {
-    const existing = await this.prisma.order.findFirst({ where: { id: orderId, businessId: scope } });
+    const existing = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId: scope },
+    });
     if (!existing) throw new DomainError('NOT_FOUND', 'Order not found.');
 
     const combinedNote = existing.internalNote ? `${existing.internalNote}\n${note}` : note;
@@ -160,7 +180,9 @@ export class PrismaOrderRepository implements OrderRepository {
     amountPaise: bigint,
     collectedByUserId: string,
   ): Promise<OrderRow> {
-    const existing = await this.prisma.order.findFirst({ where: { id: orderId, businessId: scope } });
+    const existing = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId: scope },
+    });
     if (!existing) throw new DomainError('NOT_FOUND', 'Order not found.');
 
     // `Order.paymentStatus` and `Payment.status` are kept in lockstep
@@ -189,7 +211,10 @@ export class PrismaOrderRepository implements OrderRepository {
 
   /** CANCELLED/FAILED/RETURNED release whatever stock they had reserved — never left dangling. */
   private async releaseReservedStock(orderId: string): Promise<void> {
-    const items = await this.prisma.orderItem.findMany({ where: { orderId }, select: { variantId: true, quantity: true } });
+    const items = await this.prisma.orderItem.findMany({
+      where: { orderId },
+      select: { variantId: true, quantity: true },
+    });
 
     for (const item of items) {
       if (!item.variantId) continue;
@@ -211,7 +236,8 @@ export class PrismaOrderRepository implements OrderRepository {
           variantId: item.variantId,
           reason: 'ORDER_RELEASED',
           quantityDelta: 0,
-          quantityAfter: inventory.quantityOnHand - Math.max(inventory.quantityReserved - item.quantity, 0),
+          quantityAfter:
+            inventory.quantityOnHand - Math.max(inventory.quantityReserved - item.quantity, 0),
           reservedDelta: -item.quantity,
           referenceType: 'ORDER',
           referenceId: orderId,

@@ -49,7 +49,10 @@ export default function CartPage() {
   async function updateQuantity(itemId: string, quantity: number) {
     setBusyItemId(itemId);
     try {
-      const result = quantity <= 0 ? await apiClient.removeCartItem(itemId) : await apiClient.updateCartItem(itemId, { quantity });
+      const result =
+        quantity <= 0
+          ? await apiClient.removeCartItem(itemId)
+          : await apiClient.updateCartItem(itemId, { quantity });
       setCart(result);
       setCartItemCount(result.item_count);
     } finally {
@@ -58,7 +61,12 @@ export default function CartPage() {
   }
 
   if (error) return <ErrorState message={error} onRetry={() => void load()} />;
-  if (!cart) return <main className="mx-auto max-w-2xl px-4 py-6"><CartSkeleton /></main>;
+  if (!cart)
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-6">
+        <CartSkeleton />
+      </main>
+    );
 
   if (cart.items.length === 0) {
     return (
@@ -87,13 +95,21 @@ export default function CartPage() {
             <li key={item.id} className="border-sand-200 flex gap-3 rounded-lg border p-3">
               <div className="bg-sand-100 relative h-16 w-16 shrink-0 overflow-hidden rounded-md">
                 {item.image_url ? (
-                  <Image src={item.image_url} alt={item.product_name} fill sizes="64px" className="object-cover" />
+                  <Image
+                    src={item.image_url}
+                    alt={item.product_name}
+                    fill
+                    sizes="64px"
+                    className="object-cover"
+                  />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-body-sm text-sand-900 font-medium">{item.product_name}</p>
                 <p className="text-caption text-sand-600">{item.variant_name}</p>
-                {issue ? <p className="text-caption text-danger-600 mt-1">{issue.message}</p> : null}
+                {issue ? (
+                  <p className="text-caption text-danger-600 mt-1">{issue.message}</p>
+                ) : null}
                 <div className="mt-2 flex items-center justify-between">
                   <div className="border-sand-200 flex items-center rounded-md border">
                     <button
@@ -105,7 +121,7 @@ export default function CartPage() {
                     >
                       −
                     </button>
-                    <span className="tabular w-7 text-center text-body-sm">{item.quantity}</span>
+                    <span className="tabular text-body-sm w-7 text-center">{item.quantity}</span>
                     <button
                       type="button"
                       aria-label={`Increase quantity of ${item.product_name}`}
@@ -116,7 +132,9 @@ export default function CartPage() {
                       +
                     </button>
                   </div>
-                  <span className="text-body-sm tabular font-semibold">{item.line_total.display}</span>
+                  <span className="text-body-sm tabular font-semibold">
+                    {item.line_total.display}
+                  </span>
                 </div>
               </div>
             </li>

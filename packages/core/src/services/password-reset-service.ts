@@ -1,6 +1,9 @@
 import { DomainError } from '../domain/errors.js';
 import type { PasswordHasher } from '../ports/password-hasher.js';
-import type { PasswordResetPurpose, PasswordResetRepository } from '../ports/password-reset-repository.js';
+import type {
+  PasswordResetPurpose,
+  PasswordResetRepository,
+} from '../ports/password-reset-repository.js';
 import type { SessionRepository } from '../ports/session-repository.js';
 import type { SessionTokenHasher } from '../ports/session-token-hasher.js';
 import type { UserRepository } from '../ports/user-repository.js';
@@ -37,7 +40,11 @@ export class PasswordResetService {
     private readonly tokenHasher: SessionTokenHasher,
   ) {}
 
-  async issueToken(params: { userId: string; purpose: PasswordResetPurpose; continueUrl?: string }): Promise<string> {
+  async issueToken(params: {
+    userId: string;
+    purpose: PasswordResetPurpose;
+    continueUrl?: string;
+  }): Promise<string> {
     const rawToken = this.tokenHasher.generate();
     await this.passwordResets.create({
       userId: params.userId,

@@ -97,7 +97,9 @@ export function assertRegistryIsSound(routes: readonly RouteDescriptor[] = regis
     }
 
     if (route.authRoute && route.audience !== 'admin' && route.audience !== 'customer') {
-      problems.push(`${id} is an authRoute but its audience is "${route.audience}" (expected admin or customer)`);
+      problems.push(
+        `${id} is an authRoute but its audience is "${route.audience}" (expected admin or customer)`,
+      );
     }
 
     if (route.audience !== 'admin' && route.permission) {

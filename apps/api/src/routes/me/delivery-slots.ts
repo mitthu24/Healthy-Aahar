@@ -52,11 +52,18 @@ export function deliverySlotsRoutes(): Hono<AppBindings> {
     });
     if (!address) throw new DomainError('NOT_FOUND', 'Address not found.');
     if (!address.deliveryZoneId) {
-      throw new DomainError('ADDRESS_NOT_SERVICEABLE', 'This address is not yet assigned to a delivery zone.');
+      throw new DomainError(
+        'ADDRESS_NOT_SERVICEABLE',
+        'This address is not yet assigned to a delivery zone.',
+      );
     }
 
     const assignments = await c.env.prisma.slotZoneAssignment.findMany({
-      where: { deliveryZoneId: address.deliveryZoneId, isActive: true, slot: { businessId: c.env.businessId, isActive: true, deletedAt: null } },
+      where: {
+        deliveryZoneId: address.deliveryZoneId,
+        isActive: true,
+        slot: { businessId: c.env.businessId, isActive: true, deletedAt: null },
+      },
       include: { slot: true },
       orderBy: { slot: { displayOrder: 'asc' } },
     });

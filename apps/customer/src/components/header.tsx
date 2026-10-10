@@ -12,7 +12,7 @@ function CartIcon({ count }: { count: number }) {
     <Link
       href="/cart"
       aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}
-      className="relative inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-sand-100"
+      className="hover:bg-sand-100 relative inline-flex h-11 w-11 items-center justify-center rounded-md"
     >
       <svg viewBox="0 0 24 24" className="text-sand-800 h-6 w-6" fill="none" aria-hidden="true">
         <path
@@ -26,7 +26,7 @@ function CartIcon({ count }: { count: number }) {
         <circle cx="17" cy="20" r="1.4" fill="currentColor" />
       </svg>
       {count > 0 ? (
-        <span className="bg-green-600 text-sand-0 text-caption absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 leading-none">
+        <span className="text-sand-0 text-caption absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-600 px-1 leading-none">
           {count > 99 ? '99+' : count}
         </span>
       ) : null}
@@ -54,7 +54,7 @@ export function Header() {
   return (
     <header className="bg-sand-0 border-sand-200 sticky top-0 z-20 border-b">
       <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-        <Link href="/" className="font-display text-heading-sm text-green-700 shrink-0">
+        <Link href="/" className="font-display text-heading-sm shrink-0 text-green-700">
           Healthy Aahar
         </Link>
 

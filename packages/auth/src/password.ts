@@ -64,7 +64,14 @@ function scryptWithParams(
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
-  const derived = await scryptWithParams(password.normalize('NFKC'), salt, KEY_LENGTH, SCRYPT_N, SCRYPT_R, SCRYPT_P);
+  const derived = await scryptWithParams(
+    password.normalize('NFKC'),
+    salt,
+    KEY_LENGTH,
+    SCRYPT_N,
+    SCRYPT_R,
+    SCRYPT_P,
+  );
   return `scrypt:${SCRYPT_N}:${SCRYPT_R}:${SCRYPT_P}:${salt.toString('hex')}:${derived.toString('hex')}`;
 }
 
@@ -82,7 +89,14 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   const parts = storedHash.split(':');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
 
-  const [, nStr, rStr, pStr, saltHex, hashHex] = parts as [string, string, string, string, string, string];
+  const [, nStr, rStr, pStr, saltHex, hashHex] = parts as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
   const n = Number(nStr);
   const r = Number(rStr);
   const p = Number(pStr);

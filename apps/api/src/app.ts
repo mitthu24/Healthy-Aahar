@@ -3,6 +3,7 @@ import { buildOpenApiDocument } from '@healthy-aahar/contracts';
 import {
   AddressService,
   AdminAuthService,
+  AdminCatalogueService,
   CartService,
   CatalogueService,
   CheckoutService,
@@ -14,7 +15,11 @@ import {
   ServiceabilityAdminService,
   ServiceabilityService,
 } from '@healthy-aahar/core';
-import { PermissionCache, scryptPasswordHasher, sha256SessionTokenHasher } from '@healthy-aahar/auth';
+import {
+  PermissionCache,
+  scryptPasswordHasher,
+  sha256SessionTokenHasher,
+} from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 import { Hono } from 'hono';
@@ -45,10 +50,16 @@ import { PrismaCatalogueRepository } from './repositories/prisma-catalogue-repos
 import { PrismaCartRepository } from './repositories/prisma-cart-repository.js';
 import { PrismaCheckoutRepository } from './repositories/prisma-checkout-repository.js';
 import { PrismaOrderRepository } from './repositories/prisma-order-repository.js';
+import {
+  PrismaAdminCategoryRepository,
+  PrismaAdminProductRepository,
+  PrismaAdminVariantRepository,
+} from './repositories/prisma-admin-catalogue-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
 import { adminOrdersRoutes } from './routes/admin/orders.js';
+import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
@@ -116,8 +127,19 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       cities: new PrismaCityRepository(prisma),
       pincodes: new PrismaPincodeRepository(prisma),
     }),
-    customerAuth: new CustomerAuthService(userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
-    adminAuth: new AdminAuthService(adminRepo, userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
+    customerAuth: new CustomerAuthService(
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
+    adminAuth: new AdminAuthService(
+      adminRepo,
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
     rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
     passwordReset,
     catalogue: new CatalogueService({ catalogue: new PrismaCatalogueRepository(prisma) }),
@@ -126,6 +148,12 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     checkout: new CheckoutService({ checkout: new PrismaCheckoutRepository(prisma) }),
     customerOrders: new CustomerOrderService({ orders: new PrismaOrderRepository(prisma) }),
     orderFulfilment: new OrderFulfilmentService({ orders: new PrismaOrderRepository(prisma) }),
+    adminCatalogue: new AdminCatalogueService({
+      categories: new PrismaAdminCategoryRepository(prisma),
+      products: new PrismaAdminProductRepository(prisma),
+      variants: new PrismaAdminVariantRepository(prisma),
+      audit: auditRepo,
+    }),
   };
 
   const app = new Hono<AppBindings>();
@@ -264,6 +292,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin/admin-users', adminUsersRoutes());
   app.route('/v1/admin', rolesRoutes());
   app.route('/v1/admin', adminOrdersRoutes());
+  app.route('/v1/admin', adminCatalogueRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.

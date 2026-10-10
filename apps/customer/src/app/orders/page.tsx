@@ -1,7 +1,14 @@
 'use client';
 
 import type { OrderListResponse } from '@healthy-aahar/sdk';
-import { Badge, Button, EmptyState, ErrorState, Skeleton, orderStatusTone } from '@healthy-aahar/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  orderStatusTone,
+} from '@healthy-aahar/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -60,13 +67,19 @@ export default function OrdersPage() {
               <div>
                 <p className="text-body-sm text-sand-900 font-semibold">{order.order_number}</p>
                 <p className="text-caption text-sand-600 mt-0.5">
-                  {new Date(order.placed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {new Date(order.placed_at).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
                   {' · '}
                   {order.item_count} item{order.item_count === 1 ? '' : 's'}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-body-sm tabular text-sand-900 font-semibold">{order.total.display}</p>
+                <p className="text-body-sm tabular text-sand-900 font-semibold">
+                  {order.total.display}
+                </p>
                 <Badge tone={orderStatusTone(order.display_status)} className="mt-1">
                   {order.display_status}
                 </Badge>

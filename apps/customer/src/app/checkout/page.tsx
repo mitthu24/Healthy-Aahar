@@ -36,7 +36,10 @@ export default function CheckoutPage() {
     }
     void (async () => {
       try {
-        const [cartResult, addressResult] = await Promise.all([apiClient.getCart(), apiClient.listAddresses()]);
+        const [cartResult, addressResult] = await Promise.all([
+          apiClient.getCart(),
+          apiClient.listAddresses(),
+        ]);
         setCart(cartResult);
         setAddresses(addressResult.data);
         const preferred = addressResult.data.find((a) => a.is_default) ?? addressResult.data[0];
@@ -69,7 +72,9 @@ export default function CheckoutPage() {
     // only if this exact request is retried (e.g. a network failure before
     // a response arrives) — never across unrelated clicks.
     const idempotencyKey =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
 
     try {
       const order = await apiClient.checkout(
@@ -127,7 +132,10 @@ export default function CheckoutPage() {
       <section className="mt-5">
         <div className="flex items-baseline justify-between">
           <h2 className="text-heading-sm text-sand-900">Delivery address</h2>
-          <Link href="/addresses" className="text-body-sm text-green-600 font-medium hover:underline">
+          <Link
+            href="/addresses"
+            className="text-body-sm font-medium text-green-600 hover:underline"
+          >
             Manage
           </Link>
         </div>
@@ -147,7 +155,9 @@ export default function CheckoutPage() {
               <label
                 key={address.id}
                 className={`block cursor-pointer rounded-lg border p-3 ${
-                  selectedAddressId === address.id ? 'border-green-600 bg-green-50' : 'border-sand-200'
+                  selectedAddressId === address.id
+                    ? 'border-green-600 bg-green-50'
+                    : 'border-sand-200'
                 }`}
               >
                 <input
@@ -162,7 +172,9 @@ export default function CheckoutPage() {
                   {address.line1}, {address.city}, {address.state} {address.pincode}
                 </p>
                 {!address.is_serviceable ? (
-                  <p className="text-caption text-danger-600 mt-1">Not yet deliverable to this address.</p>
+                  <p className="text-caption text-danger-600 mt-1">
+                    Not yet deliverable to this address.
+                  </p>
                 ) : null}
               </label>
             ))}
@@ -176,7 +188,9 @@ export default function CheckoutPage() {
           {slots === null ? (
             <Skeleton className="mt-3 h-11 w-full" />
           ) : slots.length === 0 ? (
-            <p className="text-body-sm text-danger-600 mt-2">No delivery slots are available for this address yet.</p>
+            <p className="text-body-sm text-danger-600 mt-2">
+              No delivery slots are available for this address yet.
+            </p>
           ) : (
             <div className="mt-3 space-y-3">
               <input
@@ -193,7 +207,9 @@ export default function CheckoutPage() {
                     type="button"
                     onClick={() => setSelectedSlotId(slot.id)}
                     className={`text-body-sm min-h-11 rounded-md border px-3 ${
-                      slot.id === selectedSlotId ? 'border-green-600 bg-green-50 text-green-700' : 'border-sand-200'
+                      slot.id === selectedSlotId
+                        ? 'border-green-600 bg-green-50 text-green-700'
+                        : 'border-sand-200'
                     }`}
                   >
                     {slot.name} · {slot.start_time}–{slot.end_time}

@@ -50,7 +50,10 @@ registerRoute({
   errors: ['NOT_FOUND'],
   openapi: {
     tags: ['Admin: Orders'],
-    responses: { 200: { description: 'Order', schema: adminOrderSchema }, 404: jsonError('Not found') },
+    responses: {
+      200: { description: 'Order', schema: adminOrderSchema },
+      404: jsonError('Not found'),
+    },
   },
 });
 
@@ -83,7 +86,10 @@ registerRoute({
   openapi: {
     tags: ['Admin: Orders'],
     request: { body: rejectOrderBodySchema },
-    responses: { 200: { description: 'Order rejected', schema: adminOrderSchema }, 409: jsonError('Not cancellable') },
+    responses: {
+      200: { description: 'Order rejected', schema: adminOrderSchema },
+      409: jsonError('Not cancellable'),
+    },
   },
 });
 
@@ -131,7 +137,10 @@ export function adminOrdersRoutes(): Hono<AppBindings> {
   });
 
   app.get('/orders/:id', async (c) => {
-    const order = await c.env.services.orderFulfilment.get(businessScope(c.env.businessId), c.req.param('id'));
+    const order = await c.env.services.orderFulfilment.get(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+    );
     return c.json(order);
   });
 

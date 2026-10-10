@@ -40,7 +40,14 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async placeOrder(scope: BusinessScope, input: PlaceOrderInput): Promise<OrderRow> {
-    const { customerProfileId, addressId, deliverySlotId, serviceDate, idempotencyKey, requestHash } = input;
+    const {
+      customerProfileId,
+      addressId,
+      deliverySlotId,
+      serviceDate,
+      idempotencyKey,
+      requestHash,
+    } = input;
     // `scope` is the trusted business id; `input.businessId` is caller-supplied
     // and must agree with it (defence in depth, ADR-005).
     const businessId: string = scope;
@@ -95,7 +102,11 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
         if (!slot) throw new DomainError('NOT_FOUND', 'Delivery slot not found.');
 
         const assignment = await tx.slotZoneAssignment.findFirst({
-          where: { deliverySlotId: slot.id, deliveryZoneId: address.deliveryZoneId, isActive: true },
+          where: {
+            deliverySlotId: slot.id,
+            deliveryZoneId: address.deliveryZoneId,
+            isActive: true,
+          },
         });
         if (!assignment) {
           throw new DomainError(
@@ -131,10 +142,20 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
           // Re-read live — never trust the cart's cached join for price/stock.
           const variant = await tx.productVariant.findFirst({
             where: { id: cartItem.variantId, businessId, deletedAt: null },
-            include: { product: { select: { name: true, images: { where: { variantId: null }, take: 1, orderBy: { displayOrder: 'asc' } } } } },
+            include: {
+              product: {
+                select: {
+                  name: true,
+                  images: { where: { variantId: null }, take: 1, orderBy: { displayOrder: 'asc' } },
+                },
+              },
+            },
           });
           if (!variant || variant.availability !== 'AVAILABLE') {
-            throw new DomainError('ITEM_NOT_AVAILABLE', `${variant?.name ?? 'An item'} in your cart is no longer available.`);
+            throw new DomainError(
+              'ITEM_NOT_AVAILABLE',
+              `${variant?.name ?? 'An item'} in your cart is no longer available.`,
+            );
           }
           if (variant.maxOrderQuantity !== null && cartItem.quantity > variant.maxOrderQuantity) {
             throw new DomainError(
@@ -155,7 +176,10 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
                 AND (allow_backorder = true OR quantity_on_hand - quantity_reserved >= ${cartItem.quantity})
             `;
             if (updated === 0) {
-              throw new DomainError('INSUFFICIENT_STOCK', `${variant.name} does not have enough stock.`);
+              throw new DomainError(
+                'INSUFFICIENT_STOCK',
+                `${variant.name} does not have enough stock.`,
+              );
             }
 
             await tx.inventoryMovement.create({
@@ -165,7 +189,8 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
                 variantId: variant.id,
                 reason: 'ORDER_RESERVED',
                 quantityDelta: 0,
-                quantityAfter: inventory.quantityOnHand - inventory.quantityReserved - cartItem.quantity,
+                quantityAfter:
+                  inventory.quantityOnHand - inventory.quantityReserved - cartItem.quantity,
                 reservedDelta: cartItem.quantity,
                 referenceType: 'ORDER',
                 referenceId: orderId,
@@ -201,7 +226,8 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
         }
 
         const deliveryFeePaise =
-          zone && (zone.freeDeliveryAbovePaise === null || subtotalPaise < zone.freeDeliveryAbovePaise)
+          zone &&
+          (zone.freeDeliveryAbovePaise === null || subtotalPaise < zone.freeDeliveryAbovePaise)
             ? zone.deliveryFeePaise
             : 0n;
         const totalPaise = subtotalPaise + deliveryFeePaise + taxPaise;
@@ -276,11 +302,24 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
         });
 
         await tx.payment.create({
-          data: { id: newId(), orderId, method: 'COD', status: 'DUE', amountPaise: totalPaise, currency: 'INR' },
+          data: {
+            id: newId(),
+            orderId,
+            method: 'COD',
+            status: 'DUE',
+            amountPaise: totalPaise,
+            currency: 'INR',
+          },
         });
 
         await tx.orderStatusHistory.create({
-          data: { id: newId(), orderId, fromStatus: null, toStatus: 'PENDING', actorType: 'SYSTEM' },
+          data: {
+            id: newId(),
+            orderId,
+            fromStatus: null,
+            toStatus: 'PENDING',
+            actorType: 'SYSTEM',
+          },
         });
 
         // Requirement 1: auto-confirm immediately, using the EXISTING
@@ -299,7 +338,13 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
         });
 
         await tx.orderStatusHistory.create({
-          data: { id: newId(), orderId, fromStatus: 'PENDING', toStatus: 'CONFIRMED', actorType: 'SYSTEM' },
+          data: {
+            id: newId(),
+            orderId,
+            fromStatus: 'PENDING',
+            toStatus: 'CONFIRMED',
+            actorType: 'SYSTEM',
+          },
         });
 
         await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -355,7 +400,10 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
     }
 
     if (existing.status === 'IN_PROGRESS') {
-      throw new DomainError('IDEMPOTENT_REQUEST_IN_PROGRESS', 'This request is already being processed.');
+      throw new DomainError(
+        'IDEMPOTENT_REQUEST_IN_PROGRESS',
+        'This request is already being processed.',
+      );
     }
 
     if (existing.status === 'COMPLETED' && existing.resourceId) {
@@ -369,6 +417,9 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
     // status === 'FAILED', or COMPLETED with no resourceId: the original
     // attempt did not produce an order. Let the caller retry with a fresh
     // key rather than silently fabricating success.
-    throw new DomainError('IDEMPOTENT_REQUEST_IN_PROGRESS', 'The original request did not complete. Retry with a new idempotency key.');
+    throw new DomainError(
+      'IDEMPOTENT_REQUEST_IN_PROGRESS',
+      'The original request did not complete. Retry with a new idempotency key.',
+    );
   }
 }

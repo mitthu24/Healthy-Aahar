@@ -29,6 +29,10 @@ const nextConfig = {
   },
   images: {
     formats: ['image/avif', 'image/webp'],
+    // Admin-entered product image URLs (Phase 04B) — direct-URL workflow
+    // until packages/storage's R2 adapter ships (PHASE 05); narrow this to
+    // the real CDN hostname once one exists, same as apps/customer.
+    remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {
     return [

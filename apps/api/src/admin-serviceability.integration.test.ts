@@ -191,7 +191,14 @@ describe('admin authorization (real RBAC)', () => {
 
   it('rejects a suspended admin on the very next request', async () => {
     const suspended = await seedAdminUser(prisma, businessId, {
-      roleIds: [(await seedRole(prisma, businessId, { key: 'SUSPENDED_ROLE', permissionKeys: ['delivery:read'] })).id],
+      roleIds: [
+        (
+          await seedRole(prisma, businessId, {
+            key: 'SUSPENDED_ROLE',
+            permissionKeys: ['delivery:read'],
+          })
+        ).id,
+      ],
     });
     const session = await loginAsAdmin(app, suspended);
 

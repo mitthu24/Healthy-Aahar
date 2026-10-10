@@ -20,7 +20,11 @@ function OrderDetail() {
     try {
       setOrder(await apiClient.getMyOrder(params.id));
     } catch (err) {
-      setError(err instanceof ApiError && err.code === 'NOT_FOUND' ? 'Order not found.' : 'Could not load this order.');
+      setError(
+        err instanceof ApiError && err.code === 'NOT_FOUND'
+          ? 'Order not found.'
+          : 'Could not load this order.',
+      );
     }
   }
 
@@ -65,7 +69,11 @@ function OrderDetail() {
         <div>
           <h1 className="font-display text-heading-lg text-sand-900">{order.order_number}</h1>
           <p className="text-body-sm text-sand-600 mt-1">
-            Placed {new Date(order.placed_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+            Placed{' '}
+            {new Date(order.placed_at).toLocaleString('en-IN', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}
           </p>
         </div>
         <Badge tone={orderStatusTone(order.display_status)}>{order.display_status}</Badge>
@@ -90,15 +98,15 @@ function OrderDetail() {
             ))}
           </ul>
           <div className="border-sand-100 mt-2 space-y-1 border-t pt-3">
-            <div className="text-body-sm flex justify-between text-sand-700">
+            <div className="text-body-sm text-sand-700 flex justify-between">
               <span>Subtotal</span>
               <span className="tabular">{order.subtotal.display}</span>
             </div>
-            <div className="text-body-sm flex justify-between text-sand-700">
+            <div className="text-body-sm text-sand-700 flex justify-between">
               <span>Delivery fee</span>
               <span className="tabular">{order.delivery_fee.display}</span>
             </div>
-            <div className="text-body-sm flex justify-between text-sand-700">
+            <div className="text-body-sm text-sand-700 flex justify-between">
               <span>Tax</span>
               <span className="tabular">{order.tax.display}</span>
             </div>
@@ -113,11 +121,14 @@ function OrderDetail() {
       <section className="mt-6">
         <h2 className="text-heading-sm text-sand-900">Delivery</h2>
         <Card className="mt-3 p-4">
-          <p className="text-body-sm text-sand-900 font-medium">{order.delivery_address.recipient_name}</p>
+          <p className="text-body-sm text-sand-900 font-medium">
+            {order.delivery_address.recipient_name}
+          </p>
           <p className="text-body-sm text-sand-700">
             {order.delivery_address.line1}
-            {order.delivery_address.line2 ? `, ${order.delivery_address.line2}` : ''}, {order.delivery_address.city},{' '}
-            {order.delivery_address.state} {order.delivery_address.pincode}
+            {order.delivery_address.line2 ? `, ${order.delivery_address.line2}` : ''},{' '}
+            {order.delivery_address.city}, {order.delivery_address.state}{' '}
+            {order.delivery_address.pincode}
           </p>
           <p className="text-caption text-sand-600 mt-2">
             {order.service_date} · {order.slot_name}

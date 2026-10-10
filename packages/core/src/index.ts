@@ -43,7 +43,11 @@ export type {
 } from './ports/admin-repository.js';
 export type { PasswordHasher } from './ports/password-hasher.js';
 export type { SessionTokenHasher } from './ports/session-token-hasher.js';
-export type { SessionRow, CreateSessionInput, SessionRepository } from './ports/session-repository.js';
+export type {
+  SessionRow,
+  CreateSessionInput,
+  SessionRepository,
+} from './ports/session-repository.js';
 export type {
   PasswordResetPurpose,
   PasswordResetTokenRow,
@@ -70,6 +74,25 @@ export type {
   TransitionInput,
   OrderRepository,
 } from './ports/order-repository.js';
+export type {
+  AdminCategoryRow,
+  CategoryInput,
+  CategoryUpdateInput,
+  CategoryListFilter,
+  AdminCategoryRepository,
+  AdminVariantInventoryRow,
+  AdminVariantRow,
+  VariantInput,
+  VariantUpdateInput,
+  AdminVariantRepository,
+  AdminProductImageRow,
+  AdminProductRow,
+  AdminProductSummaryRow,
+  ProductInput,
+  ProductUpdateInput,
+  ProductListFilter,
+  AdminProductRepository,
+} from './ports/admin-catalogue-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
 export {
@@ -98,7 +121,12 @@ export { PasswordResetService } from './services/password-reset-service.js';
 export { validateSession, type ValidatedSession } from './services/session-validation.js';
 export { AddressService, type AddressServiceDeps } from './services/address-service.js';
 export { CatalogueService, type CatalogueServiceDeps } from './services/catalogue-service.js';
-export { CartService, type CartServiceDeps, type CartView, type CartIssue } from './services/cart-service.js';
+export {
+  CartService,
+  type CartServiceDeps,
+  type CartView,
+  type CartIssue,
+} from './services/cart-service.js';
 export { CheckoutService, type CheckoutServiceDeps } from './services/checkout-service.js';
 export {
   CustomerOrderService,
@@ -109,3 +137,13 @@ export {
   type OrderFulfilmentServiceDeps,
 } from './services/order-fulfilment-service.js';
 export { toOrderView, toAdminOrderView } from './services/order-view.js';
+export {
+  AdminCatalogueService,
+  type AdminCatalogueServiceDeps,
+} from './services/admin-catalogue-service.js';
+export {
+  toAdminCategoryView,
+  toAdminVariantView,
+  toAdminProductView,
+  toAdminProductSummaryView,
+} from './services/admin-catalogue-view.js';

@@ -1,5 +1,9 @@
 import type { BusinessScope } from '../domain/business-scope.js';
-import type { CancelActorValue, OrderStatusValue, TransitionActor } from '../domain/order-status.js';
+import type {
+  CancelActorValue,
+  OrderStatusValue,
+  TransitionActor,
+} from '../domain/order-status.js';
 import type { Cursor, Page } from '../domain/pagination.js';
 
 export type OrderItemRow = {
@@ -30,7 +34,8 @@ export type OrderRow = {
   orderNumber: string;
   status: OrderStatusValue;
   paymentMethod: 'COD' | 'ONLINE' | 'WALLET' | 'CREDIT';
-  paymentStatus: 'DUE' | 'AUTHORIZED' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED' | 'CANCELLED';
+  paymentStatus:
+    'DUE' | 'AUTHORIZED' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED' | 'CANCELLED';
   customerNameSnapshot: string;
   customerPhoneSnapshot: string;
   items: OrderItemRow[];
@@ -70,7 +75,11 @@ export interface OrderRepository {
     customerProfileId: string,
     filter: OrderListFilter,
   ): Promise<Page<OrderRow>>;
-  getForCustomer(scope: BusinessScope, customerProfileId: string, orderId: string): Promise<OrderRow | null>;
+  getForCustomer(
+    scope: BusinessScope,
+    customerProfileId: string,
+    orderId: string,
+  ): Promise<OrderRow | null>;
   listForAdmin(scope: BusinessScope, filter: OrderListFilter): Promise<Page<OrderRow>>;
   getForAdmin(scope: BusinessScope, orderId: string): Promise<OrderRow | null>;
   /**

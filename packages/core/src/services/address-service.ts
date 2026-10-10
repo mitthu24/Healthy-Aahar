@@ -28,7 +28,11 @@ export class AddressService {
     return address;
   }
 
-  create(scope: BusinessScope, customerProfileId: string, input: AddressInput): Promise<AddressRow> {
+  create(
+    scope: BusinessScope,
+    customerProfileId: string,
+    input: AddressInput,
+  ): Promise<AddressRow> {
     return this.addresses.create(scope, customerProfileId, input);
   }
 

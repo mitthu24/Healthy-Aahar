@@ -17,20 +17,36 @@ function Icon({ name, className }: { name: (typeof ITEMS)[number]['icon']; class
     case 'home':
       return (
         <svg {...common}>
-          <path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path
+            d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
         </svg>
       );
     case 'shop':
       return (
         <svg {...common}>
-          <path d="M4 9h16l-1 10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 9Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path
+            d="M4 9h16l-1 10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 9Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
           <path d="M8 9V7a4 4 0 1 1 8 0v2" stroke="currentColor" strokeWidth="1.8" />
         </svg>
       );
     case 'cart':
       return (
         <svg {...common}>
-          <path d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L21 7H6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L21 7H6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
           <circle cx="9" cy="20" r="1.4" fill="currentColor" />
           <circle cx="17" cy="20" r="1.4" fill="currentColor" />
         </svg>
@@ -38,7 +54,12 @@ function Icon({ name, className }: { name: (typeof ITEMS)[number]['icon']; class
     case 'orders':
       return (
         <svg {...common}>
-          <path d="M5 4h14v16l-3-2-2 2-2-2-2 2-2-2-3 2Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path
+            d="M5 4h14v16l-3-2-2 2-2-2-2 2-2-2-3 2Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
           <path d="M8 9h8M8 13h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       );
@@ -46,7 +67,12 @@ function Icon({ name, className }: { name: (typeof ITEMS)[number]['icon']; class
       return (
         <svg {...common}>
           <circle cx="12" cy="8" r="3.4" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M5 20c1.5-4 4.3-6 7-6s5.5 2 7 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path
+            d="M5 20c1.5-4 4.3-6 7-6s5.5 2 7 6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
         </svg>
       );
   }

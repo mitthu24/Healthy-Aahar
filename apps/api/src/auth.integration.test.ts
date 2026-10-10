@@ -109,11 +109,18 @@ describe('customer registration (docs/07 §4)', () => {
     const res = await app.request('/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'new.customer@example.test', password: 'a-strong-password-1', phone: '+919876500001' }),
+      body: JSON.stringify({
+        email: 'new.customer@example.test',
+        password: 'a-strong-password-1',
+        phone: '+919876500001',
+      }),
     });
 
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { user: { email: string; phone: string | null }; token: string };
+    const body = (await res.json()) as {
+      user: { email: string; phone: string | null };
+      token: string;
+    };
     expect(body.user.email).toBe('new.customer@example.test');
     expect(body.user.phone).toBe('+919876500001');
     expect(body.token).toBeTruthy();
@@ -134,7 +141,9 @@ describe('customer registration (docs/07 §4)', () => {
     expect(profile).not.toBeNull();
 
     // The returned token immediately authenticates.
-    const me = await app.request('/v1/auth/me', { headers: { Authorization: `Bearer ${body.token}` } });
+    const me = await app.request('/v1/auth/me', {
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
     expect(me.status).toBe(200);
   });
 
@@ -186,7 +195,10 @@ describe('customer registration (docs/07 §4)', () => {
 
 describe('customer login (docs/07 §4)', () => {
   it('logs in with the correct password', async () => {
-    const customer = await seedCustomerUser(prisma, businessId, { email: 'login@example.test', password: 'the-real-password-1' });
+    const customer = await seedCustomerUser(prisma, businessId, {
+      email: 'login@example.test',
+      password: 'the-real-password-1',
+    });
 
     const res = await app.request('/v1/auth/login', {
       method: 'POST',
@@ -229,7 +241,10 @@ describe('customer login (docs/07 §4)', () => {
   });
 
   it('rejects a suspended account with the same generic error, not a distinguishing one', async () => {
-    const customer = await seedCustomerUser(prisma, businessId, { email: 'suspended@example.test', status: 'SUSPENDED' });
+    const customer = await seedCustomerUser(prisma, businessId, {
+      email: 'suspended@example.test',
+      status: 'SUSPENDED',
+    });
 
     const res = await app.request('/v1/auth/login', {
       method: 'POST',
@@ -248,12 +263,16 @@ describe('customer login (docs/07 §4)', () => {
   });
 
   it('rejects GET /v1/auth/me for an unknown/forged bearer token', async () => {
-    const res = await app.request('/v1/auth/me', { headers: { Authorization: 'Bearer not-a-real-session-token' } });
+    const res = await app.request('/v1/auth/me', {
+      headers: { Authorization: 'Bearer not-a-real-session-token' },
+    });
     expect(res.status).toBe(401);
   });
 
   it("a customer's credentials are rejected on the admin login route — different user_type, same email space", async () => {
-    const customer = await seedCustomerUser(prisma, businessId, { email: 'customer-not-admin@example.test' });
+    const customer = await seedCustomerUser(prisma, businessId, {
+      email: 'customer-not-admin@example.test',
+    });
 
     const res = await app.request('/v1/admin/auth/login', {
       method: 'POST',
@@ -264,7 +283,9 @@ describe('customer login (docs/07 §4)', () => {
   });
 
   it('Fix #4 — a valid CUSTOMER session token presented as the ADMIN cookie is rejected with the established auth error, not a session granted', async () => {
-    const customer = await seedCustomerUser(prisma, businessId, { email: 'cross-audience-c-to-a@example.test' });
+    const customer = await seedCustomerUser(prisma, businessId, {
+      email: 'cross-audience-c-to-a@example.test',
+    });
     const login = await app.request('/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -321,15 +342,23 @@ describe('customer login (docs/07 §4)', () => {
     });
     expect(logout.status).toBe(200);
 
-    const after = await app.request('/v1/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+    const after = await app.request('/v1/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(after.status).toBe(401);
   });
 });
 
 describe('admin session lifecycle (docs/07 §5)', () => {
   it('logs in, resolves permissions, and GET /me matches the login response', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'ADMIN_IT_ROLE', permissionKeys: ['dashboard:read'] });
-    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id], fullName: 'Priya Admin' });
+    const role = await seedRole(prisma, businessId, {
+      key: 'ADMIN_IT_ROLE',
+      permissionKeys: ['dashboard:read'],
+    });
+    const admin = await seedAdminUser(prisma, businessId, {
+      roleIds: [role.id],
+      fullName: 'Priya Admin',
+    });
 
     const session = await loginAsAdmin(app, admin);
 
@@ -367,7 +396,10 @@ describe('admin session lifecycle (docs/07 §5)', () => {
     const admin = await seedAdminUser(prisma, businessId, {});
     const session = await loginAsAdmin(app, admin);
 
-    const logout = await app.request('/v1/admin/auth/logout', { method: 'POST', headers: session.headers });
+    const logout = await app.request('/v1/admin/auth/logout', {
+      method: 'POST',
+      headers: session.headers,
+    });
     expect(logout.status).toBe(200);
 
     const after = await app.request('/v1/admin/auth/me', { headers: session.headers });
@@ -387,7 +419,9 @@ describe('admin session lifecycle (docs/07 §5)', () => {
     const setCookies = loginRes.headers.getSetCookie?.() ?? [];
     const cookieHeader = setCookies.map((c) => c.split(';')[0]).join('; ');
 
-    const res = await shortLived.request('/v1/admin/auth/me', { headers: { Cookie: cookieHeader } });
+    const res = await shortLived.request('/v1/admin/auth/me', {
+      headers: { Cookie: cookieHeader },
+    });
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('SESSION_EXPIRED');
@@ -473,7 +507,10 @@ describe('registration rate limiting (Fix #1)', () => {
       limited.request('/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'register-flood@example.test', password: 'a-strong-password-1' }),
+        body: JSON.stringify({
+          email: 'register-flood@example.test',
+          password: 'a-strong-password-1',
+        }),
       });
 
     const results = [];
@@ -494,7 +531,11 @@ describe('registration rate limiting (Fix #1)', () => {
 
   it('registration and login attempts are counted in independent buckets', async () => {
     const limited = buildApp(
-      testEnv({ RATE_LIMIT_ENABLED: true, REGISTER_RATE_LIMIT_PER_MIN: 1, LOGIN_RATE_LIMIT_PER_MIN: 1 }),
+      testEnv({
+        RATE_LIMIT_ENABLED: true,
+        REGISTER_RATE_LIMIT_PER_MIN: 1,
+        LOGIN_RATE_LIMIT_PER_MIN: 1,
+      }),
     );
     const email = 'independent-buckets@example.test';
 
@@ -522,7 +563,9 @@ describe('registration rate limiting (Fix #1)', () => {
     // brand-new email once the limiter trips — the limiter runs before any
     // lookup, so the response cannot differ based on registration status.
     const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, REGISTER_RATE_LIMIT_PER_MIN: 0 }));
-    const existing = await seedCustomerUser(prisma, businessId, { email: 'already-exists-429@example.test' });
+    const existing = await seedCustomerUser(prisma, businessId, {
+      email: 'already-exists-429@example.test',
+    });
 
     const resExisting = await limited.request('/v1/auth/register', {
       method: 'POST',
@@ -532,7 +575,10 @@ describe('registration rate limiting (Fix #1)', () => {
     const resNew = await limited.request('/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'brand-new-429@example.test', password: 'a-strong-password-1' }),
+      body: JSON.stringify({
+        email: 'brand-new-429@example.test',
+        password: 'a-strong-password-1',
+      }),
     });
 
     expect(resExisting.status).toBe(429);

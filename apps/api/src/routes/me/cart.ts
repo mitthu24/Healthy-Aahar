@@ -1,4 +1,9 @@
-import { addCartItemBodySchema, cartSchema, errorResponseSchema, updateCartItemBodySchema } from '@healthy-aahar/contracts';
+import {
+  addCartItemBodySchema,
+  cartSchema,
+  errorResponseSchema,
+  updateCartItemBodySchema,
+} from '@healthy-aahar/contracts';
 import { businessScope, type CartView } from '@healthy-aahar/core';
 import { Hono } from 'hono';
 
@@ -26,7 +31,10 @@ registerRoute({
   openapi: {
     tags: ['Cart'],
     request: { body: addCartItemBodySchema },
-    responses: { 200: { description: 'Cart', schema: cartSchema }, 404: jsonError('Variant not found') },
+    responses: {
+      200: { description: 'Cart', schema: cartSchema },
+      404: jsonError('Variant not found'),
+    },
   },
 });
 
@@ -63,7 +71,10 @@ export function cartRoutes(): Hono<AppBindings> {
   app.get('/', async (c) => {
     const actor = c.get('actor');
     if (actor.kind !== 'CUSTOMER') throw new Error('unreachable: customerAuth guarantees CUSTOMER');
-    const cart = await c.env.services.cart.view(businessScope(c.env.businessId), actor.customerProfileId);
+    const cart = await c.env.services.cart.view(
+      businessScope(c.env.businessId),
+      actor.customerProfileId,
+    );
     return c.json(toDto(cart));
   });
 

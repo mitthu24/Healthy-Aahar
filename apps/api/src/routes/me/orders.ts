@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { checkoutBodySchema, errorResponseSchema, orderListResponseSchema, orderSchema } from '@healthy-aahar/contracts';
+import {
+  checkoutBodySchema,
+  errorResponseSchema,
+  orderListResponseSchema,
+  orderSchema,
+} from '@healthy-aahar/contracts';
 import { businessScope, DomainError } from '@healthy-aahar/core';
 import { Hono } from 'hono';
 
@@ -50,7 +55,10 @@ registerRoute({
   audience: 'customer',
   summary: 'List my orders',
   phase: '04',
-  openapi: { tags: ['Orders'], responses: { 200: { description: 'Orders', schema: orderListResponseSchema } } },
+  openapi: {
+    tags: ['Orders'],
+    responses: { 200: { description: 'Orders', schema: orderListResponseSchema } },
+  },
 });
 
 registerRoute({
@@ -75,7 +83,10 @@ registerRoute({
   errors: ['ORDER_NOT_CANCELLABLE'],
   openapi: {
     tags: ['Orders'],
-    responses: { 200: { description: 'Order cancelled', schema: orderSchema }, 409: jsonError('Not cancellable') },
+    responses: {
+      200: { description: 'Order cancelled', schema: orderSchema },
+      409: jsonError('Not cancellable'),
+    },
   },
 });
 
@@ -88,9 +99,13 @@ export function ordersRoutes(): Hono<AppBindings> {
 
     const idempotencyKey = c.req.header('Idempotency-Key');
     if (!idempotencyKey) {
-      throw new DomainError('VALIDATION_FAILED', 'An Idempotency-Key header is required to place an order.', {
-        details: [{ field: 'Idempotency-Key', issue: 'header is required' }],
-      });
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        'An Idempotency-Key header is required to place an order.',
+        {
+          details: [{ field: 'Idempotency-Key', issue: 'header is required' }],
+        },
+      );
     }
 
     const rawBody = await c.req.text();
@@ -120,10 +135,14 @@ export function ordersRoutes(): Hono<AppBindings> {
     const limit = Number(c.req.query('limit') ?? 20);
     const cursor = c.req.query('cursor');
 
-    const page = await c.env.services.customerOrders.list(businessScope(c.env.businessId), actor.customerProfileId, {
-      limit,
-      ...(cursor ? { cursor } : {}),
-    });
+    const page = await c.env.services.customerOrders.list(
+      businessScope(c.env.businessId),
+      actor.customerProfileId,
+      {
+        limit,
+        ...(cursor ? { cursor } : {}),
+      },
+    );
     return c.json(page);
   });
 

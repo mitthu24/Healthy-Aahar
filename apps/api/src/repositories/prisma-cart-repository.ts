@@ -1,4 +1,11 @@
-import { DomainError, newId, now, type BusinessScope, type CartRepository, type CartRow } from '@healthy-aahar/core';
+import {
+  DomainError,
+  newId,
+  now,
+  type BusinessScope,
+  type CartRepository,
+  type CartRow,
+} from '@healthy-aahar/core';
 import type { Prisma, PrismaClient } from '@healthy-aahar/db';
 
 const ITEM_INCLUDE = {
@@ -94,7 +101,11 @@ export class PrismaCartRepository implements CartRepository {
     return this.getOrCreate(scope, customerProfileId);
   }
 
-  async removeItem(scope: BusinessScope, customerProfileId: string, itemId: string): Promise<CartRow> {
+  async removeItem(
+    scope: BusinessScope,
+    customerProfileId: string,
+    itemId: string,
+  ): Promise<CartRow> {
     await this.prisma.cartItem.deleteMany({
       where: { id: itemId, cart: { customerProfileId, businessId: scope } },
     });

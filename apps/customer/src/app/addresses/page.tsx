@@ -70,20 +70,28 @@ export default function AddressesPage() {
         {addresses === null ? (
           Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)
         ) : addresses.length === 0 && !showForm ? (
-          <EmptyState title="No saved addresses" description="Add one to speed up checkout next time." />
+          <EmptyState
+            title="No saved addresses"
+            description="Add one to speed up checkout next time."
+          />
         ) : (
           addresses.map((address) => (
             <Card key={address.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-body-sm text-sand-900 font-semibold">{address.recipient_name}</p>
+                    <p className="text-body-sm text-sand-900 font-semibold">
+                      {address.recipient_name}
+                    </p>
                     {address.is_default ? <Badge tone="brand">Default</Badge> : null}
-                    {!address.is_serviceable ? <Badge tone="warning">Not yet deliverable</Badge> : null}
+                    {!address.is_serviceable ? (
+                      <Badge tone="warning">Not yet deliverable</Badge>
+                    ) : null}
                   </div>
                   <p className="text-body-sm text-sand-700 mt-1">
                     {address.line1}
-                    {address.line2 ? `, ${address.line2}` : ''}, {address.city}, {address.state} {address.pincode}
+                    {address.line2 ? `, ${address.line2}` : ''}, {address.city}, {address.state}{' '}
+                    {address.pincode}
                   </p>
                   <p className="text-caption text-sand-600 mt-1">{address.recipient_phone}</p>
                 </div>

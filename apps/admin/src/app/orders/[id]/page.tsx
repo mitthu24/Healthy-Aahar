@@ -31,7 +31,11 @@ export default function AdminOrderDetailPage() {
     try {
       setOrder(await apiClient.getAdminOrder(params.id));
     } catch (err) {
-      setError(err instanceof ApiError && err.code === 'NOT_FOUND' ? 'Order not found.' : 'Could not load this order.');
+      setError(
+        err instanceof ApiError && err.code === 'NOT_FOUND'
+          ? 'Order not found.'
+          : 'Could not load this order.',
+      );
     }
   }
 
@@ -71,7 +75,9 @@ export default function AdminOrderDetailPage() {
     } else if (dialog === 'hold') {
       await runAction(() => apiClient.holdAdminOrder(order!.id, reasonText));
     } else if (dialog === 'fail') {
-      await runAction(() => apiClient.updateAdminOrderStatus(order!.id, { to_status: 'FAILED', reason: reasonText }));
+      await runAction(() =>
+        apiClient.updateAdminOrderStatus(order!.id, { to_status: 'FAILED', reason: reasonText }),
+      );
     } else if (dialog === 'collect') {
       await runAction(() => apiClient.recordCodCollection(order!.id, order!.total.amount_paise));
     }
@@ -83,7 +89,11 @@ export default function AdminOrderDetailPage() {
         <div>
           <h1 className="font-display text-heading-lg text-sand-900">{order.order_number}</h1>
           <p className="text-body-sm text-sand-600 mt-1">
-            Placed {new Date(order.placed_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+            Placed{' '}
+            {new Date(order.placed_at).toLocaleString('en-IN', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}
           </p>
         </div>
         <Badge tone={adminStatusTone(order.status)}>{order.status.replaceAll('_', ' ')}</Badge>
@@ -99,8 +109,9 @@ export default function AdminOrderDetailPage() {
           <h2 className="text-heading-sm text-sand-900">Delivery</h2>
           <p className="text-body-sm text-sand-700 mt-2">
             {order.delivery_address.line1}
-            {order.delivery_address.line2 ? `, ${order.delivery_address.line2}` : ''}, {order.delivery_address.city},{' '}
-            {order.delivery_address.state} {order.delivery_address.pincode}
+            {order.delivery_address.line2 ? `, ${order.delivery_address.line2}` : ''},{' '}
+            {order.delivery_address.city}, {order.delivery_address.state}{' '}
+            {order.delivery_address.pincode}
           </p>
           <p className="text-caption text-sand-600 mt-2">
             {order.service_date} · {order.slot_name}
@@ -144,21 +155,38 @@ export default function AdminOrderDetailPage() {
       </section>
 
       {order.cancellation_reason ? (
-        <p className="text-body-sm text-danger-600 mt-4">Cancellation reason: {order.cancellation_reason}</p>
+        <p className="text-body-sm text-danger-600 mt-4">
+          Cancellation reason: {order.cancellation_reason}
+        </p>
       ) : null}
 
       {order.internal_note ? (
         <Card className="bg-warning-50 mt-4 border-none p-4">
-          <p className="text-caption text-warning-600 font-semibold uppercase">Internal note — never shown to the customer</p>
-          <p className="text-body-sm text-sand-800 mt-1 whitespace-pre-line">{order.internal_note}</p>
+          <p className="text-caption text-warning-600 font-semibold uppercase">
+            Internal note — never shown to the customer
+          </p>
+          <p className="text-body-sm text-sand-800 mt-1 whitespace-pre-line">
+            {order.internal_note}
+          </p>
         </Card>
       ) : null}
 
-      {actionError ? <p role="alert" className="text-body-sm text-danger-600 mt-4">{actionError}</p> : null}
+      {actionError ? (
+        <p role="alert" className="text-body-sm text-danger-600 mt-4">
+          {actionError}
+        </p>
+      ) : null}
 
       <div className="mt-6 flex flex-wrap gap-3">
         {next ? (
-          <Button isLoading={isBusy} onClick={() => void runAction(() => apiClient.updateAdminOrderStatus(order.id, { to_status: next.to }))}>
+          <Button
+            isLoading={isBusy}
+            onClick={() =>
+              void runAction(() =>
+                apiClient.updateAdminOrderStatus(order.id, { to_status: next.to }),
+              )
+            }
+          >
             {next.label}
           </Button>
         ) : null}
@@ -189,12 +217,17 @@ export default function AdminOrderDetailPage() {
           <form onSubmit={onDialogSubmit} className="space-y-3">
             {dialog === 'collect' ? (
               <p className="text-body-sm text-sand-700">
-                Confirm that <strong>{order.total.display}</strong> was collected in cash/UPI from the customer on delivery.
+                Confirm that <strong>{order.total.display}</strong> was collected in cash/UPI from
+                the customer on delivery.
               </p>
             ) : (
               <>
                 <label htmlFor="dialog-reason" className="text-body-sm text-sand-700 font-medium">
-                  {dialog === 'reject' ? 'Reason for rejecting this order' : dialog === 'fail' ? 'Reason delivery failed' : 'Note for follow-up'}
+                  {dialog === 'reject'
+                    ? 'Reason for rejecting this order'
+                    : dialog === 'fail'
+                      ? 'Reason delivery failed'
+                      : 'Note for follow-up'}
                 </label>
                 <textarea
                   id="dialog-reason"
@@ -207,7 +240,11 @@ export default function AdminOrderDetailPage() {
               </>
             )}
             <div className="flex gap-3">
-              <Button type="submit" variant={dialog === 'reject' ? 'danger' : 'primary'} isLoading={isBusy}>
+              <Button
+                type="submit"
+                variant={dialog === 'reject' ? 'danger' : 'primary'}
+                isLoading={isBusy}
+              >
                 Confirm
               </Button>
               <Button type="button" variant="secondary" onClick={() => setDialog(null)}>

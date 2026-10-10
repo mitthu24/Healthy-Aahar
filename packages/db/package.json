@@ -25,7 +25,8 @@
     "test": "node ../../scripts/with-env.mjs vitest run",
     "clean": "rm -rf .turbo dist node_modules/.prisma",
     "check:invariants": "node ../../scripts/with-env.mjs node scripts/check-db-invariants.mjs",
-    "check:duplicate-emails": "node ../../scripts/with-env.mjs node scripts/check-duplicate-emails.mjs"
+    "check:duplicate-emails": "node ../../scripts/with-env.mjs node scripts/check-duplicate-emails.mjs",
+    "seed:demo-catalogue": "node ../../scripts/with-env.mjs node scripts/seed-demo-catalogue.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

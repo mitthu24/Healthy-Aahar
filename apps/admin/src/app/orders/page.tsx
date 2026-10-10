@@ -48,7 +48,9 @@ export default function AdminOrdersPage() {
             type="button"
             onClick={() => setStatus(filter.value)}
             className={`text-body-sm min-h-9 rounded-full border px-3 ${
-              status === filter.value ? 'border-green-600 bg-green-50 text-green-700' : 'border-sand-200 text-sand-700'
+              status === filter.value
+                ? 'border-green-600 bg-green-50 text-green-700'
+                : 'border-sand-200 text-sand-700'
             }`}
           >
             {filter.label}
@@ -83,22 +85,31 @@ export default function AdminOrdersPage() {
               {page.data.map((order) => (
                 <tr key={order.id} className="hover:bg-sand-50">
                   <td className="p-0">
-                    <Link href={`/orders/${order.id}`} className="text-body-sm block px-4 py-3 font-medium text-green-700">
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="text-body-sm block px-4 py-3 font-medium text-green-700"
+                    >
                       {order.order_number}
                     </Link>
                   </td>
                   <td className="text-body-sm text-sand-700 px-4 py-3">{order.customer_name}</td>
                   <td className="text-body-sm text-sand-700 px-4 py-3">
-                    {new Date(order.placed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    {new Date(order.placed_at).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
                   </td>
                   <td className="text-body-sm tabular px-4 py-3">{order.total.display}</td>
                   <td className="px-4 py-3">
                     <Badge tone={order.payment_status === 'PAID' ? 'success' : 'neutral'}>
-                      {order.payment_method} · {order.payment_status === 'PAID' ? 'Collected' : 'Due'}
+                      {order.payment_method} ·{' '}
+                      {order.payment_status === 'PAID' ? 'Collected' : 'Due'}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge tone={adminStatusTone(order.status)}>{order.status.replaceAll('_', ' ')}</Badge>
+                    <Badge tone={adminStatusTone(order.status)}>
+                      {order.status.replaceAll('_', ' ')}
+                    </Badge>
                   </td>
                 </tr>
               ))}

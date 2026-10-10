@@ -41,7 +41,11 @@ export default function ProductDetailPage() {
         setSelectedVariantId(p.default_variant_id);
       })
       .catch((err) => {
-        setError(err instanceof ApiError && err.code === 'PRODUCT_NOT_FOUND' ? 'Product not found.' : 'Could not load this product.');
+        setError(
+          err instanceof ApiError && err.code === 'PRODUCT_NOT_FOUND'
+            ? 'Product not found.'
+            : 'Could not load this product.',
+        );
       });
   }, [params.slug]);
 
@@ -94,7 +98,9 @@ export default function ProductDetailPage() {
       </div>
 
       <h1 className="font-display text-heading-lg text-sand-900 mt-5">{product.name}</h1>
-      {product.short_description ? <p className="text-body-sm text-sand-600 mt-1">{product.short_description}</p> : null}
+      {product.short_description ? (
+        <p className="text-body-sm text-sand-600 mt-1">{product.short_description}</p>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {product.variants.map((variant) => (
@@ -118,11 +124,18 @@ export default function ProductDetailPage() {
 
       {selectedVariant ? (
         <div className="mt-4 flex items-center gap-3">
-          <span className="text-heading-md tabular text-sand-900">{selectedVariant.price.display}</span>
-          {selectedVariant.mrp && selectedVariant.mrp.amount_paise > selectedVariant.price.amount_paise ? (
-            <span className="text-body-sm tabular text-sand-400 line-through">{selectedVariant.mrp.display}</span>
+          <span className="text-heading-md tabular text-sand-900">
+            {selectedVariant.price.display}
+          </span>
+          {selectedVariant.mrp &&
+          selectedVariant.mrp.amount_paise > selectedVariant.price.amount_paise ? (
+            <span className="text-body-sm tabular text-sand-400 line-through">
+              {selectedVariant.mrp.display}
+            </span>
           ) : null}
-          {outOfStock ? <span className="text-body-sm text-danger-600 font-medium">Out of stock</span> : null}
+          {outOfStock ? (
+            <span className="text-body-sm text-danger-600 font-medium">Out of stock</span>
+          ) : null}
         </div>
       ) : null}
 
@@ -156,11 +169,21 @@ export default function ProductDetailPage() {
               +
             </button>
           </div>
-          <Button className="flex-1" size="lg" onClick={addToCart} isLoading={isAdding} disabled={outOfStock}>
+          <Button
+            className="flex-1"
+            size="lg"
+            onClick={addToCart}
+            isLoading={isAdding}
+            disabled={outOfStock}
+          >
             {outOfStock ? 'Out of stock' : 'Add to cart'}
           </Button>
         </div>
-        {addedMessage ? <p className="text-body-sm text-sand-700 mx-auto mt-2 max-w-2xl" role="status">{addedMessage}</p> : null}
+        {addedMessage ? (
+          <p className="text-body-sm text-sand-700 mx-auto mt-2 max-w-2xl" role="status">
+            {addedMessage}
+          </p>
+        ) : null}
       </div>
     </main>
   );

@@ -34,7 +34,10 @@ export class CatalogueService {
       ...(filter.q ? { q: filter.q } : {}),
     };
 
-    const rows = await this.catalogue.listProducts(scope, { ...repoFilter, limit: filter.limit + 1 });
+    const rows = await this.catalogue.listProducts(scope, {
+      ...repoFilter,
+      limit: filter.limit + 1,
+    });
     return buildPage(rows, filter.limit, (row) => ({ sortValue: row.name, id: row.id }));
   }
 

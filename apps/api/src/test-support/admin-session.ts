@@ -27,7 +27,8 @@ export async function loginAsAdmin(
     throw new Error(`loginAsAdmin failed: ${res.status} ${body}`);
   }
 
-  const setCookies = res.headers.getSetCookie?.() ?? [res.headers.get('set-cookie') ?? ''].filter(Boolean);
+  const setCookies =
+    res.headers.getSetCookie?.() ?? [res.headers.get('set-cookie') ?? ''].filter(Boolean);
   const cookieHeader = setCookies.map((c) => c.split(';')[0]).join('; ');
   const csrfHeader = res.headers.get('x-csrf-token') ?? '';
 

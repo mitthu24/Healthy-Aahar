@@ -39,10 +39,12 @@ function CategoryRail() {
           href={`/categories/${category.slug}`}
           className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"
         >
-          <span className="bg-green-50 text-green-600 flex h-16 w-16 items-center justify-center rounded-lg text-xl font-semibold">
+          <span className="flex h-16 w-16 items-center justify-center rounded-lg bg-green-50 text-xl font-semibold text-green-600">
             {category.name.charAt(0)}
           </span>
-          <span className="text-caption text-sand-700 line-clamp-2 leading-tight">{category.name}</span>
+          <span className="text-caption text-sand-700 line-clamp-2 leading-tight">
+            {category.name}
+          </span>
         </Link>
       ))}
     </div>
@@ -68,11 +70,14 @@ export default function HomePage() {
       <FeaturedRail onLoaded={setFeatured} />
 
       {/* Hero */}
-      <section className="from-green-600 to-green-700 mx-4 mt-4 rounded-xl bg-gradient-to-br px-5 py-7 text-sand-0">
-        <p className="text-caption font-semibold uppercase tracking-wide text-green-100">Healthy Aahar</p>
+      <section className="text-sand-0 mx-4 mt-4 rounded-xl bg-gradient-to-br from-green-600 to-green-700 px-5 py-7">
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-100">
+          Healthy Aahar
+        </p>
         <h1 className="font-display text-heading-lg mt-2">Real food, delivered for your slot.</h1>
         <p className="text-body-sm mt-2 max-w-xs text-green-50">
-          Wholesome meals and pantry staples, cooked and packed fresh for the delivery window you choose.
+          Wholesome meals and pantry staples, cooked and packed fresh for the delivery window you
+          choose.
         </p>
       </section>
 
@@ -89,7 +94,10 @@ export default function HomePage() {
         <section className="mt-8 px-4">
           <div className="flex items-baseline justify-between">
             <h2 className="text-heading-sm text-sand-900">Bestsellers</h2>
-            <Link href="/products" className="text-body-sm text-green-600 font-medium hover:underline">
+            <Link
+              href="/products"
+              className="text-body-sm font-medium text-green-600 hover:underline"
+            >
               See all
             </Link>
           </div>
@@ -105,7 +113,10 @@ export default function HomePage() {
       <section className="mt-8 px-4">
         <div className="flex items-baseline justify-between">
           <h2 className="text-heading-sm text-sand-900">Explore our range</h2>
-          <Link href="/products" className="text-body-sm text-green-600 font-medium hover:underline">
+          <Link
+            href="/products"
+            className="text-body-sm font-medium text-green-600 hover:underline"
+          >
             See all
           </Link>
         </div>

@@ -41,7 +41,7 @@ export default function AccountPage() {
       <div className="mt-5 space-y-3">
         {LINKS.map((link) => (
           <Link key={link.href} href={link.href}>
-            <Card className="flex items-center justify-between p-4 hover:bg-sand-50">
+            <Card className="hover:bg-sand-50 flex items-center justify-between p-4">
               <div>
                 <p className="text-body-sm text-sand-900 font-medium">{link.label}</p>
                 <p className="text-caption text-sand-600">{link.description}</p>

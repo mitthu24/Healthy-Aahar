@@ -31,7 +31,8 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "husky",
     "db:check": "pnpm --filter @healthy-aahar/db check:invariants",
-    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails"
+    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails",
+    "db:seed-demo-catalogue": "pnpm --filter @healthy-aahar/db seed:demo-catalogue"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",

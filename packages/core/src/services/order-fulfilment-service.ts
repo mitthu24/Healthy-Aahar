@@ -25,7 +25,10 @@ export class OrderFulfilmentService {
     this.orders = orders;
   }
 
-  async list(scope: BusinessScope, filter: { status?: OrderStatusValue; limit: number; cursor?: string }) {
+  async list(
+    scope: BusinessScope,
+    filter: { status?: OrderStatusValue; limit: number; cursor?: string },
+  ) {
     const page = await this.orders.listForAdmin(scope, {
       limit: filter.limit + 1,
       cursor: filter.cursor ? decodeCursor(filter.cursor) : undefined,
@@ -110,7 +113,12 @@ export class OrderFulfilmentService {
   /** "Hold" — flag for operational follow-up WITHOUT changing order status (req. 8, 10). */
   async hold(scope: BusinessScope, orderId: string, actorUserId: string, note: string) {
     await this.getOrThrow(scope, orderId);
-    const updated = await this.orders.addInternalNote(scope, orderId, `[HOLD] ${note}`, actorUserId);
+    const updated = await this.orders.addInternalNote(
+      scope,
+      orderId,
+      `[HOLD] ${note}`,
+      actorUserId,
+    );
     return toAdminOrderView(updated);
   }
 
@@ -126,7 +134,10 @@ export class OrderFulfilmentService {
       throw new DomainError('VALIDATION_FAILED', 'This order is not a COD order.');
     }
     if (order.paymentStatus === 'PAID') {
-      throw new DomainError('VALIDATION_FAILED', 'COD collection was already recorded for this order.');
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        'COD collection was already recorded for this order.',
+      );
     }
 
     const updated = await this.orders.recordCodCollection(scope, orderId, amountPaise, actorUserId);

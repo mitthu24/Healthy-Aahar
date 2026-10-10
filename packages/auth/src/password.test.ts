@@ -69,7 +69,14 @@ describe('hashPassword / verifyPassword (PHASE 03, docs/07)', () => {
     const password = 'independently-recomputed-password';
     const hash = await hashPassword(password);
     const parts = hash.split(':');
-    const [, nStr, rStr, pStr, saltHex, hashHex] = parts as [string, string, string, string, string, string];
+    const [, nStr, rStr, pStr, saltHex, hashHex] = parts as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ];
 
     const recomputed = await new Promise<Buffer>((resolve, reject) => {
       scryptCallback(

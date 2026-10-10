@@ -43,8 +43,7 @@ export type CreateCustomerWithPasswordInput = {
 };
 
 export type CreateCustomerWithPasswordResult =
-  | { ok: true; user: UserRow; profile: CustomerProfileRow }
-  | { ok: false; reason: 'EMAIL_TAKEN' };
+  { ok: true; user: UserRow; profile: CustomerProfileRow } | { ok: false; reason: 'EMAIL_TAKEN' };
 
 export interface UserRepository {
   findById(id: string): Promise<UserRow | null>;

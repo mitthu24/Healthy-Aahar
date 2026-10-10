@@ -221,7 +221,10 @@ export async function seedRole(
   overrides: { key: string; name?: string; permissionKeys?: string[]; isSystem?: boolean },
 ): Promise<{ id: string; key: string }> {
   const permissions = overrides.permissionKeys?.length
-    ? await prisma.permission.findMany({ where: { key: { in: overrides.permissionKeys } }, select: { id: true } })
+    ? await prisma.permission.findMany({
+        where: { key: { in: overrides.permissionKeys } },
+        select: { id: true },
+      })
     : [];
 
   return prisma.role.create({

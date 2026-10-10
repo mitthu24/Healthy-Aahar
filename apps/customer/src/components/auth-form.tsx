@@ -120,9 +120,11 @@ export function AuthForm({ initialMode }: { initialMode: 'login' | 'register' })
           setError(null);
           router.replace(`/${next}`);
         }}
-        className="text-body-sm text-green-600 mt-4 text-center hover:underline"
+        className="text-body-sm mt-4 text-center text-green-600 hover:underline"
       >
-        {mode === 'login' ? "Don't have an account? Create one" : 'Already have an account? Sign in'}
+        {mode === 'login'
+          ? "Don't have an account? Create one"
+          : 'Already have an account? Sign in'}
       </button>
     </main>
   );

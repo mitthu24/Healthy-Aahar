@@ -29,7 +29,11 @@ export class PrismaAddressRepository implements AddressRepository {
     return rows.map((row) => this.toRow(row, scope));
   }
 
-  async get(scope: BusinessScope, customerProfileId: string, id: string): Promise<AddressRow | null> {
+  async get(
+    scope: BusinessScope,
+    customerProfileId: string,
+    id: string,
+  ): Promise<AddressRow | null> {
     const row = await this.prisma.address.findFirst({
       where: { id, customerProfileId, deletedAt: null, customerProfile: { businessId: scope } },
     });

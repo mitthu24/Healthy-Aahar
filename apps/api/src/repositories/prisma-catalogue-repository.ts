@@ -59,7 +59,10 @@ export class PrismaCatalogueRepository implements CatalogueRepository {
     }));
   }
 
-  async listProducts(scope: BusinessScope, filter: ListProductsFilter): Promise<ProductSummaryRow[]> {
+  async listProducts(
+    scope: BusinessScope,
+    filter: ListProductsFilter,
+  ): Promise<ProductSummaryRow[]> {
     const rows = await this.prisma.product.findMany({
       where: {
         businessId: scope,
@@ -73,7 +76,11 @@ export class PrismaCatalogueRepository implements CatalogueRepository {
       take: filter.limit,
       include: {
         category: { select: { id: true, name: true, slug: true } },
-        variants: { where: { deletedAt: null }, select: VARIANT_SELECT, orderBy: { displayOrder: 'asc' } },
+        variants: {
+          where: { deletedAt: null },
+          select: VARIANT_SELECT,
+          orderBy: { displayOrder: 'asc' },
+        },
         images: { where: { variantId: null }, take: 1, orderBy: { displayOrder: 'asc' } },
       },
     });
@@ -104,7 +111,11 @@ export class PrismaCatalogueRepository implements CatalogueRepository {
       where: { businessId: scope, slug, status: 'ACTIVE', deletedAt: null },
       include: {
         category: { select: { id: true, name: true, slug: true } },
-        variants: { where: { deletedAt: null }, select: VARIANT_SELECT, orderBy: { displayOrder: 'asc' } },
+        variants: {
+          where: { deletedAt: null },
+          select: VARIANT_SELECT,
+          orderBy: { displayOrder: 'asc' },
+        },
         images: { where: { variantId: null }, orderBy: { displayOrder: 'asc' } },
       },
     });

@@ -19,7 +19,10 @@ registerRoute({
   audience: 'customer',
   summary: 'List my addresses',
   phase: '04',
-  openapi: { tags: ['Addresses'], responses: { 200: { description: 'Addresses', schema: addressListResponseSchema } } },
+  openapi: {
+    tags: ['Addresses'],
+    responses: { 200: { description: 'Addresses', schema: addressListResponseSchema } },
+  },
 });
 
 registerRoute({
@@ -45,7 +48,10 @@ registerRoute({
   openapi: {
     tags: ['Addresses'],
     request: { body: updateAddressBodySchema },
-    responses: { 200: { description: 'Updated', schema: addressSchema }, 404: jsonError('Not found') },
+    responses: {
+      200: { description: 'Updated', schema: addressSchema },
+      404: jsonError('Not found'),
+    },
   },
 });
 
@@ -56,7 +62,10 @@ registerRoute({
   summary: 'Delete an address',
   phase: '04',
   errors: ['NOT_FOUND'],
-  openapi: { tags: ['Addresses'], responses: { 204: { description: 'Deleted' }, 404: jsonError('Not found') } },
+  openapi: {
+    tags: ['Addresses'],
+    responses: { 204: { description: 'Deleted' }, 404: jsonError('Not found') },
+  },
 });
 
 function toDto(row: AddressRow) {
@@ -88,8 +97,14 @@ export function addressesRoutes(): Hono<AppBindings> {
     const actor = c.get('actor');
     if (actor.kind !== 'CUSTOMER') throw new Error('unreachable: customerAuth guarantees CUSTOMER');
 
-    const addresses = await c.env.services.address.list(businessScope(c.env.businessId), actor.customerProfileId);
-    return c.json({ data: addresses.map(toDto), pagination: { limit: addresses.length, next_cursor: null, has_more: false } });
+    const addresses = await c.env.services.address.list(
+      businessScope(c.env.businessId),
+      actor.customerProfileId,
+    );
+    return c.json({
+      data: addresses.map(toDto),
+      pagination: { limit: addresses.length, next_cursor: null, has_more: false },
+    });
   });
 
   app.post('/', async (c) => {
@@ -97,19 +112,23 @@ export function addressesRoutes(): Hono<AppBindings> {
     if (actor.kind !== 'CUSTOMER') throw new Error('unreachable: customerAuth guarantees CUSTOMER');
 
     const body = createAddressBodySchema.parse(await c.req.json());
-    const address = await c.env.services.address.create(businessScope(c.env.businessId), actor.customerProfileId, {
-      label: body.label,
-      recipientName: body.recipient_name,
-      recipientPhone: body.recipient_phone,
-      line1: body.line1,
-      line2: body.line2,
-      landmark: body.landmark,
-      city: body.city,
-      state: body.state,
-      pincode: body.pincode,
-      deliveryInstructions: body.delivery_instructions,
-      isDefault: body.is_default,
-    });
+    const address = await c.env.services.address.create(
+      businessScope(c.env.businessId),
+      actor.customerProfileId,
+      {
+        label: body.label,
+        recipientName: body.recipient_name,
+        recipientPhone: body.recipient_phone,
+        line1: body.line1,
+        line2: body.line2,
+        landmark: body.landmark,
+        city: body.city,
+        state: body.state,
+        pincode: body.pincode,
+        deliveryInstructions: body.delivery_instructions,
+        isDefault: body.is_default,
+      },
+    );
     return c.json(toDto(address), 201);
   });
 
@@ -132,7 +151,9 @@ export function addressesRoutes(): Hono<AppBindings> {
         ...(body.city !== undefined ? { city: body.city } : {}),
         ...(body.state !== undefined ? { state: body.state } : {}),
         ...(body.pincode !== undefined ? { pincode: body.pincode } : {}),
-        ...(body.delivery_instructions !== undefined ? { deliveryInstructions: body.delivery_instructions } : {}),
+        ...(body.delivery_instructions !== undefined
+          ? { deliveryInstructions: body.delivery_instructions }
+          : {}),
         ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}),
       },
     );
@@ -143,7 +164,11 @@ export function addressesRoutes(): Hono<AppBindings> {
     const actor = c.get('actor');
     if (actor.kind !== 'CUSTOMER') throw new Error('unreachable: customerAuth guarantees CUSTOMER');
 
-    await c.env.services.address.delete(businessScope(c.env.businessId), actor.customerProfileId, c.req.param('id'));
+    await c.env.services.address.delete(
+      businessScope(c.env.businessId),
+      actor.customerProfileId,
+      c.req.param('id'),
+    );
     return c.body(null, 204);
   });
 

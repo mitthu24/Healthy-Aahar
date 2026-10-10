@@ -38,7 +38,9 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
       <p className="text-heading-sm text-sand-800">{title}</p>
-      {description ? <p className="text-body-sm text-sand-600 mt-2 max-w-sm">{description}</p> : null}
+      {description ? (
+        <p className="text-body-sm text-sand-600 mt-2 max-w-sm">{description}</p>
+      ) : null}
       {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
@@ -54,7 +56,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         <button
           type="button"
           onClick={onRetry}
-          className="text-body-sm text-green-600 mt-4 font-medium hover:underline"
+          className="text-body-sm mt-4 font-medium text-green-600 hover:underline"
         >
           Try again
         </button>

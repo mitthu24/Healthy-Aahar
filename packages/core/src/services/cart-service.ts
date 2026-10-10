@@ -69,7 +69,11 @@ export class CartService {
     return this.toView(cart);
   }
 
-  async removeItem(scope: BusinessScope, customerProfileId: string, itemId: string): Promise<CartView> {
+  async removeItem(
+    scope: BusinessScope,
+    customerProfileId: string,
+    itemId: string,
+  ): Promise<CartView> {
     const cart = await this.carts.removeItem(scope, customerProfileId, itemId);
     return this.toView(cart);
   }

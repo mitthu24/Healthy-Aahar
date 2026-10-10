@@ -79,14 +79,16 @@ export const orderSchema = z.object({
 export type OrderDto = z.infer<typeof orderSchema>;
 
 export const orderListResponseSchema = paginatedSchema(
-  orderSchema.pick({
-    id: true,
-    order_number: true,
-    status: true,
-    display_status: true,
-    total: true,
-    placed_at: true,
-  }).extend({ item_count: z.number().int() }),
+  orderSchema
+    .pick({
+      id: true,
+      order_number: true,
+      status: true,
+      display_status: true,
+      total: true,
+      placed_at: true,
+    })
+    .extend({ item_count: z.number().int() }),
 );
 export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
 

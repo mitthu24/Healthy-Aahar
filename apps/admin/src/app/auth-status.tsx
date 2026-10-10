@@ -32,7 +32,10 @@ export function AuthStatus() {
       })
       .catch((err) => {
         if (cancelled) return;
-        if (err instanceof ApiError && (err.code === 'UNAUTHENTICATED' || err.code === 'SESSION_EXPIRED')) {
+        if (
+          err instanceof ApiError &&
+          (err.code === 'UNAUTHENTICATED' || err.code === 'SESSION_EXPIRED')
+        ) {
           setMe(null);
         } else {
           setMe(null);
@@ -58,7 +61,7 @@ export function AuthStatus() {
   return (
     <div className="flex items-center gap-3">
       <p className="text-body-sm text-sand-600">
-        Signed in as <span className="font-medium text-sand-900">{me.full_name}</span>
+        Signed in as <span className="text-sand-900 font-medium">{me.full_name}</span>
       </p>
       <Button
         size="sm"

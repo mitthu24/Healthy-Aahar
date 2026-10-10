@@ -1,4 +1,9 @@
-import { now, type OrderAddressSnapshot, type OrderItemRow, type OrderRow } from '@healthy-aahar/core';
+import {
+  now,
+  type OrderAddressSnapshot,
+  type OrderItemRow,
+  type OrderRow,
+} from '@healthy-aahar/core';
 import type { Prisma } from '@healthy-aahar/db';
 
 export const ORDER_INCLUDE = {
@@ -7,7 +12,9 @@ export const ORDER_INCLUDE = {
 
 export type RawOrder = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
-function isAddressSnapshot(value: Prisma.JsonValue): value is OrderAddressSnapshot & Prisma.JsonObject {
+function isAddressSnapshot(
+  value: Prisma.JsonValue,
+): value is OrderAddressSnapshot & Prisma.JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 

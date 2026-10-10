@@ -5,7 +5,13 @@ import {
   productDetailSchema,
   productListResponseSchema,
 } from '@healthy-aahar/contracts';
-import { businessScope, money, type CategoryRow, type ProductDetailRow, type ProductSummaryRow } from '@healthy-aahar/core';
+import {
+  businessScope,
+  money,
+  type CategoryRow,
+  type ProductDetailRow,
+  type ProductSummaryRow,
+} from '@healthy-aahar/core';
 import { Hono } from 'hono';
 
 import { registerRoute } from '../../lib/route-registry.js';
@@ -114,12 +120,12 @@ export function publicCatalogueRoutes(): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
 
   app.get('/categories', async (c) => {
-    const categories = await c.env.services.catalogue.listCategories(businessScope(c.env.businessId));
-    return c.json(
-      { data: categories.map(toCategoryDto) },
-      200,
-      { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+    const categories = await c.env.services.catalogue.listCategories(
+      businessScope(c.env.businessId),
     );
+    return c.json({ data: categories.map(toCategoryDto) }, 200, {
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+    });
   });
 
   app.get('/products', async (c) => {
@@ -137,11 +143,9 @@ export function publicCatalogueRoutes(): Hono<AppBindings> {
       ...(query.q ? { q: query.q } : {}),
     });
 
-    return c.json(
-      { data: page.data.map(toSummaryDto), pagination: page.pagination },
-      200,
-      { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
-    );
+    return c.json({ data: page.data.map(toSummaryDto), pagination: page.pagination }, 200, {
+      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+    });
   });
 
   app.get('/products/:slug', async (c) => {

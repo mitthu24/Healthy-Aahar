@@ -35,11 +35,16 @@ export default function ChangePasswordPage() {
 
     setIsSubmitting(true);
     try {
-      await apiClient.adminChangePassword({ current_password: currentPassword, new_password: newPassword });
+      await apiClient.adminChangePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
       router.push('/login?changed=1');
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.code === 'INVALID_CREDENTIALS' ? 'Current password is incorrect.' : err.message);
+        setError(
+          err.code === 'INVALID_CREDENTIALS' ? 'Current password is incorrect.' : err.message,
+        );
       } else {
         setError('Something went wrong. Please try again.');
       }

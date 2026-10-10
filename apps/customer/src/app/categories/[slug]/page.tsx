@@ -39,7 +39,9 @@ export default function CategoryPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="font-display text-heading-lg text-sand-900">{category.name}</h1>
-      {category.description ? <p className="text-body-sm text-sand-600 mt-2">{category.description}</p> : null}
+      {category.description ? (
+        <p className="text-body-sm text-sand-600 mt-2">{category.description}</p>
+      ) : null}
       <div className="mt-5">
         <ProductGrid categoryId={category.id} emptyTitle="No products in this category yet" />
       </div>

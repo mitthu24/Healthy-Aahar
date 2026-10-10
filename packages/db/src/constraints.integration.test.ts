@@ -448,13 +448,19 @@ describe('PHASE 03 migration preflight — duplicate email detection (Fix #6)', 
     await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "users_email_user_type_key"');
     try {
       const email = `dup-preflight-${uuidv7()}@example.test`;
-      await prisma.user.create({ data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' } });
-      await prisma.user.create({ data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' } });
+      await prisma.user.create({
+        data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' },
+      });
+      await prisma.user.create({
+        data: { id: uuidv7(), userType: 'CUSTOMER', email, status: 'ACTIVE' },
+      });
 
       // The EXACT query documented in the migration's guard and in
       // packages/db/scripts/check-duplicate-emails.mjs — kept identical on
       // purpose so this test proves what both of those actually detect.
-      const duplicates = await prisma.$queryRaw<Array<{ email: string; user_type: string; row_count: number }>>`
+      const duplicates = await prisma.$queryRaw<
+        Array<{ email: string; user_type: string; row_count: number }>
+      >`
         SELECT email, user_type, COUNT(*)::int AS row_count
         FROM users
         WHERE email IS NOT NULL
@@ -481,7 +487,12 @@ describe('PHASE 03 migration preflight — duplicate email detection (Fix #6)', 
   it('reports zero duplicates on an otherwise-clean database (no false positives)', async () => {
     await seedBusiness(prisma, { slug: `clean-${uuidv7()}` });
     await prisma.user.create({
-      data: { id: uuidv7(), userType: 'CUSTOMER', email: `unique-${uuidv7()}@example.test`, status: 'ACTIVE' },
+      data: {
+        id: uuidv7(),
+        userType: 'CUSTOMER',
+        email: `unique-${uuidv7()}@example.test`,
+        status: 'ACTIVE',
+      },
     });
 
     const duplicates = await prisma.$queryRaw<Array<{ email: string }>>`
