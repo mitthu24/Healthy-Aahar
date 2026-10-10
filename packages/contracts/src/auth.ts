@@ -41,7 +41,16 @@ export const adminMeSchema = z.object({
   is_super_admin: z.boolean(),
   permissions: z.array(z.string()),
   roles: z.array(z.string()),
+  /** True when this admin has never changed their password since the
+   *  account was created/bootstrapped — the UI must force a change (Phase 04). */
+  must_change_password: z.boolean(),
 });
+
+export const changeOwnPasswordBodySchema = z.object({
+  current_password: z.string().min(1),
+  new_password: passwordSchema,
+});
+export type ChangeOwnPasswordBody = z.infer<typeof changeOwnPasswordBodySchema>;
 
 // ── Customer: register / login ──────────────────────────────────────────
 

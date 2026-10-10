@@ -30,6 +30,7 @@ function toAdminUserRow(admin: {
   invitedBy: string | null;
   invitationAcceptedAt: Date | null;
   deletedAt: Date | null;
+  lastPasswordChangeAt: Date | null;
   user: { email: string | null };
   roles: { role: { key: string } }[];
 }): AdminUserRow {
@@ -44,6 +45,7 @@ function toAdminUserRow(admin: {
     invitedBy: admin.invitedBy,
     invitationAcceptedAt: admin.invitationAcceptedAt,
     deletedAt: admin.deletedAt,
+    lastPasswordChangeAt: admin.lastPasswordChangeAt,
     roleKeys: admin.roles.map((r) => r.role.key),
   };
 }
@@ -232,5 +234,10 @@ export class PrismaAdminRepository implements AdminRepository {
 
     void scope;
     return toAdminUserRow(updated);
+  }
+
+  async markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void> {
+    void scope;
+    await this.prisma.adminUser.update({ where: { id: adminUserId }, data: { lastPasswordChangeAt: now() } });
   }
 }

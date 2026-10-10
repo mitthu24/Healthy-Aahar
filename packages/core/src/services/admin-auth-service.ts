@@ -128,6 +128,34 @@ export class AdminAuthService {
     return this.admins.findById(scope, adminUserId);
   }
 
+  /**
+   * Self-service change of one's OWN password while already signed in
+   * (Phase 04) — distinct from `RbacService.resetAdminPassword`, which
+   * issues a token for someone else to redeem. Requires the current
+   * password rather than trusting the session alone, and revokes every
+   * other session the same way a token-based reset already does.
+   */
+  async changeOwnPassword(
+    scope: BusinessScope,
+    params: { userId: string; adminUserId: string; currentPassword: string; newPassword: string },
+  ): Promise<void> {
+    const invalidCurrent = () => new DomainError('INVALID_CREDENTIALS', 'Current password is incorrect.');
+
+    const user = await this.users.findById(params.userId);
+    if (!user || !user.passwordHash) throw invalidCurrent();
+
+    const valid = await this.passwordHasher.verify(params.currentPassword, user.passwordHash);
+    if (!valid) throw invalidCurrent();
+
+    const weakness = this.passwordHasher.checkStrength(params.newPassword);
+    if (weakness) throw new DomainError('WEAK_PASSWORD', weakness);
+
+    const newHash = await this.passwordHasher.hash(params.newPassword);
+    await this.users.setPassword(params.userId, newHash);
+    await this.admins.markPasswordChanged(scope, params.adminUserId);
+    await this.sessions.revokeAllForUser(params.userId);
+  }
+
   async logout(rawToken: string): Promise<void> {
     const tokenHash = this.tokenHasher.hash(rawToken);
     const session = await this.sessions.findByTokenHash(tokenHash);

@@ -1,4 +1,4 @@
-import { adminLoginBodySchema, adminMeSchema, errorResponseSchema } from '@healthy-aahar/contracts';
+import { adminLoginBodySchema, adminMeSchema, changeOwnPasswordBodySchema, errorResponseSchema } from '@healthy-aahar/contracts';
 import { businessScope, DomainError } from '@healthy-aahar/core';
 import { CSRF_COOKIE, CSRF_HEADER, generateCsrfToken } from '@healthy-aahar/auth';
 import { Hono } from 'hono';
@@ -86,6 +86,7 @@ async function toMeResponse(
   is_super_admin: boolean;
   permissions: string[];
   roles: string[];
+  must_change_password: boolean;
 }> {
   const scope = businessScope(c.env.businessId);
   const profile = await c.env.services.adminAuth.getProfile(scope, actor.adminUserId);
@@ -99,8 +100,32 @@ async function toMeResponse(
     is_super_admin: actor.isSuperAdmin,
     permissions: [...actor.permissions],
     roles: profile?.roleKeys ?? [],
+    must_change_password: profile?.lastPasswordChangeAt === null,
   };
 }
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/auth/change-password',
+  audience: 'admin',
+  authRoute: true,
+  summary: 'Change my own password (requires the current password)',
+  phase: '04',
+  errors: ['INVALID_CREDENTIALS', 'WEAK_PASSWORD'],
+  openapi: {
+    description:
+      'Self-service, for an already-authenticated admin — distinct from ' +
+      'POST /v1/admin/admin-users/{id}/reset-password, which issues a ' +
+      'token for a DIFFERENT admin to redeem. Revokes every other session.',
+    tags: ['Admin: Auth'],
+    request: { body: changeOwnPasswordBodySchema },
+    responses: {
+      200: { description: 'Password changed', schema: adminMeSchema },
+      401: jsonError('Current password is incorrect'),
+      422: jsonError('New password does not meet the minimum requirements'),
+    },
+  },
+});
 
 export function adminAuthRoutes(): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
@@ -167,6 +192,28 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     const actor = c.get('actor');
     if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
     return c.json(await toMeResponse(c, actor));
+  });
+
+  app.post('/change-password', adminAuth, async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    const body = changeOwnPasswordBodySchema.parse(await c.req.json());
+    const scope = businessScope(c.env.businessId);
+
+    await c.env.services.adminAuth.changeOwnPassword(scope, {
+      userId: actor.userId,
+      adminUserId: actor.adminUserId,
+      currentPassword: body.current_password,
+      newPassword: body.new_password,
+    });
+
+    // The session this request used was just revoked along with every
+    // other one — clear the cookie rather than leaving a dead one behind.
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
+    deleteCookie(c, CSRF_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
+
+    return c.json({ changed: true });
   });
 
   return app;

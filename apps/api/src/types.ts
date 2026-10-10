@@ -1,7 +1,13 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
 import type {
+  AddressService,
   AdminAuthService,
+  CartService,
+  CatalogueService,
+  CheckoutService,
   CustomerAuthService,
+  CustomerOrderService,
+  OrderFulfilmentService,
   PasswordResetService,
   RbacService,
   ServiceabilityAdminService,
@@ -37,6 +43,12 @@ export type AppServices = {
   adminAuth: AdminAuthService;
   rbac: RbacService;
   passwordReset: PasswordResetService;
+  catalogue: CatalogueService;
+  address: AddressService;
+  cart: CartService;
+  checkout: CheckoutService;
+  customerOrders: CustomerOrderService;
+  orderFulfilment: OrderFulfilmentService;
 };
 
 export type AppAuth = {

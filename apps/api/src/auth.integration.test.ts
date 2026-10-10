@@ -537,9 +537,10 @@ describe('registration rate limiting (Fix #1)', () => {
 
     expect(resExisting.status).toBe(429);
     expect(resNew.status).toBe(429);
-    const [bodyExisting, bodyNew] = (await Promise.all([resExisting.json(), resNew.json()])) as Array<{
-      error: { code: string; message: string; request_id: string };
-    }>;
+    const [bodyExisting, bodyNew] = (await Promise.all([resExisting.json(), resNew.json()])) as [
+      { error: { code: string; message: string; request_id: string } },
+      { error: { code: string; message: string; request_id: string } },
+    ];
     // `request_id` is a fresh UUID per request by design (docs/28 §2) — it
     // is expected to differ; comparing it would fail this test for a
     // reason that has nothing to do with enumeration.

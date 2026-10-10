@@ -4,6 +4,7 @@ import {
   allowedTransitionsFrom,
   canTransition,
   canTransitionSubscription,
+  customerDisplayStatus,
   generatesDeliveries,
   isTerminalOrderStatus,
   ORDER_TRANSITIONS,
@@ -171,6 +172,36 @@ describe('subscription lifecycle', () => {
     expect(generatesDeliveries('ACTIVE')).toBe(true);
     for (const status of ['PAUSED', 'SUSPENDED', 'CANCELLED', 'EXPIRED', 'DRAFT'] as const) {
       expect(generatesDeliveries(status)).toBe(false);
+    }
+  });
+});
+
+describe('customerDisplayStatus (Phase 04 requirement change)', () => {
+  it('shows the auto-confirmation result as "Confirmed", not a manual-review label', () => {
+    expect(customerDisplayStatus('CONFIRMED')).toBe('Confirmed');
+  });
+
+  it('collapses PREPARING and READY_FOR_DISPATCH into one customer-facing "Preparing"', () => {
+    expect(customerDisplayStatus('PREPARING')).toBe('Preparing');
+    expect(customerDisplayStatus('READY_FOR_DISPATCH')).toBe('Preparing');
+  });
+
+  it('labels OUT_FOR_DELIVERY as "Dispatched"', () => {
+    expect(customerDisplayStatus('OUT_FOR_DELIVERY')).toBe('Dispatched');
+  });
+
+  it('an admin-initiated cancellation reads as "Rejected" — no new order status', () => {
+    expect(customerDisplayStatus('CANCELLED', 'ADMIN')).toBe('Rejected');
+  });
+
+  it('a customer-initiated cancellation reads as "Cancelled", the same CANCELLED row', () => {
+    expect(customerDisplayStatus('CANCELLED', 'CUSTOMER')).toBe('Cancelled');
+    expect(customerDisplayStatus('CANCELLED')).toBe('Cancelled');
+  });
+
+  it('every OrderStatusValue maps to a non-empty label', () => {
+    for (const status of ALL_STATUSES) {
+      expect(customerDisplayStatus(status).length).toBeGreaterThan(0);
     }
   });
 });

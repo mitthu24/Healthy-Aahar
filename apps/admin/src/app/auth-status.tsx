@@ -2,14 +2,21 @@
 
 import { ApiError, type AdminMe } from '@healthy-aahar/sdk';
 import { Button } from '@healthy-aahar/ui';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { apiClient } from '@/lib/api-client';
 
-/** Reads the current admin session (PHASE 03) and offers sign-in/sign-out. */
+/**
+ * Reads the current admin session (PHASE 03) and offers sign-in/sign-out.
+ *
+ * Phase 04 addition: an admin whose `must_change_password` is still true
+ * (never changed since the account was created/bootstrapped) is redirected
+ * to `/change-password` before they can reach anything else in the console.
+ */
 export function AuthStatus() {
   const router = useRouter();
+  const pathname = usePathname();
   const [me, setMe] = useState<AdminMe | null | 'loading'>('loading');
 
   useEffect(() => {
@@ -17,7 +24,11 @@ export function AuthStatus() {
     apiClient
       .adminMe()
       .then((result) => {
-        if (!cancelled) setMe(result);
+        if (cancelled) return;
+        setMe(result);
+        if (result.must_change_password && pathname !== '/change-password') {
+          router.replace('/change-password');
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -30,7 +41,7 @@ export function AuthStatus() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname, router]);
 
   if (me === 'loading') {
     return <p className="text-body-sm text-sand-400">Checking session…</p>;

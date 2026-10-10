@@ -1,9 +1,20 @@
 import type {
+  AddressDto,
+  AddressListResponse,
   AdminMe,
+  AdminOrderDto,
+  AdminOrderListResponse,
+  CartDto,
+  CategoryDto,
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliverySlotListResponse,
+  OrderDto,
+  OrderListResponse,
   PincodeListResponse,
+  ProductDetailDto,
+  ProductListResponse,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';
 
@@ -212,13 +223,162 @@ export class ApiClient {
       cursor = page.pagination.next_cursor ?? undefined;
     } while (cursor);
   }
+
+  // ── Admin: self-service password change (PHASE 04) ──────────────────────
+
+  adminChangePassword(body: { current_password: string; new_password: string }): Promise<AdminMe> {
+    return this.request('/v1/admin/auth/change-password', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  // ── Catalogue (PHASE 04) ─────────────────────────────────────────────────
+
+  listCategories(): Promise<{ data: CategoryDto[] }> {
+    return this.request('/v1/public/categories');
+  }
+
+  listProducts(params: PageParams & { category_id?: string; q?: string } = {}): Promise<ProductListResponse> {
+    return this.request(`/v1/public/products${this.query(params)}`);
+  }
+
+  getProduct(slug: string): Promise<ProductDetailDto> {
+    return this.request(`/v1/public/products/${encodeURIComponent(slug)}`);
+  }
+
+  // ── Cart (PHASE 04) ──────────────────────────────────────────────────────
+
+  getCart(): Promise<CartDto> {
+    return this.request('/v1/me/cart');
+  }
+
+  addCartItem(body: { variant_id: string; quantity: number }): Promise<CartDto> {
+    return this.request('/v1/me/cart/items', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateCartItem(itemId: string, body: { quantity: number }): Promise<CartDto> {
+    return this.request(`/v1/me/cart/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  removeCartItem(itemId: string): Promise<CartDto> {
+    return this.request(`/v1/me/cart/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  // ── Addresses (PHASE 04) ─────────────────────────────────────────────────
+
+  listAddresses(): Promise<AddressListResponse> {
+    return this.request('/v1/me/addresses');
+  }
+
+  createAddress(body: {
+    label?: string;
+    recipient_name: string;
+    recipient_phone: string;
+    line1: string;
+    line2?: string;
+    landmark?: string;
+    city: string;
+    state: string;
+    pincode: string;
+    delivery_instructions?: string;
+    is_default?: boolean;
+  }): Promise<AddressDto> {
+    return this.request('/v1/me/addresses', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateAddress(id: string, body: Partial<Parameters<ApiClient['createAddress']>[0]>): Promise<AddressDto> {
+    return this.request(`/v1/me/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  deleteAddress(id: string): Promise<void> {
+    return this.request(`/v1/me/addresses/${id}`, { method: 'DELETE' });
+  }
+
+  // ── Delivery slots (PHASE 04) ────────────────────────────────────────────
+
+  listDeliverySlots(addressId: string): Promise<DeliverySlotListResponse> {
+    return this.request(`/v1/me/delivery-slots${this.query({ address_id: addressId })}`);
+  }
+
+  // ── Checkout & orders (PHASE 04) ─────────────────────────────────────────
+
+  /**
+   * `idempotencyKey` must be a fresh, client-generated value for a NEW
+   * checkout attempt, and the SAME value for a retry of one that may not
+   * have reached the server (BR per docs/19, Phase 04 requirement change).
+   */
+  checkout(
+    body: { address_id: string; delivery_slot_id: string; service_date: string; customer_note?: string },
+    idempotencyKey: string,
+  ): Promise<OrderDto> {
+    return this.request('/v1/me/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+  }
+
+  listMyOrders(params: PageParams = {}): Promise<OrderListResponse> {
+    return this.request(`/v1/me/orders${this.query(params)}`);
+  }
+
+  getMyOrder(id: string): Promise<OrderDto> {
+    return this.request(`/v1/me/orders/${id}`);
+  }
+
+  cancelMyOrder(id: string): Promise<OrderDto> {
+    return this.request(`/v1/me/orders/${id}/cancel`, { method: 'POST' });
+  }
+
+  // ── Admin: orders (PHASE 04) ─────────────────────────────────────────────
+
+  listAdminOrders(params: PageParams & { status?: string } = {}): Promise<AdminOrderListResponse> {
+    return this.request(`/v1/admin/orders${this.query(params)}`);
+  }
+
+  getAdminOrder(id: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}`);
+  }
+
+  updateAdminOrderStatus(id: string, body: { to_status: string; reason?: string }): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/status`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  rejectAdminOrder(id: string, reason: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+  }
+
+  holdAdminOrder(id: string, note: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/hold`, { method: 'POST', body: JSON.stringify({ note }) });
+  }
+
+  recordCodCollection(id: string, amountPaise: number): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/cod-collection`, {
+      method: 'POST',
+      body: JSON.stringify({ amount_paise: amountPaise }),
+    });
+  }
 }
 
 export type {
+  AddressDto,
+  AddressListResponse,
   AdminMe,
+  AdminOrderDto,
+  AdminOrderListResponse,
+  CartDto,
+  CartItemDto,
+  CategoryDto,
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliverySlotDto,
+  DeliverySlotListResponse,
+  OrderDto,
+  OrderItemDto,
+  OrderListResponse,
   PincodeListResponse,
+  ProductDetailDto,
+  ProductListResponse,
+  ProductSummaryDto,
+  ProductVariantDto,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';

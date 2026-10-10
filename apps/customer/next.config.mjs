@@ -29,6 +29,10 @@ const nextConfig = {
   },
   images: {
     formats: ['image/avif', 'image/webp'],
+    // No product-image CDN host is fixed yet (packages/storage's R2 adapter
+    // is future work, docs/PHASE-04 report "Known limitations") — this
+    // should narrow to the real CDN hostname once one exists.
+    remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {
     return [
