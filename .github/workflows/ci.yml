@@ -114,7 +114,7 @@ jobs:
       # package's DROP/CREATE races another's live connection — serialising
       # the test task is what makes that safe, at the cost of wall-clock
       # time turbo's caching already keeps modest.
-      - run: pnpm run test -- --concurrency=1
+      - run: pnpm exec turbo run --concurrency=1 test
 
   # ── Database migration check ──────────────────────────────────────────────
   # Proves migrations apply cleanly to an empty database and that the schema
