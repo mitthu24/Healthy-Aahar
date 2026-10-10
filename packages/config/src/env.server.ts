@@ -53,7 +53,10 @@ export const serverEnvSchema = z
     ADMIN_SESSION_MAX_AGE_SECONDS: z.coerce.number().int().default(43200),
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: z.coerce.number().int().default(1800),
     /** Customer sessions have no idle timeout (mobile-readiness, docs/30 §2) — only an absolute lifetime. */
-    CUSTOMER_SESSION_MAX_AGE_SECONDS: z.coerce.number().int().default(60 * 60 * 24 * 30),
+    CUSTOMER_SESSION_MAX_AGE_SECONDS: z.coerce
+      .number()
+      .int()
+      .default(60 * 60 * 24 * 30),
     /** HMAC secret for the double-submit CSRF token (docs/07 §5.2). Own
      *  secret, not reused from INTERNAL_SERVICE_TOKEN — a leak of one must
      *  not compromise the other. */

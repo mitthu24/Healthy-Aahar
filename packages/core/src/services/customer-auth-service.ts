@@ -70,17 +70,26 @@ export class CustomerAuthService {
     });
 
     if (!result.ok) {
-      throw new DomainError('EMAIL_ALREADY_REGISTERED', 'An account with this email already exists.');
+      throw new DomainError(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists.',
+      );
     }
 
-    const token = await this.issueSession(result.user.id, params.sessionTtlMs, params.ipAddress, params.userAgent);
+    const token = await this.issueSession(
+      result.user.id,
+      params.sessionTtlMs,
+      params.ipAddress,
+      params.userAgent,
+    );
     await this.users.touchLastLogin(result.user.id);
 
     return { user: result.user, profile: result.profile, token };
   }
 
   async login(params: LoginParams): Promise<CustomerAuthResult> {
-    const genericFailure = () => new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
+    const genericFailure = () =>
+      new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
 
     const user = await this.users.findByEmail(params.email, 'CUSTOMER');
     if (!user || !user.passwordHash) {
@@ -100,7 +109,12 @@ export class CustomerAuthService {
       });
     }
 
-    const token = await this.issueSession(user.id, params.sessionTtlMs, params.ipAddress, params.userAgent);
+    const token = await this.issueSession(
+      user.id,
+      params.sessionTtlMs,
+      params.ipAddress,
+      params.userAgent,
+    );
     await this.users.touchLastLogin(user.id);
 
     return { user, profile, token };

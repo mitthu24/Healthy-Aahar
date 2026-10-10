@@ -1,6 +1,11 @@
 import type { PasswordHasher, SessionTokenHasher } from '@healthy-aahar/core';
 
-import { assertPasswordStrength, hashPassword, PasswordHashError, verifyPassword } from './password.js';
+import {
+  assertPasswordStrength,
+  hashPassword,
+  PasswordHashError,
+  verifyPassword,
+} from './password.js';
 import { generateSessionToken, hashSessionToken } from './session-token.js';
 
 /**

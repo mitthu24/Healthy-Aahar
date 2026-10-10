@@ -57,7 +57,10 @@ export function passwordSetupRoutes(): Hono<AppBindings> {
       ip,
     });
 
-    await c.env.services.passwordReset.setPassword({ token: body.token, newPassword: body.password });
+    await c.env.services.passwordReset.setPassword({
+      token: body.token,
+      newPassword: body.password,
+    });
     return c.json({ ok: true });
   });
 

@@ -13,7 +13,10 @@ export type EffectivePermissions = {
 
 export class PermissionCache {
   private version = 0;
-  private readonly entries = new Map<string, { at: number; version: number; value: EffectivePermissions }>();
+  private readonly entries = new Map<
+    string,
+    { at: number; version: number; value: EffectivePermissions }
+  >();
 
   constructor(private readonly ttlMs = 60_000) {}
 

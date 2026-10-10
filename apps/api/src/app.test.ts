@@ -289,7 +289,12 @@ describe('GET /v1/routes', () => {
   it('publishes the route manifest with audiences', async () => {
     const res = await buildApp().request('/v1/routes');
     const body = (await res.json()) as {
-      data: Array<{ path: string; audience: string; permission: string | null; auth_route: boolean }>;
+      data: Array<{
+        path: string;
+        audience: string;
+        permission: string | null;
+        auth_route: boolean;
+      }>;
     };
 
     expect(body.data.length).toBeGreaterThan(0);

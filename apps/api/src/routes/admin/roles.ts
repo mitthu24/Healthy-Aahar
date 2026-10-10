@@ -58,7 +58,7 @@ registerRoute({
   path: '/v1/admin/roles/{id}/permissions',
   audience: 'admin',
   permission: 'roles:manage',
-  summary: 'Replace a role\'s permission set',
+  summary: "Replace a role's permission set",
   phase: '03',
   errors: ['UNKNOWN_PERMISSION', 'FORBIDDEN', 'NOT_FOUND'],
   openapi: {
@@ -113,7 +113,12 @@ export function rolesRoutes(): Hono<AppBindings> {
     const scope = businessScope(c.env.businessId);
     const created = await c.env.services.rbac.createRole(
       scope,
-      { key: body.key, name: body.name, description: body.description, permissionKeys: body.permission_keys },
+      {
+        key: body.key,
+        name: body.name,
+        description: body.description,
+        permissionKeys: body.permission_keys,
+      },
       actor.userId,
     );
     return c.json(toResponse(created), 201);
@@ -140,7 +145,12 @@ export function rolesRoutes(): Hono<AppBindings> {
 
   app.get('/permissions', async (c) => {
     return c.json({
-      data: PERMISSIONS.map((p) => ({ key: p.key, resource: p.resource, action: p.action, description: p.description })),
+      data: PERMISSIONS.map((p) => ({
+        key: p.key,
+        resource: p.resource,
+        action: p.action,
+        description: p.description,
+      })),
     });
   });
 

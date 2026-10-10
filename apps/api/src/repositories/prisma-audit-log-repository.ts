@@ -1,4 +1,9 @@
-import { newId, type AuditEvent, type AuditLogRepository, type BusinessScope } from '@healthy-aahar/core';
+import {
+  newId,
+  type AuditEvent,
+  type AuditLogRepository,
+  type BusinessScope,
+} from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 
 export class PrismaAuditLogRepository implements AuditLogRepository {

@@ -1,7 +1,12 @@
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
 import { isKnownPermission } from '../domain/permissions.js';
-import type { AdminRepository, AdminUserRow, RoleRepository, RoleRow } from '../ports/admin-repository.js';
+import type {
+  AdminRepository,
+  AdminUserRow,
+  RoleRepository,
+  RoleRow,
+} from '../ports/admin-repository.js';
 import type { AuditLogRepository } from '../ports/audit-log-repository.js';
 import type { SessionRepository } from '../ports/session-repository.js';
 import type { PasswordResetService } from './password-reset-service.js';
@@ -60,7 +65,10 @@ export class RbacService {
     // admin) — it must map to the established 409, never fall through to a
     // raw, unhandled 500.
     if (!result.ok) {
-      throw new DomainError('ADMIN_ALREADY_INVITED', 'An admin account with this email already exists.');
+      throw new DomainError(
+        'ADMIN_ALREADY_INVITED',
+        'An admin account with this email already exists.',
+      );
     }
     const admin = result.admin;
 
@@ -145,11 +153,19 @@ export class RbacService {
     if (losingSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
-        throw new DomainError('LAST_SUPER_ADMIN', 'At least one active Super Admin must always exist.');
+        throw new DomainError(
+          'LAST_SUPER_ADMIN',
+          'At least one active Super Admin must always exist.',
+        );
       }
     }
 
-    const updated = await this.admins.setRoles(scope, params.targetAdminUserId, params.roleIds, params.actorUserId);
+    const updated = await this.admins.setRoles(
+      scope,
+      params.targetAdminUserId,
+      params.roleIds,
+      params.actorUserId,
+    );
 
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
@@ -174,7 +190,10 @@ export class RbacService {
     if (target.isSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
-        throw new DomainError('LAST_SUPER_ADMIN', 'At least one active Super Admin must always exist.');
+        throw new DomainError(
+          'LAST_SUPER_ADMIN',
+          'At least one active Super Admin must always exist.',
+        );
       }
     }
 
@@ -218,7 +237,12 @@ export class RbacService {
 
   async updateRolePermissions(
     scope: BusinessScope,
-    params: { roleId: string; permissionKeys: string[]; actorUserId: string; actorIsSuperAdmin: boolean },
+    params: {
+      roleId: string;
+      permissionKeys: string[];
+      actorUserId: string;
+      actorIsSuperAdmin: boolean;
+    },
   ): Promise<RoleRow> {
     this.assertKnownPermissions(params.permissionKeys);
 
@@ -251,16 +275,26 @@ export class RbacService {
     const grantsRolesManage = roles.some((r) => r.permissionKeys.includes('roles:manage'));
     const grantsSuperAdmin = roles.some((r) => r.key === 'SUPER_ADMIN');
     if ((grantsRolesManage || grantsSuperAdmin) && !actorIsSuperAdmin) {
-      throw new DomainError('FORBIDDEN', 'Only a Super Admin may grant role management or Super Admin access.');
+      throw new DomainError(
+        'FORBIDDEN',
+        'Only a Super Admin may grant role management or Super Admin access.',
+      );
     }
   }
 
   private assertKnownPermissions(keys: string[]): void {
     const unknown = keys.filter((k) => !isKnownPermission(k));
     if (unknown.length > 0) {
-      throw new DomainError('UNKNOWN_PERMISSION', `Unknown permission key(s): ${unknown.join(', ')}`, {
-        details: unknown.map((k) => ({ field: 'permission_keys', issue: `unknown permission "${k}"` })),
-      });
+      throw new DomainError(
+        'UNKNOWN_PERMISSION',
+        `Unknown permission key(s): ${unknown.join(', ')}`,
+        {
+          details: unknown.map((k) => ({
+            field: 'permission_keys',
+            issue: `unknown permission "${k}"`,
+          })),
+        },
+      );
     }
   }
 

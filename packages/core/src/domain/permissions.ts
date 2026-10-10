@@ -35,7 +35,10 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   perm('orders:refund', 'Initiate a refund'),
 
   perm('subscriptions:read', 'List and view subscriptions and deliveries'),
-  perm('subscriptions:update', "Pause, resume, change quantity/slot/address on a customer's behalf"),
+  perm(
+    'subscriptions:update',
+    "Pause, resume, change quantity/slot/address on a customer's behalf",
+  ),
   perm('subscriptions:cancel', 'Cancel a subscription'),
   perm('subscriptions:manage_plans', 'Create and edit subscription plans'),
 
@@ -121,7 +124,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     // list, but roles:manage is still granted explicitly so the row is
     // meaningful if is_super_admin is ever unset by mistake — fail closed,
     // not open.
-    permissions: expand('roles:*', 'admin_users:*', 'settings:read', 'settings:update', 'audit:read'),
+    permissions: expand(
+      'roles:*',
+      'admin_users:*',
+      'settings:read',
+      'settings:update',
+      'audit:read',
+    ),
   },
   {
     key: 'ADMIN',

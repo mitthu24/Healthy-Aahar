@@ -1,4 +1,10 @@
-import { newId, now, type CreateSessionInput, type SessionRepository, type SessionRow } from '@healthy-aahar/core';
+import {
+  newId,
+  now,
+  type CreateSessionInput,
+  type SessionRepository,
+  type SessionRow,
+} from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 
 /** Prisma implementation of DB-backed sessions (PHASE 03, docs/07 §5). */

@@ -8,7 +8,11 @@ import {
   ServiceabilityAdminService,
   ServiceabilityService,
 } from '@healthy-aahar/core';
-import { PermissionCache, scryptPasswordHasher, sha256SessionTokenHasher } from '@healthy-aahar/auth';
+import {
+  PermissionCache,
+  scryptPasswordHasher,
+  sha256SessionTokenHasher,
+} from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 import { Hono } from 'hono';
@@ -99,8 +103,19 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       cities: new PrismaCityRepository(prisma),
       pincodes: new PrismaPincodeRepository(prisma),
     }),
-    customerAuth: new CustomerAuthService(userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
-    adminAuth: new AdminAuthService(adminRepo, userRepo, sessionRepo, scryptPasswordHasher, sha256SessionTokenHasher),
+    customerAuth: new CustomerAuthService(
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
+    adminAuth: new AdminAuthService(
+      adminRepo,
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
     rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
     passwordReset,
   };

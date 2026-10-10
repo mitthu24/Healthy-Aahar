@@ -50,7 +50,8 @@ export class AdminAuthService {
    * what prevents account enumeration (Step 5).
    */
   async login(scope: BusinessScope, params: AdminLoginParams): Promise<AdminLoginResult> {
-    const genericFailure = () => new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
+    const genericFailure = () =>
+      new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
 
     const user = await this.users.findByEmail(params.email, 'ADMIN');
     if (!user || !user.passwordHash) {
@@ -70,7 +71,12 @@ export class AdminAuthService {
 
     const effective = await this.admins.loadEffectivePermissions(scope, found.admin.id);
 
-    const token = await this.issueSession(user.id, params.sessionTtlMs, params.ipAddress, params.userAgent);
+    const token = await this.issueSession(
+      user.id,
+      params.sessionTtlMs,
+      params.ipAddress,
+      params.userAgent,
+    );
     await this.users.touchLastLogin(user.id);
 
     return {
@@ -87,7 +93,9 @@ export class AdminAuthService {
 
   /** Called by the admin-auth middleware after `validateSession` succeeds. */
   async verifySession(rawToken: string, idleTimeoutMs: number): Promise<{ userId: string }> {
-    const { userId } = await validateSession(this.sessions, this.tokenHasher, rawToken, { idleTimeoutMs });
+    const { userId } = await validateSession(this.sessions, this.tokenHasher, rawToken, {
+      idleTimeoutMs,
+    });
     return { userId };
   }
 

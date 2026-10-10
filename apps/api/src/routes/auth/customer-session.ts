@@ -101,7 +101,16 @@ registerRoute({
   },
 });
 
-function toSessionResponse(result: { user: { id: string; phone: string | null; email: string | null; status: string }; profile: { id: string; firstName: string | null; lastName: string | null; displayName: string | null }; token: string }) {
+function toSessionResponse(result: {
+  user: { id: string; phone: string | null; email: string | null; status: string };
+  profile: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+  };
+  token: string;
+}) {
   return {
     user: {
       id: result.user.id,

@@ -43,7 +43,11 @@ export type {
 } from './ports/admin-repository.js';
 export type { PasswordHasher } from './ports/password-hasher.js';
 export type { SessionTokenHasher } from './ports/session-token-hasher.js';
-export type { SessionRow, CreateSessionInput, SessionRepository } from './ports/session-repository.js';
+export type {
+  SessionRow,
+  CreateSessionInput,
+  SessionRepository,
+} from './ports/session-repository.js';
 export type {
   PasswordResetPurpose,
   PasswordResetTokenRow,

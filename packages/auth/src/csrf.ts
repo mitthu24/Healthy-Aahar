@@ -25,7 +25,11 @@ export function generateCsrfToken(secret: string): string {
   return `${nonce}.${signature}`;
 }
 
-export function verifyCsrfToken(secret: string, cookieValue: string | undefined, headerValue: string | undefined): boolean {
+export function verifyCsrfToken(
+  secret: string,
+  cookieValue: string | undefined,
+  headerValue: string | undefined,
+): boolean {
   if (!cookieValue || !headerValue) return false;
   if (cookieValue !== headerValue) return false;
 

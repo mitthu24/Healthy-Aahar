@@ -29,7 +29,9 @@ export default function HomePage() {
           <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
             Phase 01 — Foundation
           </p>
-          <h1 className="font-display text-heading-lg text-sand-900 mt-3">Healthy Aahar Operations</h1>
+          <h1 className="font-display text-heading-lg text-sand-900 mt-3">
+            Healthy Aahar Operations
+          </h1>
         </div>
         <AuthStatus />
       </div>
