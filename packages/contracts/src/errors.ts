@@ -62,6 +62,14 @@ export const ERROR_CODES = {
   INVALID_PRICE_RANGE: 422,
   SEARCH_QUERY_TOO_SHORT: 400,
 
+  // ── Admin catalogue management (Phase 04B) ──────────────────────────────
+  CATEGORY_NOT_FOUND: 404,
+  SLUG_ALREADY_IN_USE: 409,
+  CATEGORY_HAS_PRODUCTS: 409,
+  PRODUCT_NOT_PUBLISHABLE: 409,
+  STOCK_BELOW_RESERVED: 409,
+  IMAGE_NOT_FOUND: 404,
+
   // ── Cart / checkout / orders (PHASE 07) ─────────────────────────────────
   CART_EMPTY: 400,
   AMBIGUOUS_CART_ITEM: 400,

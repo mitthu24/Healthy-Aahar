@@ -1,42 +1,132 @@
-import { env } from '@/lib/env';
+'use client';
 
-import { AuthStatus } from './auth-status';
+import type { CategoryDto, ProductSummaryDto } from '@healthy-aahar/sdk';
+import { Skeleton } from '@healthy-aahar/ui';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-/**
- * PHASE 01 foundation shell, PHASE 03 authentication.
- *
- * The customer experience itself is PHASE 10. This page exists only to
- * prove the app builds, is themed by the shared design system, and is
- * correctly pointed at the API — plus sign-in/out, which PHASE 03 adds. It
- * is `noindex` at both the app and the edge (BR-SEO1).
- */
-export default function HomePage() {
-  return (
-    <main className="mx-auto max-w-lg px-4 py-16">
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
-          Phase 01 — Foundation
-        </p>
-        <AuthStatus />
+import { apiClient } from '@/lib/api-client';
+import { ProductCard } from '@/components/product-card';
+import { ProductGrid } from '@/components/product-grid';
+
+function CategoryRail() {
+  const [categories, setCategories] = useState<CategoryDto[] | null>(null);
+
+  useEffect(() => {
+    void apiClient
+      .listCategories()
+      .then((res) => setCategories(res.data))
+      .catch(() => setCategories([]));
+  }, []);
+
+  if (categories === null) {
+    return (
+      <div className="flex gap-3 overflow-x-auto px-4 pb-1">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-20 shrink-0 rounded-lg" />
+        ))}
       </div>
+    );
+  }
 
-      <h1 className="font-display text-heading-lg text-sand-900 mt-3">Healthy Aahar</h1>
+  if (categories.length === 0) return null;
 
-      <p className="text-body-md text-sand-600 mt-4">
-        The customer application shell is in place. Browsing, cart, checkout and subscriptions
-        arrive in later phases.
-      </p>
+  return (
+    <div className="flex gap-3 overflow-x-auto px-4 pb-1">
+      {categories.map((category) => (
+        <Link
+          key={category.id}
+          href={`/categories/${category.slug}`}
+          className="flex w-20 shrink-0 flex-col items-center gap-1.5 text-center"
+        >
+          <span className="flex h-16 w-16 items-center justify-center rounded-lg bg-green-50 text-xl font-semibold text-green-600">
+            {category.name.charAt(0)}
+          </span>
+          <span className="text-caption text-sand-700 line-clamp-2 leading-tight">
+            {category.name}
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
-      <dl className="border-sand-200 bg-sand-0 text-body-sm mt-10 space-y-3 rounded-lg border p-5 shadow-sm">
-        <div className="flex justify-between gap-4">
-          <dt className="text-sand-600">Environment</dt>
-          <dd className="tabular text-sand-800">{env.NEXT_PUBLIC_APP_ENV}</dd>
+function FeaturedRail({ onLoaded }: { onLoaded: (products: ProductSummaryDto[]) => void }) {
+  useEffect(() => {
+    void apiClient
+      .listProducts({ limit: 20 })
+      .then((res) => onLoaded(res.data))
+      .catch(() => onLoaded([]));
+  }, []);
+  return null;
+}
+
+export default function HomePage() {
+  const [featured, setFeatured] = useState<ProductSummaryDto[] | null>(null);
+  const bestsellers = featured?.filter((p) => p.is_bestseller) ?? [];
+
+  return (
+    <main className="mx-auto max-w-2xl pb-8">
+      <FeaturedRail onLoaded={setFeatured} />
+
+      {/* Hero */}
+      <section className="text-sand-0 mx-4 mt-4 rounded-xl bg-gradient-to-br from-green-600 to-green-700 px-5 py-7">
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-100">
+          Healthy Aahar
+        </p>
+        <h1 className="font-display text-heading-lg mt-2">Real food, delivered for your slot.</h1>
+        <p className="text-body-sm mt-2 max-w-xs text-green-50">
+          Wholesome meals and pantry staples, cooked and packed fresh for the delivery window you
+          choose.
+        </p>
+      </section>
+
+      {/* Categories */}
+      <section className="mt-6">
+        <h2 className="text-heading-sm text-sand-900 px-4">Shop by category</h2>
+        <div className="mt-3">
+          <CategoryRail />
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-sand-600">API</dt>
-          <dd className="tabular text-sand-800">{env.NEXT_PUBLIC_API_BASE_URL}</dd>
+      </section>
+
+      {/* Bestsellers — only shown when real data supports it */}
+      {bestsellers.length > 0 ? (
+        <section className="mt-8 px-4">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-heading-sm text-sand-900">Bestsellers</h2>
+            <Link
+              href="/products"
+              className="text-body-sm font-medium text-green-600 hover:underline"
+            >
+              See all
+            </Link>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {bestsellers.slice(0, 6).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Full catalogue */}
+      <section className="mt-8 px-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-heading-sm text-sand-900">Explore our range</h2>
+          <Link
+            href="/products"
+            className="text-body-sm font-medium text-green-600 hover:underline"
+          >
+            See all
+          </Link>
         </div>
-      </dl>
+        <div className="mt-3">
+          <ProductGrid
+            emptyTitle="Nothing here yet"
+            emptyDescription="The catalogue is being stocked — check back shortly."
+          />
+        </div>
+      </section>
     </main>
   );
 }

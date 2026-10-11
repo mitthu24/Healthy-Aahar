@@ -212,3 +212,40 @@ export function canTransitionSubscription(
 export function generatesDeliveries(status: SubscriptionStatusValue): boolean {
   return status === 'ACTIVE';
 }
+
+/**
+ * Customer-visible status label (PHASE 04, docs/14 §3.7).
+ *
+ * The customer app never shows the internal `OrderStatus` enum directly — it
+ * shows this smaller vocabulary. An admin-initiated cancellation reads as
+ * "Rejected" (the admin judged the order infeasible to fulfil) while a
+ * customer-initiated one reads as "Cancelled"; both are the same CANCELLED
+ * row, distinguished only by `cancelled_by_type`, deliberately avoiding a new
+ * order status for a case the existing CancelActor field already captures.
+ */
+export type CancelActorValue = 'CUSTOMER' | 'ADMIN' | 'SYSTEM';
+
+export function customerDisplayStatus(
+  status: OrderStatusValue,
+  cancelledByType?: CancelActorValue | null,
+): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Awaiting confirmation';
+    case 'CONFIRMED':
+      return 'Confirmed';
+    case 'PREPARING':
+    case 'READY_FOR_DISPATCH':
+      return 'Preparing';
+    case 'OUT_FOR_DELIVERY':
+      return 'Dispatched';
+    case 'DELIVERED':
+      return 'Delivered';
+    case 'CANCELLED':
+      return cancelledByType === 'ADMIN' ? 'Rejected' : 'Cancelled';
+    case 'FAILED':
+      return 'Delivery attempt failed';
+    case 'RETURNED':
+      return 'Returned';
+  }
+}

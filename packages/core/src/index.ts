@@ -55,6 +55,51 @@ export type {
   PasswordResetRepository,
 } from './ports/password-reset-repository.js';
 export type { AuditEvent, AuditLogRepository } from './ports/audit-log-repository.js';
+export type { AddressInput, AddressRow, AddressRepository } from './ports/address-repository.js';
+export type {
+  CategoryRow,
+  VariantRow,
+  ProductSummaryRow,
+  ProductDetailRow,
+  ListProductsFilter,
+  CatalogueRepository,
+} from './ports/catalogue-repository.js';
+export type { CartItemRow, CartRow, CartRepository } from './ports/cart-repository.js';
+export type { PlaceOrderInput, CheckoutRepository } from './ports/checkout-repository.js';
+export type {
+  OrderItemRow,
+  OrderAddressSnapshot,
+  OrderStatusHistoryRow,
+  OrderRow,
+  OrderListFilter,
+  TransitionInput,
+  OrderRepository,
+} from './ports/order-repository.js';
+export type {
+  AdminCategoryRow,
+  CategoryInput,
+  CategoryUpdateInput,
+  CategoryListFilter,
+  AdminCategoryRepository,
+  AdminVariantInventoryRow,
+  AdminVariantRow,
+  VariantInput,
+  VariantUpdateInput,
+  AdminVariantRepository,
+  AdminProductImageRow,
+  AdminProductRow,
+  AdminProductSummaryRow,
+  ProductInput,
+  ProductUpdateInput,
+  ProductListFilter,
+  AdminProductRepository,
+} from './ports/admin-catalogue-repository.js';
+export type {
+  AdminDeliverySlotRow,
+  DeliverySlotInput,
+  DeliverySlotUpdateInput,
+  AdminDeliverySlotRepository,
+} from './ports/admin-delivery-slot-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
 export {
@@ -81,3 +126,36 @@ export {
 export { RbacService } from './services/rbac-service.js';
 export { PasswordResetService } from './services/password-reset-service.js';
 export { validateSession, type ValidatedSession } from './services/session-validation.js';
+export { AddressService, type AddressServiceDeps } from './services/address-service.js';
+export { CatalogueService, type CatalogueServiceDeps } from './services/catalogue-service.js';
+export {
+  CartService,
+  type CartServiceDeps,
+  type CartView,
+  type CartIssue,
+} from './services/cart-service.js';
+export { CheckoutService, type CheckoutServiceDeps } from './services/checkout-service.js';
+export {
+  CustomerOrderService,
+  type CustomerOrderServiceDeps,
+} from './services/customer-order-service.js';
+export {
+  OrderFulfilmentService,
+  type OrderFulfilmentServiceDeps,
+} from './services/order-fulfilment-service.js';
+export { toOrderView, toAdminOrderView } from './services/order-view.js';
+export {
+  AdminCatalogueService,
+  type AdminCatalogueServiceDeps,
+} from './services/admin-catalogue-service.js';
+export {
+  toAdminCategoryView,
+  toAdminVariantView,
+  toAdminProductView,
+  toAdminProductSummaryView,
+} from './services/admin-catalogue-view.js';
+export {
+  AdminDeliverySlotService,
+  type AdminDeliverySlotServiceDeps,
+} from './services/admin-delivery-slot-service.js';
+export { toAdminDeliverySlotView } from './services/admin-delivery-slot-view.js';

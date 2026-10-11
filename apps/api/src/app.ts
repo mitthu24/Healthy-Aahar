@@ -1,8 +1,16 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
 import { buildOpenApiDocument } from '@healthy-aahar/contracts';
 import {
+  AddressService,
   AdminAuthService,
+  AdminCatalogueService,
+  AdminDeliverySlotService,
+  CartService,
+  CatalogueService,
+  CheckoutService,
   CustomerAuthService,
+  CustomerOrderService,
+  OrderFulfilmentService,
   PasswordResetService,
   RbacService,
   ServiceabilityAdminService,
@@ -38,14 +46,33 @@ import { PrismaPasswordResetRepository } from './repositories/prisma-password-re
 import { PrismaRoleRepository } from './repositories/prisma-role-repository.js';
 import { PrismaSessionRepository } from './repositories/prisma-session-repository.js';
 import { PrismaUserRepository } from './repositories/prisma-user-repository.js';
+import { PrismaAddressRepository } from './repositories/prisma-address-repository.js';
+import { PrismaCatalogueRepository } from './repositories/prisma-catalogue-repository.js';
+import { PrismaCartRepository } from './repositories/prisma-cart-repository.js';
+import { PrismaCheckoutRepository } from './repositories/prisma-checkout-repository.js';
+import { PrismaOrderRepository } from './repositories/prisma-order-repository.js';
+import {
+  PrismaAdminCategoryRepository,
+  PrismaAdminProductRepository,
+  PrismaAdminVariantRepository,
+} from './repositories/prisma-admin-catalogue-repository.js';
+import { PrismaAdminDeliverySlotRepository } from './repositories/prisma-admin-delivery-slot-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
+import { adminOrdersRoutes } from './routes/admin/orders.js';
+import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
+import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
 import { healthRoutes } from './routes/health.js';
 import { publicServiceabilityRoutes } from './routes/public/serviceability.js';
+import { publicCatalogueRoutes } from './routes/public/catalogue.js';
+import { addressesRoutes } from './routes/me/addresses.js';
+import { cartRoutes } from './routes/me/cart.js';
+import { deliverySlotsRoutes } from './routes/me/delivery-slots.js';
+import { ordersRoutes } from './routes/me/orders.js';
 import type { AppBindings } from './types.js';
 
 export type CreateAppOptions = {
@@ -118,6 +145,22 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     ),
     rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
     passwordReset,
+    catalogue: new CatalogueService({ catalogue: new PrismaCatalogueRepository(prisma) }),
+    address: new AddressService({ addresses: new PrismaAddressRepository(prisma) }),
+    cart: new CartService({ carts: new PrismaCartRepository(prisma) }),
+    checkout: new CheckoutService({ checkout: new PrismaCheckoutRepository(prisma) }),
+    customerOrders: new CustomerOrderService({ orders: new PrismaOrderRepository(prisma) }),
+    orderFulfilment: new OrderFulfilmentService({ orders: new PrismaOrderRepository(prisma) }),
+    adminCatalogue: new AdminCatalogueService({
+      categories: new PrismaAdminCategoryRepository(prisma),
+      products: new PrismaAdminProductRepository(prisma),
+      variants: new PrismaAdminVariantRepository(prisma),
+      audit: auditRepo,
+    }),
+    adminDeliverySlots: new AdminDeliverySlotService({
+      slots: new PrismaAdminDeliverySlotRepository(prisma),
+      audit: auditRepo,
+    }),
   };
 
   const app = new Hono<AppBindings>();
@@ -244,12 +287,20 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   // ── Routes ──────────────────────────────────────────────────────────────
   app.route('/v1', healthRoutes());
   app.route('/v1/public', publicServiceabilityRoutes());
+  app.route('/v1/public', publicCatalogueRoutes());
   app.route('/v1/auth', customerAuthRoutes());
   app.route('/v1/auth', passwordSetupRoutes());
+  app.route('/v1/me/addresses', addressesRoutes());
+  app.route('/v1/me/cart', cartRoutes());
+  app.route('/v1/me/orders', ordersRoutes());
+  app.route('/v1/me/delivery-slots', deliverySlotsRoutes());
   app.route('/v1/admin/auth', adminAuthRoutes());
   app.route('/v1/admin', adminServiceabilityRoutes());
   app.route('/v1/admin/admin-users', adminUsersRoutes());
   app.route('/v1/admin', rolesRoutes());
+  app.route('/v1/admin', adminOrdersRoutes());
+  app.route('/v1/admin', adminCatalogueRoutes());
+  app.route('/v1/admin', adminDeliverySlotsRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.

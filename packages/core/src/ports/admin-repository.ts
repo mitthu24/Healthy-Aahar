@@ -13,6 +13,9 @@ export type AdminUserRow = {
   invitationAcceptedAt: Date | null;
   deletedAt: Date | null;
   roleKeys: string[];
+  /** Null means "never changed since the account was created/bootstrapped" — the
+   *  signal the login response uses to force a password change (Phase 04). */
+  lastPasswordChangeAt: Date | null;
 };
 
 export type EffectivePermissions = {
@@ -72,6 +75,9 @@ export interface AdminRepository {
 
   /** Soft-deactivates the admin_user row and sets users.status = DEACTIVATED. */
   deactivate(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow>;
+
+  /** Stamps `last_password_change_at`, clearing the "must change password" signal. */
+  markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void>;
 }
 
 export type RoleRow = {

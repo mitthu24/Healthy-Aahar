@@ -1,9 +1,27 @@
 import type {
+  AddressDto,
+  AddressListResponse,
+  AdminCategoryDto,
+  AdminCategoryListResponse,
+  AdminDeliverySlotDto,
+  AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderDto,
+  AdminOrderListResponse,
+  AdminProductDto,
+  AdminProductListResponse,
+  AdminVariantDto,
+  CartDto,
+  CategoryDto,
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliverySlotListResponse,
+  OrderDto,
+  OrderListResponse,
   PincodeListResponse,
+  ProductDetailDto,
+  ProductListResponse,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';
 
@@ -212,13 +230,417 @@ export class ApiClient {
       cursor = page.pagination.next_cursor ?? undefined;
     } while (cursor);
   }
+
+  // ── Admin: self-service password change (PHASE 04) ──────────────────────
+
+  adminChangePassword(body: { current_password: string; new_password: string }): Promise<AdminMe> {
+    return this.request('/v1/admin/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // ── Catalogue (PHASE 04) ─────────────────────────────────────────────────
+
+  listCategories(): Promise<{ data: CategoryDto[] }> {
+    return this.request('/v1/public/categories');
+  }
+
+  listProducts(
+    params: PageParams & { category_id?: string; q?: string } = {},
+  ): Promise<ProductListResponse> {
+    return this.request(`/v1/public/products${this.query(params)}`);
+  }
+
+  getProduct(slug: string): Promise<ProductDetailDto> {
+    return this.request(`/v1/public/products/${encodeURIComponent(slug)}`);
+  }
+
+  // ── Cart (PHASE 04) ──────────────────────────────────────────────────────
+
+  getCart(): Promise<CartDto> {
+    return this.request('/v1/me/cart');
+  }
+
+  addCartItem(body: { variant_id: string; quantity: number }): Promise<CartDto> {
+    return this.request('/v1/me/cart/items', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateCartItem(itemId: string, body: { quantity: number }): Promise<CartDto> {
+    return this.request(`/v1/me/cart/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  removeCartItem(itemId: string): Promise<CartDto> {
+    return this.request(`/v1/me/cart/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  // ── Addresses (PHASE 04) ─────────────────────────────────────────────────
+
+  listAddresses(): Promise<AddressListResponse> {
+    return this.request('/v1/me/addresses');
+  }
+
+  createAddress(body: {
+    label?: string;
+    recipient_name: string;
+    recipient_phone: string;
+    line1: string;
+    line2?: string;
+    landmark?: string;
+    city: string;
+    state: string;
+    pincode: string;
+    delivery_instructions?: string;
+    is_default?: boolean;
+  }): Promise<AddressDto> {
+    return this.request('/v1/me/addresses', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateAddress(
+    id: string,
+    body: Partial<Parameters<ApiClient['createAddress']>[0]>,
+  ): Promise<AddressDto> {
+    return this.request(`/v1/me/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  deleteAddress(id: string): Promise<void> {
+    return this.request(`/v1/me/addresses/${id}`, { method: 'DELETE' });
+  }
+
+  // ── Delivery slots (PHASE 04 — delivery-slot-only, no address/zone) ──────
+
+  /**
+   * `serviceDate` (YYYY-MM-DD) is optional; omitting it returns every active
+   * slot with no capacity computed (`remaining_capacity: null`). Passing it
+   * filters to slots offered on that date's weekday and computes live
+   * remaining capacity server-side.
+   */
+  listDeliverySlots(serviceDate?: string): Promise<DeliverySlotListResponse> {
+    return this.request(`/v1/me/delivery-slots${this.query({ service_date: serviceDate })}`);
+  }
+
+  // ── Checkout & orders (PHASE 04) ─────────────────────────────────────────
+
+  /**
+   * `idempotencyKey` must be a fresh, client-generated value for a NEW
+   * checkout attempt, and the SAME value for a retry of one that may not
+   * have reached the server (BR per docs/19, Phase 04 requirement change).
+   */
+  checkout(
+    body: {
+      address_id: string;
+      delivery_slot_id: string;
+      service_date: string;
+      customer_note?: string;
+    },
+    idempotencyKey: string,
+  ): Promise<OrderDto> {
+    return this.request('/v1/me/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+  }
+
+  listMyOrders(params: PageParams = {}): Promise<OrderListResponse> {
+    return this.request(`/v1/me/orders${this.query(params)}`);
+  }
+
+  getMyOrder(id: string): Promise<OrderDto> {
+    return this.request(`/v1/me/orders/${id}`);
+  }
+
+  cancelMyOrder(id: string): Promise<OrderDto> {
+    return this.request(`/v1/me/orders/${id}/cancel`, { method: 'POST' });
+  }
+
+  // ── Admin: orders (PHASE 04) ─────────────────────────────────────────────
+
+  listAdminOrders(params: PageParams & { status?: string } = {}): Promise<AdminOrderListResponse> {
+    return this.request(`/v1/admin/orders${this.query(params)}`);
+  }
+
+  getAdminOrder(id: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}`);
+  }
+
+  updateAdminOrderStatus(
+    id: string,
+    body: { to_status: string; reason?: string },
+  ): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  rejectAdminOrder(id: string, reason: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  holdAdminOrder(id: string, note: string): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/hold`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
+
+  recordCodCollection(id: string, amountPaise: number): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${id}/cod-collection`, {
+      method: 'POST',
+      body: JSON.stringify({ amount_paise: amountPaise }),
+    });
+  }
+
+  // ── Admin: catalogue management (Phase 04B) ──────────────────────────────
+
+  listAdminCategories(
+    params: PageParams & { q?: string; is_active?: boolean } = {},
+  ): Promise<AdminCategoryListResponse> {
+    const { is_active, ...rest } = params;
+    return this.request(
+      `/v1/admin/categories${this.query({ ...rest, is_active: is_active === undefined ? undefined : String(is_active) })}`,
+    );
+  }
+
+  getAdminCategory(id: string): Promise<AdminCategoryDto> {
+    return this.request(`/v1/admin/categories/${id}`);
+  }
+
+  createCategory(body: {
+    name: string;
+    slug: string;
+    description?: string;
+    image_url?: string;
+    display_order?: number;
+  }): Promise<AdminCategoryDto> {
+    return this.request('/v1/admin/categories', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateCategory(
+    id: string,
+    body: Partial<{
+      name: string;
+      description: string | null;
+      image_url: string | null;
+      display_order: number;
+      is_active: boolean;
+    }>,
+  ): Promise<AdminCategoryDto> {
+    return this.request(`/v1/admin/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  deleteCategory(id: string): Promise<void> {
+    return this.request(`/v1/admin/categories/${id}`, { method: 'DELETE' });
+  }
+
+  listAdminProducts(
+    params: PageParams & { q?: string; category_id?: string; status?: string } = {},
+  ): Promise<AdminProductListResponse> {
+    return this.request(`/v1/admin/products${this.query(params)}`);
+  }
+
+  getAdminProduct(id: string): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}`);
+  }
+
+  createProduct(body: {
+    name: string;
+    slug: string;
+    category_id: string;
+    short_description?: string;
+    description?: string;
+    ingredients?: string;
+    allergens?: string[];
+    dietary_tags?: string[];
+  }): Promise<AdminProductDto> {
+    return this.request('/v1/admin/products', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateProduct(
+    id: string,
+    body: Partial<{
+      name: string;
+      category_id: string;
+      short_description: string | null;
+      description: string | null;
+      ingredients: string | null;
+      allergens: string[];
+      dietary_tags: string[];
+      is_bestseller: boolean;
+      is_new: boolean;
+    }>,
+  ): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  setProductStatus(
+    id: string,
+    status: 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED',
+  ): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  addProductImage(
+    id: string,
+    body: { url: string; alt_text?: string; display_order?: number },
+  ): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}/images`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  removeProductImage(id: string, imageId: string): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}/images/${imageId}`, { method: 'DELETE' });
+  }
+
+  createVariant(
+    productId: string,
+    body: {
+      sku: string;
+      name: string;
+      unit: string;
+      unit_value: number;
+      mrp_paise?: number;
+      price_paise: number;
+      is_default?: boolean;
+      max_order_quantity?: number;
+      initial_quantity_on_hand?: number;
+    },
+  ): Promise<AdminVariantDto> {
+    return this.request(`/v1/admin/products/${productId}/variants`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateVariant(
+    id: string,
+    body: Partial<{
+      name: string;
+      unit: string;
+      unit_value: number;
+      mrp_paise: number | null;
+      price_paise: number;
+      availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
+      is_default: boolean;
+      max_order_quantity: number | null;
+    }>,
+  ): Promise<AdminVariantDto> {
+    return this.request(`/v1/admin/variants/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  setVariantStock(
+    id: string,
+    body: {
+      quantity_on_hand: number;
+      low_stock_threshold?: number;
+      allow_backorder?: boolean;
+      note?: string;
+    },
+  ): Promise<AdminVariantDto> {
+    return this.request(`/v1/admin/variants/${id}/stock`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // ── Admin: delivery-slot management (Phase 04) ───────────────────────────
+
+  listAdminDeliverySlots(): Promise<AdminDeliverySlotListResponse> {
+    return this.request('/v1/admin/delivery-slots');
+  }
+
+  getAdminDeliverySlot(id: string): Promise<AdminDeliverySlotDto> {
+    return this.request(`/v1/admin/delivery-slots/${id}`);
+  }
+
+  createDeliverySlot(body: {
+    name: string;
+    code: string;
+    start_time: string;
+    end_time: string;
+    cutoff_time?: string;
+    cutoff_days_before?: number;
+    available_days: number[];
+    default_capacity: number;
+    delivery_fee_paise?: number;
+    min_order_value_paise?: number;
+    display_order?: number;
+  }): Promise<AdminDeliverySlotDto> {
+    return this.request('/v1/admin/delivery-slots', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateDeliverySlot(
+    id: string,
+    body: Partial<{
+      name: string;
+      start_time: string;
+      end_time: string;
+      cutoff_time: string;
+      cutoff_days_before: number;
+      available_days: number[];
+      default_capacity: number;
+      delivery_fee_paise: number | null;
+      min_order_value_paise: number | null;
+      display_order: number;
+      is_active: boolean;
+    }>,
+  ): Promise<AdminDeliverySlotDto> {
+    return this.request(`/v1/admin/delivery-slots/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
 }
 
 export type {
+  AddressDto,
+  AddressListResponse,
+  AdminCategoryDto,
+  AdminCategoryListResponse,
+  AdminDeliverySlotDto,
+  AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderDto,
+  AdminOrderListResponse,
+  AdminProductDto,
+  AdminProductListResponse,
+  AdminVariantDto,
+  CartDto,
+  CartItemDto,
+  CategoryDto,
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliverySlotDto,
+  DeliverySlotListResponse,
+  OrderDto,
+  OrderItemDto,
+  OrderListResponse,
   PincodeListResponse,
+  ProductDetailDto,
+  ProductListResponse,
+  ProductSummaryDto,
+  ProductVariantDto,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';

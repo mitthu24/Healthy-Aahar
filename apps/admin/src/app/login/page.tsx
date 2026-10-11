@@ -27,8 +27,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await apiClient.adminLogin({ email, password });
-      router.push('/');
+      const me = await apiClient.adminLogin({ email, password });
+      router.push(me.must_change_password ? '/change-password' : '/orders');
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {

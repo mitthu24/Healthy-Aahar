@@ -31,7 +31,9 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "node -e \"process.env.NODE_ENV==='production'?process.exit(0):require('node:child_process').execSync('husky',{stdio:'inherit'})\"",
     "db:check": "pnpm --filter @healthy-aahar/db check:invariants",
-    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails"
+    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails",
+    "db:seed-demo-catalogue": "pnpm --filter @healthy-aahar/db seed:demo-catalogue",
+    "db:seed-demo-delivery": "pnpm --filter @healthy-aahar/db seed:demo-delivery"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",

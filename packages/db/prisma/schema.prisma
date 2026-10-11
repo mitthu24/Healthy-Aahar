@@ -1142,7 +1142,10 @@ model Order {
   channel                OrderChannel  @default(WEB)
   subscriptionId         String?       @map("subscription_id") @db.Uuid
   subscriptionDeliveryId String?       @map("subscription_delivery_id") @db.Uuid
-  deliveryZoneId         String        @map("delivery_zone_id") @db.Uuid
+  /// PHASE 04: nullable — checkout is delivery-SLOT-only (PHASE 06 owns real
+  /// zone/capacity management, which was never built; see migration
+  /// 20261011080000_phase04_delivery_slot_only).
+  deliveryZoneId         String?       @map("delivery_zone_id") @db.Uuid
   deliverySlotId         String        @map("delivery_slot_id") @db.Uuid
   serviceDate            DateTime      @map("service_date") @db.Date
   slotStartTime          DateTime      @map("slot_start_time") @db.Time(6)
@@ -1176,7 +1179,7 @@ model Order {
 
   business        Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
   customerProfile CustomerProfile       @relation(fields: [customerProfileId], references: [id], onDelete: Restrict)
-  deliveryZone    DeliveryZone          @relation(fields: [deliveryZoneId], references: [id], onDelete: Restrict)
+  deliveryZone    DeliveryZone?         @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
   deliverySlot    DeliverySlot          @relation(fields: [deliverySlotId], references: [id], onDelete: Restrict)
   address         Address?              @relation(fields: [addressId], references: [id], onDelete: Restrict)
   subscription    Subscription?         @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
