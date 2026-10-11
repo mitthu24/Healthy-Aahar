@@ -362,6 +362,91 @@ describe('inventory constraints', () => {
       }),
     ).resolves.toBeDefined();
   });
+
+  describe('inventory_movements_delta_non_zero', () => {
+    async function makeInventoryRow() {
+      const { business, variant } = await makeInventoryContext();
+      const inventory = await prisma.inventory.create({
+        data: {
+          id: uuidv7(),
+          businessId: business.id,
+          variantId: variant.id,
+          quantityOnHand: 10,
+        },
+      });
+      return { variant, inventory };
+    }
+
+    it('rejects a ledger row with both quantity_delta and reserved_delta zero — a no-op is not a movement', async () => {
+      const { variant, inventory } = await makeInventoryRow();
+
+      await expect(
+        prisma.inventoryMovement.create({
+          data: {
+            id: uuidv7(),
+            inventoryId: inventory.id,
+            variantId: variant.id,
+            reason: 'MANUAL_ADJUSTMENT',
+            quantityDelta: 0,
+            quantityAfter: 10,
+          },
+        }),
+      ).rejects.toThrow(/delta_non_zero/);
+    });
+
+    it('ALLOWS a reservation-only ledger row — checkout reserving stock never changes quantity_on_hand', async () => {
+      const { variant, inventory } = await makeInventoryRow();
+
+      await expect(
+        prisma.inventoryMovement.create({
+          data: {
+            id: uuidv7(),
+            inventoryId: inventory.id,
+            variantId: variant.id,
+            reason: 'ORDER_RESERVED',
+            quantityDelta: 0,
+            quantityAfter: 10,
+            reservedDelta: 2,
+          },
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('ALLOWS a release-only ledger row with a negative reserved_delta — cancellation un-reserving stock', async () => {
+      const { variant, inventory } = await makeInventoryRow();
+
+      await expect(
+        prisma.inventoryMovement.create({
+          data: {
+            id: uuidv7(),
+            inventoryId: inventory.id,
+            variantId: variant.id,
+            reason: 'ORDER_RELEASED',
+            quantityDelta: 0,
+            quantityAfter: 10,
+            reservedDelta: -2,
+          },
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('still ALLOWS an ordinary on-hand-only movement — the pre-existing stock-adjustment case', async () => {
+      const { variant, inventory } = await makeInventoryRow();
+
+      await expect(
+        prisma.inventoryMovement.create({
+          data: {
+            id: uuidv7(),
+            inventoryId: inventory.id,
+            variantId: variant.id,
+            reason: 'MANUAL_ADJUSTMENT',
+            quantityDelta: 5,
+            quantityAfter: 15,
+          },
+        }),
+      ).resolves.toBeDefined();
+    });
+  });
 });
 
 describe('append-only histories', () => {

@@ -518,7 +518,7 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
       });
 
       if (!existing) {
-        await tx.inventory.create({
+        const created = await tx.inventory.create({
           data: {
             id: newId(),
             businessId,
@@ -531,23 +531,25 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
           },
         });
 
-        await tx.inventoryMovement.create({
-          data: {
-            id: newId(),
-            inventoryId: (
-              await tx.inventory.findUniqueOrThrow({
-                where: { variantId_locationCode: { variantId, locationCode: 'MAIN' } },
-                select: { id: true },
-              })
-            ).id,
-            variantId,
-            reason: 'MANUAL_ADJUSTMENT',
-            quantityDelta: input.quantityOnHand,
-            quantityAfter: input.quantityOnHand,
-            note: input.note ?? 'Initial stock set by admin',
-            actorUserId,
-          },
-        });
+        // A genuine zero initial stock is not a movement — nothing changed
+        // from the (nonexistent) prior state — and would otherwise violate
+        // `inventory_movements_delta_non_zero` (quantity_delta and
+        // reserved_delta both 0). Same guard the update branch below
+        // already applies for a no-op stock set.
+        if (input.quantityOnHand !== 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              id: newId(),
+              inventoryId: created.id,
+              variantId,
+              reason: 'MANUAL_ADJUSTMENT',
+              quantityDelta: input.quantityOnHand,
+              quantityAfter: input.quantityOnHand,
+              note: input.note ?? 'Initial stock set by admin',
+              actorUserId,
+            },
+          });
+        }
         return;
       }
 
