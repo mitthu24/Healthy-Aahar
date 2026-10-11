@@ -183,7 +183,7 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
             const updated: number = await tx.$executeRaw`
               UPDATE inventory
               SET quantity_reserved = quantity_reserved + ${cartItem.quantity}, updated_at = now()
-              WHERE variant_id = ${variant.id} AND location_code = 'MAIN'
+              WHERE variant_id = ${variant.id}::uuid AND location_code = 'MAIN'
                 AND (allow_backorder = true OR quantity_on_hand - quantity_reserved >= ${cartItem.quantity})
             `;
             if (updated === 0) {
