@@ -29,7 +29,7 @@
     "infra:down": "docker compose down",
     "infra:reset": "docker compose down -v && docker compose up -d",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "prepare": "husky",
+    "prepare": "node -e \"process.env.NODE_ENV==='production'?process.exit(0):require('node:child_process').execSync('husky',{stdio:'inherit'})\"",
     "db:check": "pnpm --filter @healthy-aahar/db check:invariants"
   },
   "devDependencies": {
