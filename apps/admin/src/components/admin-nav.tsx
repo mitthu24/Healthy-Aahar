@@ -20,10 +20,7 @@ export function AdminNav() {
     <header className="bg-sand-0 border-sand-200 sticky top-0 z-20 border-b">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-4 overflow-x-auto sm:gap-6">
-          <Link
-            href="/"
-            className="font-display text-heading-sm shrink-0 text-green-700"
-          >
+          <Link href="/" className="font-display text-heading-sm shrink-0 text-green-700">
             Healthy Aahar
           </Link>
           <nav className="flex shrink-0 gap-3 sm:gap-4">
