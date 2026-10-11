@@ -32,8 +32,7 @@ export type BootstrapConfig = {
 };
 
 export type BootstrapConfigResult =
-  | { ok: true; config: BootstrapConfig }
-  | { ok: false; error: string };
+  { ok: true; config: BootstrapConfig } | { ok: false; error: string };
 
 export function resolveBootstrapConfig(
   argv: string[],

@@ -57,10 +57,7 @@ export const adminAuth = createMiddleware<AppBindings>(async (c, next) => {
   const scope = businessScope(c.env.businessId);
   const actor = await c.env.services.adminAuth.resolveActor(scope, userId);
 
-  if (
-    actor.mustChangePassword &&
-    !ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED.has(c.req.path)
-  ) {
+  if (actor.mustChangePassword && !ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED.has(c.req.path)) {
     throw new DomainError(
       'PASSWORD_CHANGE_REQUIRED',
       'You must change your password before continuing.',

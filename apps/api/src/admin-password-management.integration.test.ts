@@ -84,7 +84,12 @@ function buildApp() {
   return createApp({
     env: testEnv(),
     prisma,
-    logger: createLogger({ service: 'admin-pw-it', env: 'local', version: 'test', level: 'silent' }),
+    logger: createLogger({
+      service: 'admin-pw-it',
+      env: 'local',
+      version: 'test',
+      level: 'silent',
+    }),
     businessId,
   });
 }
@@ -351,13 +356,10 @@ describe('password-setup token expiry (complements the reuse test in rbac.integr
     // reaches into the token's expiry; redemption itself goes through the
     // real route.
     const { PasswordResetService } = await import('@healthy-aahar/core');
-    const { scryptPasswordHasher, sha256SessionTokenHasher } = await import(
-      '@healthy-aahar/auth'
-    );
+    const { scryptPasswordHasher, sha256SessionTokenHasher } = await import('@healthy-aahar/auth');
     const { PrismaUserRepository } = await import('./repositories/prisma-user-repository.js');
-    const { PrismaPasswordResetRepository } = await import(
-      './repositories/prisma-password-reset-repository.js'
-    );
+    const { PrismaPasswordResetRepository } =
+      await import('./repositories/prisma-password-reset-repository.js');
     const { PrismaSessionRepository } = await import('./repositories/prisma-session-repository.js');
 
     const passwordReset = new PasswordResetService(
