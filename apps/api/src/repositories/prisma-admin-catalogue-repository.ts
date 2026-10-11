@@ -562,7 +562,7 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
             low_stock_threshold = ${input.lowStockThreshold ?? existing.lowStockThreshold},
             allow_backorder = ${allowBackorder},
             updated_at = now()
-        WHERE variant_id = ${variantId} AND location_code = 'MAIN' AND business_id = ${businessId}
+        WHERE variant_id = ${variantId}::uuid AND location_code = 'MAIN' AND business_id = ${businessId}::uuid
           AND (${allowBackorder} = true OR quantity_reserved <= ${input.quantityOnHand})
       `;
 

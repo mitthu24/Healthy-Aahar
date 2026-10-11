@@ -226,7 +226,7 @@ export class PrismaOrderRepository implements OrderRepository {
       await this.prisma.$executeRaw`
         UPDATE inventory
         SET quantity_reserved = GREATEST(quantity_reserved - ${item.quantity}, 0), updated_at = now()
-        WHERE variant_id = ${item.variantId} AND location_code = 'MAIN'
+        WHERE variant_id = ${item.variantId}::uuid AND location_code = 'MAIN'
       `;
 
       await this.prisma.inventoryMovement.create({
