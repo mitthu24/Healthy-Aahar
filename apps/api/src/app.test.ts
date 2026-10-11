@@ -297,7 +297,10 @@ describe('CORS', () => {
     await app.request('/v1/health', { headers: { Origin: 'https://evil.example.com' } });
 
     expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ msg: 'request.cors_origin_rejected', origin: 'https://evil.example.com' }),
+      expect.objectContaining({
+        msg: 'request.cors_origin_rejected',
+        origin: 'https://evil.example.com',
+      }),
       expect.any(String),
     );
   });
