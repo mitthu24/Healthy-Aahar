@@ -1,17 +1,11 @@
 export {
-  FirebaseTokenVerifier,
-  TokenVerificationError,
-  FirebaseConfigurationError,
-  type FirebaseAudience,
-  type FirebaseProjectConfig,
-  type DecodedIdToken,
-} from './firebase.js';
-
-export type { TokenVerifierPort, VerifiedIdentity } from './token-verifier-port.js';
-export { FirebaseVerifierAdapter } from './firebase-verifier-adapter.js';
-
-export type { AdminSessionPort } from './session-port.js';
-export { FirebaseAdminSessionAdapter } from './session-port.js';
+  hashPassword,
+  verifyPassword,
+  assertPasswordStrength,
+  PasswordHashError,
+} from './password.js';
+export { generateSessionToken, hashSessionToken } from './session-token.js';
+export { scryptPasswordHasher, sha256SessionTokenHasher } from './adapters.js';
 
 export { PermissionCache, type EffectivePermissions } from './permission-cache.js';
 

@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { hashPassword } from '@healthy-aahar/auth';
 import { PrismaClient } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -220,7 +221,10 @@ export async function seedRole(
   overrides: { key: string; name?: string; permissionKeys?: string[]; isSystem?: boolean },
 ): Promise<{ id: string; key: string }> {
   const permissions = overrides.permissionKeys?.length
-    ? await prisma.permission.findMany({ where: { key: { in: overrides.permissionKeys } }, select: { id: true } })
+    ? await prisma.permission.findMany({
+        where: { key: { in: overrides.permissionKeys } },
+        select: { id: true },
+      })
     : [];
 
   return prisma.role.create({
@@ -236,29 +240,40 @@ export async function seedRole(
   });
 }
 
-/** Seeds a full admin identity: users + admin_users (+ optional role grants). */
+/**
+ * The password every test-seeded account gets unless a test passes its own
+ * — fixed and documented, not a security concern: it only ever exists in
+ * the ephemeral test database created/dropped by `setupTestDatabase`
+ * (ADR-028), never in any database a real credential could leak from.
+ */
+export const TEST_PASSWORD = 'Test-password-1234';
+
+/** Seeds a full admin identity with a real password hash: users + admin_users (+ optional role grants). */
 export async function seedAdminUser(
   prisma: PrismaClient,
   businessId: string,
   overrides: {
-    firebaseUid?: string;
     email?: string;
+    password?: string;
     fullName?: string;
     isSuperAdmin?: boolean;
     roleIds?: string[];
     status?: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
+    /** Simulates a pre-PHASE-03 row that has never completed password setup. */
+    noPassword?: boolean;
   } = {},
-): Promise<{ id: string; userId: string; firebaseUid: string }> {
-  const firebaseUid = overrides.firebaseUid ?? `test-admin-${uuidv7()}`;
+): Promise<{ id: string; userId: string; email: string; password: string }> {
   const userId = uuidv7();
   const adminUserId = uuidv7();
+  const email = overrides.email ?? `test-admin-${uuidv7()}@example.test`;
+  const password = overrides.password ?? TEST_PASSWORD;
 
   await prisma.user.create({
     data: {
       id: userId,
-      firebaseUid,
       userType: 'ADMIN',
-      email: overrides.email ?? `${firebaseUid}@example.test`,
+      email,
+      passwordHash: overrides.noPassword ? null : await hashPassword(password),
       status: overrides.status ?? 'ACTIVE',
     },
   });
@@ -279,7 +294,47 @@ export async function seedAdminUser(
     });
   }
 
-  return { id: adminUserId, userId, firebaseUid };
+  return { id: adminUserId, userId, email, password };
+}
+
+/** Seeds a full customer identity with a real password hash: users + customer_profiles. */
+export async function seedCustomerUser(
+  prisma: PrismaClient,
+  businessId: string,
+  overrides: {
+    email?: string;
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+    status?: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
+  } = {},
+): Promise<{ userId: string; profileId: string; email: string; password: string }> {
+  const userId = uuidv7();
+  const profileId = uuidv7();
+  const email = overrides.email ?? `test-customer-${uuidv7()}@example.test`;
+  const password = overrides.password ?? TEST_PASSWORD;
+
+  await prisma.user.create({
+    data: {
+      id: userId,
+      userType: 'CUSTOMER',
+      email,
+      passwordHash: await hashPassword(password),
+      status: overrides.status ?? 'ACTIVE',
+    },
+  });
+
+  await prisma.customerProfile.create({
+    data: {
+      id: profileId,
+      businessId,
+      userId,
+      firstName: overrides.firstName ?? null,
+      lastName: overrides.lastName ?? null,
+    },
+  });
+
+  return { userId, profileId, email, password };
 }
 
 export { uuidv7 as testId };

@@ -5,9 +5,14 @@
 #   - PostgreSQL 16, the same major version as Railway
 #   - MinIO, S3-compatible, standing in for Cloudflare R2 so the presigned
 #     upload path is genuinely exercised rather than stubbed (docs/27 §7)
-#   - Firebase Auth emulator, so OTP flows are testable without sending SMS
 #
 # This file is for LOCAL DEVELOPMENT ONLY. Nothing here is deployed.
+#
+# PHASE 03: the Firebase Auth emulator service that used to live here is
+# removed — authentication is email/password against this same Postgres
+# instance (docs/07, ADR-037/038), so there is no external auth emulator to
+# run. Firebase remains a documented FUTURE option; its emulator service
+# would be reintroduced alongside that work, not before.
 
 name: healthy-aahar
 
@@ -98,24 +103,6 @@ services:
       echo 'MinIO bucket ready'
       "
     restart: 'no'
-
-  firebase-auth:
-    image: andreysenov/firebase-tools:latest
-    container_name: healthy-aahar-firebase
-    restart: unless-stopped
-    working_dir: /home/node
-    ports:
-      - '9099:9099' # Auth emulator
-      - '4400:4400' # Emulator hub
-      # 4000 is taken by the API, so the emulator UI is moved to 4001.
-      - '4001:4000' # Emulator UI
-    volumes:
-      # Not :ro — the emulator writes a cache into its home directory.
-      - ./scripts/firebase:/home/node
-    command: >
-      firebase emulators:start
-      --only auth
-      --project healthy-aahar-local
 
 volumes:
   postgres-data:

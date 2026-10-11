@@ -1,6 +1,10 @@
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
+import type { PasswordHasher } from '../ports/password-hasher.js';
+import type { SessionRepository } from '../ports/session-repository.js';
+import type { SessionTokenHasher } from '../ports/session-token-hasher.js';
 import type { CustomerProfileRow, UserRepository, UserRow } from '../ports/user-repository.js';
+import { validateSession } from './session-validation.js';
 
 export type CustomerActor = {
   kind: 'CUSTOMER';
@@ -8,63 +12,137 @@ export type CustomerActor = {
   customerProfileId: string;
 };
 
-export type CustomerSessionResult = {
+export type CustomerAuthResult = {
   user: UserRow;
   profile: CustomerProfileRow;
-  created: boolean;
+  token: string;
+};
+
+export type RegisterParams = {
+  email: string;
+  password: string;
+  phone?: string | undefined;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  sessionTtlMs: number;
+  ipAddress?: string | undefined;
+  userAgent?: string | undefined;
+};
+
+export type LoginParams = {
+  email: string;
+  password: string;
+  sessionTtlMs: number;
+  ipAddress?: string | undefined;
+  userAgent?: string | undefined;
 };
 
 /**
- * Customer session exchange (docs/07 §4.2).
+ * Customer email/password authentication and DB-backed sessions (PHASE 03,
+ * docs/07 §4 — supersedes the Firebase phone-OTP bearer-token design).
  *
- * `/v1/auth/session` is the ONLY place a `users` row may be created for a
- * customer. Every other customer-authenticated route resolves an EXISTING
- * user and rejects with 401 if none is found — this asymmetry is deliberate,
- * not an oversight (docs/07 §6 step 4).
+ * The customer API stays bearer-token / cookie-free by design (docs/30 §2 —
+ * mobile-readiness): `login`/`register` return the raw session token in the
+ * response body, never set a cookie, and every other customer route
+ * resolves the SAME `Authorization: Bearer <token>` header a future
+ * React Native/Expo client would send with zero changes to this service.
  */
 export class CustomerAuthService {
-  constructor(private readonly users: UserRepository) {}
+  constructor(
+    private readonly users: UserRepository,
+    private readonly sessions: SessionRepository,
+    private readonly passwordHasher: PasswordHasher,
+    private readonly tokenHasher: SessionTokenHasher,
+  ) {}
 
-  /** Called by POST /v1/auth/session after the bearer token is verified. */
-  async createOrResumeSession(
-    scope: BusinessScope,
-    identity: { firebaseUid: string; phoneNumber?: string; email?: string },
-  ): Promise<CustomerSessionResult> {
-    const existing = await this.users.findByFirebaseUid(identity.firebaseUid, 'CUSTOMER');
+  async register(scope: BusinessScope, params: RegisterParams): Promise<CustomerAuthResult> {
+    const weakness = this.passwordHasher.checkStrength(params.password);
+    if (weakness) throw new DomainError('WEAK_PASSWORD', weakness);
 
-    if (existing) {
-      if (existing.status !== 'ACTIVE') {
-        throw new DomainError('ACCOUNT_SUSPENDED', 'This account is suspended.');
-      }
-      await this.users.touchLastLogin(existing.id);
-      const profile = await this.users.findCustomerProfile(existing.id);
-      if (!profile) {
-        // Should never happen — users and customer_profiles are created
-        // together. Fail loudly rather than silently returning a user with
-        // no profile, which every downstream query assumes exists.
-        throw new DomainError('INTERNAL_ERROR', 'Customer profile is missing for an existing user.', {
-          context: { userId: existing.id },
-        });
-      }
-      return { user: existing, profile, created: false };
-    }
+    const passwordHash = await this.passwordHasher.hash(params.password);
 
-    const { user, profile, created } = await this.users.createCustomer(scope, {
-      firebaseUid: identity.firebaseUid,
-      phone: identity.phoneNumber,
-      email: identity.email,
-      phoneVerified: Boolean(identity.phoneNumber),
-      emailVerified: Boolean(identity.email),
+    const result = await this.users.createCustomerWithPassword(scope, {
+      email: params.email,
+      passwordHash,
+      phone: params.phone,
+      firstName: params.firstName,
+      lastName: params.lastName,
     });
 
-    return { user, profile, created };
+    if (!result.ok) {
+      throw new DomainError(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists.',
+      );
+    }
+
+    const token = await this.issueSession(
+      result.user.id,
+      params.sessionTtlMs,
+      params.ipAddress,
+      params.userAgent,
+    );
+    await this.users.touchLastLogin(result.user.id);
+
+    return { user: result.user, profile: result.profile, token };
   }
 
-  /** Used by every OTHER customer route (docs/07 §6 step 4). */
-  async resolveActor(firebaseUid: string): Promise<CustomerActor> {
-    const user = await this.users.findByFirebaseUid(firebaseUid, 'CUSTOMER');
+  async login(params: LoginParams): Promise<CustomerAuthResult> {
+    const genericFailure = () =>
+      new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
+
+    const user = await this.users.findByEmail(params.email, 'CUSTOMER');
+    if (!user || !user.passwordHash) {
+      // Same timing-attack mitigation as AdminAuthService.login.
+      await this.passwordHasher.hash(params.password);
+      throw genericFailure();
+    }
+
+    const valid = await this.passwordHasher.verify(params.password, user.passwordHash);
+    if (!valid) throw genericFailure();
+    if (user.status !== 'ACTIVE') throw genericFailure();
+
+    const profile = await this.users.findCustomerProfile(user.id);
+    if (!profile) {
+      throw new DomainError('INTERNAL_ERROR', 'Customer profile is missing for an existing user.', {
+        context: { userId: user.id },
+      });
+    }
+
+    const token = await this.issueSession(
+      user.id,
+      params.sessionTtlMs,
+      params.ipAddress,
+      params.userAgent,
+    );
+    await this.users.touchLastLogin(user.id);
+
+    return { user, profile, token };
+  }
+
+  /** Called by the customer-auth middleware after extracting the bearer token. */
+  async verifySession(rawToken: string): Promise<{ userId: string }> {
+    const { userId } = await validateSession(this.sessions, this.tokenHasher, rawToken);
+    return { userId };
+  }
+
+  async resolveActor(userId: string): Promise<CustomerActor> {
+    const user = await this.users.findById(userId);
     if (!user) {
-      throw new DomainError('UNAUTHENTICATED', 'No account exists for this token. Call POST /v1/auth/session first.');
+      throw new DomainError('UNAUTHENTICATED', 'No account exists for this session.');
+    }
+    // Fix #4: a session's `userId` always points at SOME `users` row, but a
+    // bearer token's session row could in principle hold an ADMIN's
+    // `userId` (session rows are not audience-tagged — see docs/07 §3).
+    // Without this explicit check, an admin's session token presented here
+    // would fall through to "no customer profile for this user" below and
+    // throw INTERNAL_ERROR (500) instead of a clean auth failure — wrong
+    // audience is an authentication outcome, not a bug. This can never
+    // actually grant customer access to an admin (no customer_profile row
+    // exists for them either way), but it must fail as UNAUTHENTICATED, not
+    // 500.
+    if (user.userType !== 'CUSTOMER') {
+      throw new DomainError('UNAUTHENTICATED', 'No account exists for this session.');
     }
     if (user.status !== 'ACTIVE') {
       throw new DomainError('ACCOUNT_SUSPENDED', 'This account is suspended.');
@@ -76,5 +154,28 @@ export class CustomerAuthService {
       });
     }
     return { kind: 'CUSTOMER', userId: user.id, customerProfileId: profile.id };
+  }
+
+  async logout(rawToken: string): Promise<void> {
+    const tokenHash = this.tokenHasher.hash(rawToken);
+    const session = await this.sessions.findByTokenHash(tokenHash);
+    if (session) await this.sessions.revoke(session.id);
+  }
+
+  private async issueSession(
+    userId: string,
+    ttlMs: number,
+    ipAddress?: string | undefined,
+    userAgent?: string | undefined,
+  ): Promise<string> {
+    const token = this.tokenHasher.generate();
+    await this.sessions.create({
+      userId,
+      tokenHash: this.tokenHasher.hash(token),
+      expiresAt: new Date(Date.now() + ttlMs),
+      ipAddress,
+      userAgent,
+    });
+    return token;
   }
 }

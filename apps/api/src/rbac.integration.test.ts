@@ -15,23 +15,19 @@ import type { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
-import { FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
 import { loginAsAdmin } from './test-support/admin-session.js';
 import type { AppBindings } from './types.js';
 
 /**
  * PHASE 03 — RBAC integration tests (docs/08 §6). Exercises the real
  * `/v1/admin/admin-users` and `/v1/admin/roles` routes end to end: invite,
- * role assignment, the BR-SEC6/7/8/9 invariants, and the permission
- * enforcement middleware itself (the authorization matrix).
+ * password setup, role assignment, the BR-SEC6/7/8/9 invariants, and the
+ * permission enforcement middleware itself (the authorization matrix).
  */
 
 let prisma: PrismaClient;
 let app: Hono<AppBindings>;
 let businessId: string;
-
-const adminVerifier = new FakeTokenVerifier();
-const adminSession = new FakeAdminSession();
 
 function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   return {
@@ -44,10 +40,11 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     DATABASE_POOL_SIZE: 5,
     DATABASE_STATEMENT_TIMEOUT_MS: 10_000,
     ALLOWED_ORIGINS: ['http://localhost:3002'],
-    FIREBASE_CUSTOMER_PROJECT_ID: 'customer-test',
-    FIREBASE_ADMIN_PROJECT_ID: 'admin-test',
     ADMIN_SESSION_MAX_AGE_SECONDS: 43_200,
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
+    CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
+    LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     ADMIN_CSRF_SECRET: 'test-csrf-secret-value',
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
@@ -83,7 +80,6 @@ function buildApp() {
     prisma,
     logger: createLogger({ service: 'rbac-it', env: 'local', version: 'test', level: 'silent' }),
     businessId,
-    authOverrides: { customerVerifier: new FakeTokenVerifier(), adminVerifier, adminSession },
   });
 }
 
@@ -107,14 +103,20 @@ beforeEach(async () => {
   await seedPermissions(prisma, PERMISSIONS);
   app = buildApp();
 
-  const superAdmin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true, fullName: 'Root Admin' });
+  const superAdmin = await seedAdminUser(prisma, businessId, {
+    isSuperAdmin: true,
+    fullName: 'Root Admin',
+  });
   superAdminId = superAdmin.id;
-  superAdminHeaders = (await loginAsAdmin(app, superAdmin.firebaseUid)).headers;
+  superAdminHeaders = (await loginAsAdmin(app, superAdmin)).headers;
 });
 
 describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
-  it('creates a Firebase admin user, assigns roles, and audits the invite', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'INVITE_TEST_ROLE', permissionKeys: ['catalog:read'] });
+  it('creates a user with no password, assigns roles, and audits the invite', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'INVITE_TEST_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
 
     const res = await app.request('/v1/admin/admin-users', {
       method: 'POST',
@@ -127,58 +129,285 @@ describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; roles: string[] };
+    const body = (await res.json()) as { id: string; roles: string[]; password_setup_link: string };
     expect(body.roles).toContain('INVITE_TEST_ROLE');
+    expect(body.password_setup_link).toBeTruthy();
 
-    const audit = await prisma.auditLog.findFirst({ where: { action: 'admin_user.invited', resourceId: body.id } });
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'admin_user.invited', resourceId: body.id },
+    });
     expect(audit).not.toBeNull();
 
-    // The invited admin can now log in — proves the Firebase user + DB rows
-    // are wired together correctly, not just independently created.
-    const invited = await prisma.adminUser.findUniqueOrThrow({
-      where: { id: body.id },
-      include: { user: true },
+    const invited = await prisma.user.findUniqueOrThrow({
+      where: { email_userType: { email: 'newstaff@example.test', userType: 'ADMIN' } },
     });
-    const session = await loginAsAdmin(app, invited.user.firebaseUid);
+    expect(invited.passwordHash).toBeNull();
+
+    // Cannot log in before completing password setup.
+    const tooSoon = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'newstaff@example.test', password: 'whatever-1234' }),
+    });
+    expect(tooSoon.status).toBe(401);
+
+    // Completing the setup link, end to end — this is the ONLY path an
+    // invited admin has to a working credential (docs/07 §5.1).
+    const token = body.password_setup_link;
+    const setup = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'a-brand-new-password-1' }),
+    });
+    expect(setup.status).toBe(200);
+
+    const session = await loginAsAdmin(app, {
+      email: 'newstaff@example.test',
+      password: 'a-brand-new-password-1',
+    });
     expect(session.headers.Cookie).toBeTruthy();
   });
 
-  it('BR-SEC7 — a non-Super-Admin cannot invite a Super Admin', async () => {
-    const plainRole = await seedRole(prisma, businessId, { key: 'PLAIN_ROLE', permissionKeys: ['admin_users:create'] });
-    const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
-    const plainHeaders = (await loginAsAdmin(app, plainAdmin.firebaseUid)).headers;
+  it('a password-setup token cannot be reused once consumed', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'ONE_TIME_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'onetime@example.test',
+        full_name: 'One Time',
+        role_ids: [role.id],
+      }),
+    });
+    const { password_setup_link: token } = (await res.json()) as { password_setup_link: string };
 
-    const superRole = await seedRole(prisma, businessId, { key: 'SUPER_ADMIN', permissionKeys: [...PERMISSIONS.map((p) => p.key)] });
+    const first = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'first-password-123' }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'second-password-456' }),
+    });
+    expect(second.status).toBe(401);
+    const body = (await second.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('PASSWORD_SETUP_TOKEN_INVALID');
+  });
+
+  it('BR-SEC7 — a non-Super-Admin cannot invite a Super Admin', async () => {
+    const plainRole = await seedRole(prisma, businessId, {
+      key: 'PLAIN_ROLE',
+      permissionKeys: ['admin_users:create'],
+    });
+    const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
+    const plainHeaders = (await loginAsAdmin(app, plainAdmin)).headers;
+
+    const superRole = await seedRole(prisma, businessId, {
+      key: 'SUPER_ADMIN',
+      permissionKeys: [...PERMISSIONS.map((p) => p.key)],
+    });
 
     const res = await app.request('/v1/admin/admin-users', {
       method: 'POST',
       headers: plainHeaders,
-      body: JSON.stringify({ email: 'wannabe@example.test', full_name: 'Wannabe', role_ids: [superRole.id] }),
+      body: JSON.stringify({
+        email: 'wannabe@example.test',
+        full_name: 'Wannabe',
+        role_ids: [superRole.id],
+      }),
     });
 
     expect(res.status).toBe(403);
   });
 
   it('BR-SEC7 — a non-Super-Admin cannot grant roles:manage', async () => {
-    const plainRole = await seedRole(prisma, businessId, { key: 'PLAIN_ROLE_2', permissionKeys: ['admin_users:create'] });
+    const plainRole = await seedRole(prisma, businessId, {
+      key: 'PLAIN_ROLE_2',
+      permissionKeys: ['admin_users:create'],
+    });
     const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
-    const plainHeaders = (await loginAsAdmin(app, plainAdmin.firebaseUid)).headers;
+    const plainHeaders = (await loginAsAdmin(app, plainAdmin)).headers;
 
-    const managerRole = await seedRole(prisma, businessId, { key: 'ROLE_MANAGER_ROLE', permissionKeys: ['roles:manage'] });
+    const managerRole = await seedRole(prisma, businessId, {
+      key: 'ROLE_MANAGER_ROLE',
+      permissionKeys: ['roles:manage'],
+    });
 
     const res = await app.request('/v1/admin/admin-users', {
       method: 'POST',
       headers: plainHeaders,
-      body: JSON.stringify({ email: 'poweruser@example.test', full_name: 'Power User', role_ids: [managerRole.id] }),
+      body: JSON.stringify({
+        email: 'poweruser@example.test',
+        full_name: 'Power User',
+        role_ids: [managerRole.id],
+      }),
     });
 
     expect(res.status).toBe(403);
+  });
+
+  it('Fix #3 — re-inviting an already-invited email returns 409 ADMIN_ALREADY_INVITED, not a raw 500', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'DUP_INVITE_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+
+    const first = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'already-invited@example.test',
+        full_name: 'First Invite',
+        role_ids: [role.id],
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'already-invited@example.test',
+        full_name: 'Second Invite',
+        role_ids: [role.id],
+      }),
+    });
+
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('ADMIN_ALREADY_INVITED');
+    // Not a generic/unhandled error — the response body must look like
+    // every other documented error envelope, not a stack trace or a bare
+    // "Something went wrong" (which is what an uncaught P2002 used to 500 as).
+    expect(body.error.message).not.toMatch(/prisma|P2002|stack/i);
+
+    // Exactly one user row exists — the failed second attempt created nothing.
+    const count = await prisma.user.count({ where: { email: 'already-invited@example.test' } });
+    expect(count).toBe(1);
+  });
+
+  it('Fix #3 — a duplicate ROLE ID in the SAME invite is a validation concern, not ADMIN_ALREADY_INVITED', async () => {
+    // Regression guard for the narrow P2002 matcher: a caller-supplied
+    // duplicate role_id collides on admin_user_roles' OWN composite primary
+    // key, which is an unrelated P2002 — it must never be misreported as
+    // "email already exists" (the two live in the same transaction).
+    const role = await seedRole(prisma, businessId, {
+      key: 'DUP_ROLE_IN_SAME_INVITE',
+      permissionKeys: ['catalog:read'],
+    });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        email: 'brand-new-not-taken@example.test',
+        full_name: 'Brand New',
+        role_ids: [role.id, role.id],
+      }),
+    });
+
+    // Whatever this resolves to, it must NOT be mistaken for the
+    // email-conflict path — assert the email really was available and is
+    // not reported as taken.
+    const body = (await res.json()) as { error?: { code: string } };
+    expect(body.error?.code).not.toBe('ADMIN_ALREADY_INVITED');
+  });
+});
+
+describe('existing-admin password reset (Fix #2)', () => {
+  it('a Super Admin can issue a new setup token for an existing admin, who can then complete setup and log in', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'EXISTING_ADMIN_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const existing = await seedAdminUser(prisma, businessId, {
+      roleIds: [role.id],
+      noPassword: true,
+    });
+
+    // Cannot log in yet — no password was ever set (simulates a
+    // pre-PHASE-03 admin row, or one who never completed the invite flow).
+    const tooSoon = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: existing.email, password: 'whatever-guess-1' }),
+    });
+    expect(tooSoon.status).toBe(401);
+
+    const res = await app.request(`/v1/admin/admin-users/${existing.id}/reset-password`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const { password_setup_link: token } = (await res.json()) as { password_setup_link: string };
+    expect(token).toBeTruthy();
+
+    const setup = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'a-newly-set-password-1' }),
+    });
+    expect(setup.status).toBe(200);
+
+    const session = await loginAsAdmin(app, {
+      email: existing.email,
+      password: 'a-newly-set-password-1',
+    });
+    expect(session.headers.Cookie).toBeTruthy();
+  });
+
+  it('requires admin_users:update — a plain admin without it cannot issue a reset token for another admin', async () => {
+    const bareRole = await seedRole(prisma, businessId, {
+      key: 'BARE_ROLE_RESET_TEST',
+      permissionKeys: ['catalog:read'],
+    });
+    const bareAdmin = await seedAdminUser(prisma, businessId, { roleIds: [bareRole.id] });
+    const bareHeaders = (await loginAsAdmin(app, bareAdmin)).headers;
+
+    const targetRole = await seedRole(prisma, businessId, {
+      key: 'RESET_TARGET_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, {
+      roleIds: [targetRole.id],
+      noPassword: true,
+    });
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/reset-password`, {
+      method: 'POST',
+      headers: bareHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for an unknown admin id, not a crash', async () => {
+    const res = await app.request(
+      '/v1/admin/admin-users/00000000-0000-7000-8000-000000000000/reset-password',
+      {
+        method: 'POST',
+        headers: superAdminHeaders,
+        body: JSON.stringify({}),
+      },
+    );
+    expect(res.status).toBe(404);
   });
 });
 
 describe('changing roles (docs/08 §6)', () => {
   it('BR-SEC8 — an admin cannot modify their own roles', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'SELF_ROLE', permissionKeys: ['admin_users:update'] });
+    const role = await seedRole(prisma, businessId, {
+      key: 'SELF_ROLE',
+      permissionKeys: ['admin_users:update'],
+    });
 
     const res = await app.request(`/v1/admin/admin-users/${superAdminId}/roles`, {
       method: 'POST',
@@ -198,15 +427,24 @@ describe('changing roles (docs/08 §6)', () => {
     // of super-admin status directly (bypassing the API, as a fixture would),
     // and a THIRD, unrelated actor performs the demotion of the now-only
     // Super Admin — so the 409 below can only be BR-SEC6, not BR-SEC8.
-    const secondSuper = await seedAdminUser(prisma, businessId, { isSuperAdmin: true, fullName: 'Second Super' });
+    const secondSuper = await seedAdminUser(prisma, businessId, {
+      isSuperAdmin: true,
+      fullName: 'Second Super',
+    });
     await prisma.adminUser.update({ where: { id: superAdminId }, data: { isSuperAdmin: false } });
     await prisma.adminUserRole.deleteMany({ where: { adminUserId: superAdminId } });
 
-    const opsRole = await seedRole(prisma, businessId, { key: 'OPS_ACTOR_ROLE', permissionKeys: ['admin_users:update'] });
+    const opsRole = await seedRole(prisma, businessId, {
+      key: 'OPS_ACTOR_ROLE',
+      permissionKeys: ['admin_users:update'],
+    });
     const opsActor = await seedAdminUser(prisma, businessId, { roleIds: [opsRole.id] });
-    const opsHeaders = (await loginAsAdmin(app, opsActor.firebaseUid)).headers;
+    const opsHeaders = (await loginAsAdmin(app, opsActor)).headers;
 
-    const plainRole = await seedRole(prisma, businessId, { key: 'DEMOTE_TARGET_ROLE_2', permissionKeys: ['catalog:read'] });
+    const plainRole = await seedRole(prisma, businessId, {
+      key: 'DEMOTE_TARGET_ROLE_2',
+      permissionKeys: ['catalog:read'],
+    });
 
     const res = await app.request(`/v1/admin/admin-users/${secondSuper.id}/roles`, {
       method: 'POST',
@@ -221,10 +459,13 @@ describe('changing roles (docs/08 §6)', () => {
 });
 
 describe('deactivation (BR-SEC10)', () => {
-  it('revokes the Firebase session immediately and the admin can no longer authenticate', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'TO_DEACTIVATE_ROLE', permissionKeys: ['catalog:read'] });
+  it('revokes every active session immediately and the admin can no longer authenticate', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'TO_DEACTIVATE_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
     const target = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
-    const targetSession = await loginAsAdmin(app, target.firebaseUid);
+    const targetSession = await loginAsAdmin(app, target);
 
     const res = await app.request(`/v1/admin/admin-users/${target.id}/deactivate`, {
       method: 'POST',
@@ -235,7 +476,10 @@ describe('deactivation (BR-SEC10)', () => {
     // The existing session cookie must stop working immediately.
     const after = await app.request('/v1/admin/auth/me', { headers: targetSession.headers });
     expect(after.status).toBe(401);
-    expect(adminSession.disabled.has(target.firebaseUid)).toBe(true);
+
+    const sessions = await prisma.session.findMany({ where: { userId: target.userId } });
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.every((s) => s.revokedAt !== null)).toBe(true);
   });
 
   it('BR-SEC6 — cannot deactivate the last active Super Admin', async () => {
@@ -252,7 +496,11 @@ describe('roles & permission catalogue', () => {
     const res = await app.request('/v1/admin/roles', {
       method: 'POST',
       headers: superAdminHeaders,
-      body: JSON.stringify({ key: 'BOGUS_ROLE', name: 'Bogus', permission_keys: ['not_a_real:permission'] }),
+      body: JSON.stringify({
+        key: 'BOGUS_ROLE',
+        name: 'Bogus',
+        permission_keys: ['not_a_real:permission'],
+      }),
     });
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string } };
@@ -274,16 +522,19 @@ describe('authorization matrix (docs/08 §5.1 — the only enforcement that is s
       permissionKeys: ['notifications:send'],
     });
     const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
-    const headers = (await loginAsAdmin(app, admin.firebaseUid)).headers;
+    const headers = (await loginAsAdmin(app, admin)).headers;
 
     const res = await app.request('/v1/admin/cities', { headers });
     expect(res.status).toBe(403);
   });
 
   it('granting the exact permission unblocks the exact route', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'READ_ONLY_DELIVERY', permissionKeys: ['delivery:read'] });
+    const role = await seedRole(prisma, businessId, {
+      key: 'READ_ONLY_DELIVERY',
+      permissionKeys: ['delivery:read'],
+    });
     const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
-    const headers = (await loginAsAdmin(app, admin.firebaseUid)).headers;
+    const headers = (await loginAsAdmin(app, admin)).headers;
 
     const res = await app.request('/v1/admin/cities', { headers });
     expect(res.status).toBe(200);

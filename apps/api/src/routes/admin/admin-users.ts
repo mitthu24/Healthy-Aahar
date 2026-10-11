@@ -4,6 +4,9 @@ import {
   errorResponseSchema,
   idParamSchema,
   inviteAdminBodySchema,
+  inviteAdminResponseSchema,
+  passwordSetupLinkResponseSchema,
+  resetAdminPasswordBodySchema,
   setAdminRolesBodySchema,
 } from '@healthy-aahar/contracts';
 import { businessScope, DomainError, type AdminUserRow } from '@healthy-aahar/core';
@@ -38,16 +41,35 @@ registerRoute({
   path: '/v1/admin/admin-users',
   audience: 'admin',
   permission: 'admin_users:create',
-  summary: 'Invite a staff member (creates the Firebase admin user + assigns roles)',
+  summary: 'Invite a staff member (creates the user row + assigns roles; no password until setup)',
   phase: '03',
-  errors: ['FORBIDDEN', 'VALIDATION_FAILED'],
+  errors: ['FORBIDDEN', 'VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { body: inviteAdminBodySchema },
     responses: {
-      201: { description: 'Invited', schema: adminUserSchema },
+      201: { description: 'Invited', schema: inviteAdminResponseSchema },
       403: jsonError('Only a Super Admin may grant role management or Super Admin access'),
+      409: jsonError('An admin account with this email already exists'),
       422: jsonError('Validation failed'),
+    },
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/admin-users/{id}/reset-password',
+  audience: 'admin',
+  permission: 'admin_users:update',
+  summary: 'Issue a new password-setup token for an existing staff member (Fix #2)',
+  phase: '03',
+  errors: ['NOT_FOUND'],
+  openapi: {
+    tags: ['Admin: Staff'],
+    request: { params: idParamSchema, body: resetAdminPasswordBodySchema },
+    responses: {
+      200: { description: 'Token issued', schema: passwordSetupLinkResponseSchema },
+      404: jsonError('Not found'),
     },
   },
 });
@@ -77,7 +99,7 @@ registerRoute({
   path: '/v1/admin/admin-users/{id}/deactivate',
   audience: 'admin',
   permission: 'admin_users:deactivate',
-  summary: 'Deactivate a staff account (revokes Firebase sessions immediately)',
+  summary: 'Deactivate a staff account (revokes every active session immediately)',
   phase: '03',
   errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN'],
   openapi: {
@@ -119,16 +141,17 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
 
     const scope = businessScope(c.env.businessId);
-    const { admin } = await c.env.services.rbac.inviteAdmin(scope, {
+    const { admin, passwordResetLink } = await c.env.services.rbac.inviteAdmin(scope, {
       email: body.email,
       fullName: body.full_name,
       designation: body.designation,
       roleIds: body.role_ids,
       invitedByUserId: actor.userId,
       invitedByIsSuperAdmin: actor.isSuperAdmin,
+      passwordResetContinueUrl: body.password_setup_continue_url,
     });
 
-    return c.json(toResponse(admin), 201);
+    return c.json({ ...toResponse(admin), password_setup_link: passwordResetLink }, 201);
   });
 
   app.post('/:id/roles', async (c) => {
@@ -149,6 +172,22 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     return c.json(toResponse(updated));
   });
 
+  app.post('/:id/reset-password', async (c) => {
+    const params = idParamSchema.parse({ id: c.req.param('id') });
+    const body = resetAdminPasswordBodySchema.parse(await c.req.json().catch(() => ({})));
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    const scope = businessScope(c.env.businessId);
+    const { passwordResetLink } = await c.env.services.rbac.resetAdminPassword(scope, {
+      targetAdminUserId: params.id,
+      actorUserId: actor.userId,
+      passwordResetContinueUrl: body.password_setup_continue_url,
+    });
+
+    return c.json({ password_setup_link: passwordResetLink });
+  });
+
   app.post('/:id/deactivate', async (c) => {
     const params = idParamSchema.parse({ id: c.req.param('id') });
     const actor = c.get('actor');
@@ -160,7 +199,6 @@ export function adminUsersRoutes(): Hono<AppBindings> {
 
     const updated = await c.env.services.rbac.deactivate(scope, {
       targetAdminUserId: params.id,
-      targetFirebaseUid: target.firebaseUid,
       actorUserId: actor.userId,
     });
 

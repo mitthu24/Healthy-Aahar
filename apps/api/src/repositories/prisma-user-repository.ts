@@ -3,7 +3,8 @@ import {
   now,
   type AccountStatus,
   type BusinessScope,
-  type CreateCustomerInput,
+  type CreateCustomerWithPasswordInput,
+  type CreateCustomerWithPasswordResult,
   type CustomerProfileRow,
   type UserRepository,
   type UserRow,
@@ -11,18 +12,23 @@ import {
 } from '@healthy-aahar/core';
 import type { Prisma, PrismaClient } from '@healthy-aahar/db';
 
+import { isUniqueConstraintViolation } from './prisma-errors.js';
+
 /**
- * Prisma implementation of identity persistence (docs/07 §3).
+ * Prisma implementation of identity persistence (docs/07 §3, PHASE 03
+ * email/password).
  *
- * `createCustomer` is transactional and idempotent under concurrency: the
- * unique index on `(firebase_uid, user_type)` means a race between two
- * "first sign-in" requests resolves to exactly one row, and the loser
- * re-reads rather than surfacing a raw constraint violation to the caller.
+ * `createCustomerWithPassword` is transactional. Unlike the PHASE 01/02 OTP
+ * "first sign-in" path, a duplicate email here is a genuine user error
+ * (someone already registered with that address) rather than a legitimate
+ * concurrent-request race, so it is surfaced as `{ ok: false }` rather than
+ * silently merged into the existing row.
  */
 
 const USER_SELECT = {
   id: true,
   firebaseUid: true,
+  passwordHash: true,
   userType: true,
   email: true,
   phone: true,
@@ -38,6 +44,7 @@ function toUserRow(raw: RawUser): UserRow {
   return {
     id: raw.id,
     firebaseUid: raw.firebaseUid,
+    passwordHash: raw.passwordHash,
     userType: raw.userType as UserType,
     email: raw.email,
     phone: raw.phone,
@@ -51,6 +58,19 @@ function toUserRow(raw: RawUser): UserRow {
 export class PrismaUserRepository implements UserRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  async findById(id: string): Promise<UserRow | null> {
+    const raw = await this.prisma.user.findUnique({ where: { id }, select: USER_SELECT });
+    return raw ? toUserRow(raw) : null;
+  }
+
+  async findByEmail(email: string, userType: UserType): Promise<UserRow | null> {
+    const raw = await this.prisma.user.findUnique({
+      where: { email_userType: { email, userType } },
+      select: USER_SELECT,
+    });
+    return raw ? toUserRow(raw) : null;
+  }
+
   async findByFirebaseUid(firebaseUid: string, userType: UserType): Promise<UserRow | null> {
     const raw = await this.prisma.user.findUnique({
       where: { firebaseUid_userType: { firebaseUid, userType } },
@@ -63,10 +83,14 @@ export class PrismaUserRepository implements UserRepository {
     await this.prisma.user.update({ where: { id: userId }, data: { lastLoginAt: now() } });
   }
 
-  async createCustomer(
+  async setPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  }
+
+  async createCustomerWithPassword(
     scope: BusinessScope,
-    input: CreateCustomerInput,
-  ): Promise<{ user: UserRow; profile: CustomerProfileRow; created: boolean }> {
+    input: CreateCustomerWithPasswordInput,
+  ): Promise<CreateCustomerWithPasswordResult> {
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const userId = newId();
@@ -75,12 +99,12 @@ export class PrismaUserRepository implements UserRepository {
         const user = await tx.user.create({
           data: {
             id: userId,
-            firebaseUid: input.firebaseUid,
             userType: 'CUSTOMER',
+            email: input.email,
+            passwordHash: input.passwordHash,
             phone: input.phone ?? null,
-            email: input.email ?? null,
-            phoneVerified: input.phoneVerified ?? false,
-            emailVerified: input.emailVerified ?? false,
+            emailVerified: false,
+            phoneVerified: false,
             status: 'ACTIVE',
             lastLoginAt: now(),
           },
@@ -88,7 +112,13 @@ export class PrismaUserRepository implements UserRepository {
         });
 
         const profile = await tx.customerProfile.create({
-          data: { id: profileId, businessId: scope, userId },
+          data: {
+            id: profileId,
+            businessId: scope,
+            userId,
+            firstName: input.firstName ?? null,
+            lastName: input.lastName ?? null,
+          },
         });
 
         await tx.notificationOutbox.create({
@@ -98,7 +128,7 @@ export class PrismaUserRepository implements UserRepository {
             eventType: 'CUSTOMER_REGISTERED',
             aggregateType: 'customer_profile',
             aggregateId: profileId,
-            payload: { userId, phone: input.phone ?? null, email: input.email ?? null },
+            payload: { userId, email: input.email, phone: input.phone ?? null },
           },
         });
 
@@ -106,6 +136,7 @@ export class PrismaUserRepository implements UserRepository {
       });
 
       return {
+        ok: true,
         user: toUserRow(result.user),
         profile: {
           id: result.profile.id,
@@ -115,17 +146,14 @@ export class PrismaUserRepository implements UserRepository {
           lastName: result.profile.lastName,
           displayName: result.profile.displayName,
         },
-        created: true,
       };
     } catch (error) {
-      // P2002 = unique constraint violation on (firebase_uid, user_type):
-      // a concurrent request won the race. Re-read rather than fail.
-      if ((error as { code?: string }).code === 'P2002') {
-        const existing = await this.findByFirebaseUid(input.firebaseUid, 'CUSTOMER');
-        const profile = existing ? await this.findCustomerProfile(existing.id) : null;
-        if (existing && profile) {
-          return { user: existing, profile, created: false };
-        }
+      // This transaction's only unique/PK constraint besides each row's own
+      // generated id is `(email, user_type)` — unlike admin invite, there
+      // is no second constraint a P2002 here could ambiguously belong to,
+      // but the same precise helper is used anyway for consistency.
+      if (isUniqueConstraintViolation(error, 'email')) {
+        return { ok: false, reason: 'EMAIL_TAKEN' };
       }
       throw error;
     }

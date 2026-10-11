@@ -1,12 +1,14 @@
 import { env } from '@/lib/env';
 
+import { AuthStatus } from './auth-status';
+
 /**
- * PHASE 01 foundation shell.
+ * PHASE 01 foundation shell, PHASE 03 authentication.
  *
- * The admin console is PHASE 04, and the Cities / Pincodes screens that make
- * serviceability admin-controlled arrive with it. The navigation below is
- * rendered to document the intended information architecture
- * (docs/15-ADMIN-UX.md §2) — nothing is wired up yet.
+ * The admin console itself is PHASE 04, and the Cities / Pincodes screens
+ * that make serviceability admin-controlled arrive with it. The navigation
+ * below is rendered to document the intended information architecture
+ * (docs/15-ADMIN-UX.md §2) — nothing is wired up yet except sign-in/out.
  */
 const MODULES = [
   {
@@ -22,15 +24,22 @@ const MODULES = [
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
-      <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
-        Phase 01 — Foundation
-      </p>
-
-      <h1 className="font-display text-heading-lg text-sand-900 mt-3">Healthy Aahar Operations</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
+            Phase 01 — Foundation
+          </p>
+          <h1 className="font-display text-heading-lg text-sand-900 mt-3">
+            Healthy Aahar Operations
+          </h1>
+        </div>
+        <AuthStatus />
+      </div>
 
       <p className="text-body-md text-sand-600 mt-4 max-w-2xl">
-        Admin shell in place. Authentication and RBAC land in Phase 03; the modules below follow in
-        their phases. Cities and Pincodes become the source of truth for serviceability.
+        Admin shell in place. Email/password authentication and RBAC are live (Phase 03); the
+        modules below follow in their phases. Cities and Pincodes become the source of truth for
+        serviceability.
       </p>
 
       <div className="mt-10 grid gap-4 sm:grid-cols-2">

@@ -3,16 +3,15 @@ import { buildOpenApiDocument } from '@healthy-aahar/contracts';
 import {
   AdminAuthService,
   CustomerAuthService,
+  PasswordResetService,
   RbacService,
   ServiceabilityAdminService,
   ServiceabilityService,
 } from '@healthy-aahar/core';
 import {
-  FirebaseAdminSessionAdapter,
-  FirebaseVerifierAdapter,
   PermissionCache,
-  type AdminSessionPort,
-  type TokenVerifierPort,
+  scryptPasswordHasher,
+  sha256SessionTokenHasher,
 } from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
@@ -35,13 +34,16 @@ import {
 import { PrismaServiceabilityRepository } from './repositories/prisma-serviceability-repository.js';
 import { PrismaAdminRepository } from './repositories/prisma-admin-repository.js';
 import { PrismaAuditLogRepository } from './repositories/prisma-audit-log-repository.js';
+import { PrismaPasswordResetRepository } from './repositories/prisma-password-reset-repository.js';
 import { PrismaRoleRepository } from './repositories/prisma-role-repository.js';
+import { PrismaSessionRepository } from './repositories/prisma-session-repository.js';
 import { PrismaUserRepository } from './repositories/prisma-user-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
+import { passwordSetupRoutes } from './routes/auth/password-setup.js';
 import { healthRoutes } from './routes/health.js';
 import { publicServiceabilityRoutes } from './routes/public/serviceability.js';
 import type { AppBindings } from './types.js';
@@ -51,20 +53,6 @@ export type CreateAppOptions = {
   prisma: PrismaClient;
   logger: Logger;
   businessId: string;
-  /**
-   * Test-only seam. Firebase project verification and session-cookie
-   * issuance cannot be exercised against a live project in an automated
-   * suite, so integration tests inject fakes implementing the same ports
-   * (`TokenVerifierPort` / `AdminSessionPort`) the real Firebase adapters
-   * implement. Left undefined, `createApp` builds the real Firebase-backed
-   * adapters — this is what `server.ts` (and therefore every deployed
-   * environment) always does.
-   */
-  authOverrides?: Partial<{
-    customerVerifier: TokenVerifierPort;
-    adminVerifier: TokenVerifierPort;
-    adminSession: AdminSessionPort;
-  }>;
 };
 
 /**
@@ -73,10 +61,13 @@ export type CreateAppOptions = {
  * Separated from `server.ts` so integration tests can construct the app with
  * a test database and no listening socket. This is also what makes the
  * "no browser context" suite possible — the suite that proves a native mobile
- * client could call every endpoint (docs/30 §10).
+ * client could call every endpoint (docs/30 §10): PHASE 03 authentication
+ * (email/password, DB-backed sessions) needs no external service and no test
+ * seam beyond the real test database every other integration test already
+ * uses (ADR-028) — there is no Firebase-shaped `authOverrides` any more.
  */
 export function createApp(options: CreateAppOptions): Hono<AppBindings> {
-  const { env, prisma, logger, businessId, authOverrides } = options;
+  const { env, prisma, logger, businessId } = options;
 
   // Fail the boot, not a request, if any route is under-declared (BR-SEC12).
   assertRegistryIsSound();
@@ -86,32 +77,22 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   const adminRepo = new PrismaAdminRepository(prisma);
   const roleRepo = new PrismaRoleRepository(prisma);
   const auditRepo = new PrismaAuditLogRepository(prisma);
+  const sessionRepo = new PrismaSessionRepository(prisma);
+  const passwordResetRepo = new PrismaPasswordResetRepository(prisma);
 
-  // ── Firebase: two separate projects, one per audience (ADR-010) ───────
-  // See `authOverrides` on `CreateAppOptions` — tests inject fakes here.
-  const customerVerifier =
-    authOverrides?.customerVerifier ??
-    new FirebaseVerifierAdapter('customer', {
-      projectId: env.FIREBASE_CUSTOMER_PROJECT_ID,
-      serviceAccountB64: env.FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64,
-      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
-    });
-  const adminVerifier =
-    authOverrides?.adminVerifier ??
-    new FirebaseVerifierAdapter('admin', {
-      projectId: env.FIREBASE_ADMIN_PROJECT_ID,
-      serviceAccountB64: env.FIREBASE_ADMIN_SERVICE_ACCOUNT_B64,
-      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
-    });
-  const adminSession =
-    authOverrides?.adminSession ??
-    new FirebaseAdminSessionAdapter({
-      projectId: env.FIREBASE_ADMIN_PROJECT_ID,
-      serviceAccountB64: env.FIREBASE_ADMIN_SERVICE_ACCOUNT_B64,
-      emulatorHost: env.FIREBASE_AUTH_EMULATOR_HOST,
-    });
   const permissionCache = new PermissionCache();
   void permissionCache; // Reserved for a future cached AdminRepository decorator; resolveActor already re-queries per request, which is correct but not yet cache-backed (see PHASE-03 report §"Known limitations").
+
+  // Constructed before `rbac` — RbacService delegates ALL token issuance to
+  // it (Fix #2: one authorized-issuance workflow, not two copies of the
+  // same logic in RbacService and here).
+  const passwordReset = new PasswordResetService(
+    userRepo,
+    passwordResetRepo,
+    sessionRepo,
+    scryptPasswordHasher,
+    sha256SessionTokenHasher,
+  );
 
   const services = {
     serviceability: new ServiceabilityService({
@@ -122,12 +103,26 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       cities: new PrismaCityRepository(prisma),
       pincodes: new PrismaPincodeRepository(prisma),
     }),
-    customerAuth: new CustomerAuthService(userRepo),
-    adminAuth: new AdminAuthService(adminRepo),
-    rbac: new RbacService(adminRepo, roleRepo, adminSession, auditRepo),
+    customerAuth: new CustomerAuthService(
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
+    adminAuth: new AdminAuthService(
+      adminRepo,
+      userRepo,
+      sessionRepo,
+      scryptPasswordHasher,
+      sha256SessionTokenHasher,
+    ),
+    rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
+    passwordReset,
   };
 
   const app = new Hono<AppBindings>();
+
+  const loginRateLimitStore = new InMemoryRateLimitStore();
 
   // Dependencies are attached per request rather than imported as module
   // singletons, which is what lets tests run against an isolated database.
@@ -138,7 +133,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       prisma,
       services,
       businessId,
-      auth: { customerVerifier, adminVerifier, adminSession, permissionCache },
+      auth: { permissionCache, loginRateLimitStore },
     };
     await next();
   });
@@ -225,21 +220,22 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     }),
   );
 
-  // ── Real authentication (PHASE 03) ─────────────────────────────────────
-  // Every /v1/admin/* request resolves a Firebase session cookie to a real
-  // Actor with real permissions (docs/07 §5, §6). requirePermission then
-  // enforces the permission each route declared in the registry — the ONLY
-  // enforcement layer that is security (docs/08 §5.1). csrfProtection guards
-  // every mutating admin request as defence in depth alongside
-  // SameSite=Strict (docs/23 §6).
+  // ── Real authentication (PHASE 03 — email/password, DB-backed sessions) ─
+  // Every /v1/admin/* request resolves a session cookie to a real Actor with
+  // real permissions (docs/07 §5, §6). requirePermission then enforces the
+  // permission each route declared in the registry — the ONLY enforcement
+  // layer that is security (docs/08 §5.1). csrfProtection guards every
+  // mutating admin request as defence in depth alongside SameSite=Strict
+  // (docs/23 §6).
   //
-  // This REPLACES the PHASE 02 devAdminAuth bypass and ADMIN_DEV_TOKEN
-  // entirely — neither is wired into the app anymore (ADR-030 superseded).
+  // This REPLACES the Firebase session-cookie design (and, before that, the
+  // PHASE 02 devAdminAuth bypass) entirely — neither is wired into the app
+  // anymore (ADR-030, ADR-037 superseded).
   app.use('/v1/admin/*', adminAuth);
   app.use('/v1/admin/*', csrfProtection);
   app.use('/v1/admin/*', requirePermission);
 
-  // Every /v1/me/* request resolves a Firebase bearer token to a real
+  // Every /v1/me/* request resolves a bearer session token to a real
   // CUSTOMER actor (docs/07 §4, §6). No /v1/me/* routes exist yet (they
   // arrive with the catalogue/cart/order phases) — wired proactively so a
   // future route only has to be added to this router, never to auth.
@@ -249,6 +245,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1', healthRoutes());
   app.route('/v1/public', publicServiceabilityRoutes());
   app.route('/v1/auth', customerAuthRoutes());
+  app.route('/v1/auth', passwordSetupRoutes());
   app.route('/v1/admin/auth', adminAuthRoutes());
   app.route('/v1/admin', adminServiceabilityRoutes());
   app.route('/v1/admin/admin-users', adminUsersRoutes());

@@ -1,18 +1,24 @@
 import { env } from '@/lib/env';
 
+import { AuthStatus } from './auth-status';
+
 /**
- * PHASE 01 foundation shell.
+ * PHASE 01 foundation shell, PHASE 03 authentication.
  *
- * The customer experience is PHASE 10. This page exists only to prove the app
- * builds, is themed by the shared design system, and is correctly pointed at
- * the API. It is `noindex` at both the app and the edge (BR-SEO1).
+ * The customer experience itself is PHASE 10. This page exists only to
+ * prove the app builds, is themed by the shared design system, and is
+ * correctly pointed at the API — plus sign-in/out, which PHASE 03 adds. It
+ * is `noindex` at both the app and the edge (BR-SEO1).
  */
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-lg px-4 py-16">
-      <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
-        Phase 01 — Foundation
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
+          Phase 01 — Foundation
+        </p>
+        <AuthStatus />
+      </div>
 
       <h1 className="font-display text-heading-lg text-sand-900 mt-3">Healthy Aahar</h1>
 

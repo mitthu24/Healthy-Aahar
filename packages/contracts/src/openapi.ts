@@ -66,10 +66,11 @@ export function buildOpenApiDocument(
   registry.registerComponent('securitySchemes', 'customerBearer', {
     type: 'http',
     scheme: 'bearer',
-    bearerFormat: 'JWT',
     description:
-      'Firebase ID token from the CUSTOMER project. A token from the admin ' +
-      'project is rejected: the audiences differ (ADR-010).',
+      'Opaque session token returned by POST /v1/auth/register or ' +
+      'POST /v1/auth/login (PHASE 03, DB-backed sessions). Never a JWT — ' +
+      'there is nothing to decode client-side; validity is checked against ' +
+      'the sessions table on every request.',
   });
 
   registry.registerComponent('securitySchemes', 'adminSession', {
@@ -77,8 +78,8 @@ export function buildOpenApiDocument(
     in: 'cookie',
     name: '__Host-admin_session',
     description:
-      'Admin session cookie, set by POST /v1/admin/auth/session. HttpOnly, ' +
-      'Secure, SameSite=Strict (PHASE 03).',
+      'Admin session cookie, set by POST /v1/admin/auth/login. Opaque, ' +
+      'DB-backed token (PHASE 03). HttpOnly, Secure, SameSite=Strict.',
   });
 
   registry.registerComponent('securitySchemes', 'internalToken', {

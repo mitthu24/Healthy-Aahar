@@ -1,23 +1,38 @@
-import { randomBytes } from 'node:crypto';
-
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
 import { isKnownPermission } from '../domain/permissions.js';
-import type { AdminIdentityProvider } from '../ports/admin-identity-provider.js';
-import type { AdminRepository, AdminUserRow, RoleRepository, RoleRow } from '../ports/admin-repository.js';
+import type {
+  AdminRepository,
+  AdminUserRow,
+  RoleRepository,
+  RoleRow,
+} from '../ports/admin-repository.js';
 import type { AuditLogRepository } from '../ports/audit-log-repository.js';
+import type { SessionRepository } from '../ports/session-repository.js';
+import type { PasswordResetService } from './password-reset-service.js';
 
 /**
  * RBAC administration: invite/deactivate staff, assign roles, manage roles
  * (docs/08 §6). Every write here is audited and every invariant in docs/08
  * §6 is enforced in this layer, not trusted to callers.
+ *
+ * PHASE 03 (email/password): inviting an admin no longer calls out to
+ * Firebase — it creates the `users` row directly (no password yet) and
+ * issues a password-setup token through `PasswordResetService` (Fix #2 —
+ * the single authorized issuance path; see that class's doc comment).
+ * Deactivating an admin revokes every DB-backed session for that user
+ * instead of disabling a Firebase account. `resetAdminPassword` (Fix #2)
+ * is the authorized workflow for an EXISTING admin who needs a new
+ * password-setup token — invite cannot be reused for this (it always
+ * creates a new user row, which collides on the existing one's email).
  */
 export class RbacService {
   constructor(
     /** Exposed read-only for simple list/find routes that need no invariant checks. */
     readonly admins: AdminRepository,
     readonly roles: RoleRepository,
-    private readonly identity: AdminIdentityProvider,
+    private readonly passwordReset: PasswordResetService,
+    private readonly sessions: SessionRepository,
     private readonly audit: AuditLogRepository,
   ) {}
 
@@ -30,21 +45,14 @@ export class RbacService {
       roleIds: string[];
       invitedByUserId: string;
       invitedByIsSuperAdmin: boolean;
+      /** Base URL the caller appends `?token=<raw>` to, e.g. the admin app's "set password" page. */
       passwordResetContinueUrl?: string;
     },
   ): Promise<{ admin: AdminUserRow; passwordResetLink: string }> {
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.invitedByIsSuperAdmin);
 
-    const tempPassword = randomBytes(24).toString('base64url');
-    const firebaseUid = await this.identity.createUser({
-      email: params.email,
-      password: tempPassword,
-      displayName: params.fullName,
-    });
-
-    const admin = await this.admins.invite(scope, {
-      firebaseUid,
+    const result = await this.admins.invite(scope, {
       email: params.email,
       fullName: params.fullName,
       designation: params.designation,
@@ -52,10 +60,23 @@ export class RbacService {
       invitedByUserId: params.invitedByUserId,
     });
 
-    const passwordResetLink = await this.identity.generatePasswordResetLink(
-      params.email,
-      params.passwordResetContinueUrl,
-    );
+    // Fix #3: a duplicate (email, user_type) is a real, reachable user
+    // error (re-inviting someone, or inviting an email that is already an
+    // admin) — it must map to the established 409, never fall through to a
+    // raw, unhandled 500.
+    if (!result.ok) {
+      throw new DomainError(
+        'ADMIN_ALREADY_INVITED',
+        'An admin account with this email already exists.',
+      );
+    }
+    const admin = result.admin;
+
+    const passwordResetLink = await this.passwordReset.issueToken({
+      userId: admin.userId,
+      purpose: 'SETUP',
+      continueUrl: params.passwordResetContinueUrl,
+    });
 
     await this.audit.write(scope, {
       actorUserId: params.invitedByUserId,
@@ -67,6 +88,41 @@ export class RbacService {
     });
 
     return { admin, passwordResetLink };
+  }
+
+  /**
+   * Fix #2 — the authorized workflow for an EXISTING admin (already has a
+   * `users` + `admin_users` row) to obtain a new password-setup token:
+   * typically because they never completed setup, or forgot their
+   * password. Gated by `admin_users:update` at the route layer — the same
+   * permission that already gates changing another admin's roles, which is
+   * comparably sensitive (it does not reveal or set a password itself,
+   * only mints a token someone must still redeem).
+   */
+  async resetAdminPassword(
+    scope: BusinessScope,
+    params: { targetAdminUserId: string; actorUserId: string; passwordResetContinueUrl?: string },
+  ): Promise<{ passwordResetLink: string }> {
+    const target = await this.admins.findById(scope, params.targetAdminUserId);
+    if (!target || target.deletedAt) {
+      throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    }
+
+    const passwordResetLink = await this.passwordReset.issueToken({
+      userId: target.userId,
+      purpose: 'RESET',
+      continueUrl: params.passwordResetContinueUrl,
+    });
+
+    await this.audit.write(scope, {
+      actorUserId: params.actorUserId,
+      actorType: 'ADMIN',
+      action: 'admin_user.password_reset_issued',
+      resourceType: 'admin_user',
+      resourceId: target.id,
+    });
+
+    return { passwordResetLink };
   }
 
   async setRoles(
@@ -97,11 +153,19 @@ export class RbacService {
     if (losingSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
-        throw new DomainError('LAST_SUPER_ADMIN', 'At least one active Super Admin must always exist.');
+        throw new DomainError(
+          'LAST_SUPER_ADMIN',
+          'At least one active Super Admin must always exist.',
+        );
       }
     }
 
-    const updated = await this.admins.setRoles(scope, params.targetAdminUserId, params.roleIds, params.actorUserId);
+    const updated = await this.admins.setRoles(
+      scope,
+      params.targetAdminUserId,
+      params.roleIds,
+      params.actorUserId,
+    );
 
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
@@ -117,7 +181,7 @@ export class RbacService {
 
   async deactivate(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; targetFirebaseUid: string; actorUserId: string },
+    params: { targetAdminUserId: string; actorUserId: string },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
@@ -126,15 +190,18 @@ export class RbacService {
     if (target.isSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
-        throw new DomainError('LAST_SUPER_ADMIN', 'At least one active Super Admin must always exist.');
+        throw new DomainError(
+          'LAST_SUPER_ADMIN',
+          'At least one active Super Admin must always exist.',
+        );
       }
     }
 
     const updated = await this.admins.deactivate(scope, params.targetAdminUserId);
 
-    // BR-SEC10: revoke every Firebase session in the same operation, not a
+    // BR-SEC10: revoke every DB-backed session in the same operation, not a
     // best-effort follow-up.
-    await this.identity.disableUser(params.targetFirebaseUid);
+    await this.sessions.revokeAllForUser(target.userId);
 
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
@@ -170,7 +237,12 @@ export class RbacService {
 
   async updateRolePermissions(
     scope: BusinessScope,
-    params: { roleId: string; permissionKeys: string[]; actorUserId: string; actorIsSuperAdmin: boolean },
+    params: {
+      roleId: string;
+      permissionKeys: string[];
+      actorUserId: string;
+      actorIsSuperAdmin: boolean;
+    },
   ): Promise<RoleRow> {
     this.assertKnownPermissions(params.permissionKeys);
 
@@ -203,16 +275,26 @@ export class RbacService {
     const grantsRolesManage = roles.some((r) => r.permissionKeys.includes('roles:manage'));
     const grantsSuperAdmin = roles.some((r) => r.key === 'SUPER_ADMIN');
     if ((grantsRolesManage || grantsSuperAdmin) && !actorIsSuperAdmin) {
-      throw new DomainError('FORBIDDEN', 'Only a Super Admin may grant role management or Super Admin access.');
+      throw new DomainError(
+        'FORBIDDEN',
+        'Only a Super Admin may grant role management or Super Admin access.',
+      );
     }
   }
 
   private assertKnownPermissions(keys: string[]): void {
     const unknown = keys.filter((k) => !isKnownPermission(k));
     if (unknown.length > 0) {
-      throw new DomainError('UNKNOWN_PERMISSION', `Unknown permission key(s): ${unknown.join(', ')}`, {
-        details: unknown.map((k) => ({ field: 'permission_keys', issue: `unknown permission "${k}"` })),
-      });
+      throw new DomainError(
+        'UNKNOWN_PERMISSION',
+        `Unknown permission key(s): ${unknown.join(', ')}`,
+        {
+          details: unknown.map((k) => ({
+            field: 'permission_keys',
+            issue: `unknown permission "${k}"`,
+          })),
+        },
+      );
     }
   }
 

@@ -120,31 +120,49 @@ bad case; `money` and `time` unit tests.
 ---
 
 ## PHASE 03 — Authentication & RBAC
-**Estimate** 1.5–2 weeks · **Depends on** 02
+**Estimate** 1.5–2 weeks · **Depends on** 02 · **Status** ✅ done (see
+`PHASE-03-IMPLEMENTATION-REPORT.md`)
 
 **Goal** Identity and permissions work end to end for both audiences.
 
-**Scope**
-- `packages/auth`: dual Firebase verifiers, `Actor` model, permission resolution + cache
-- `POST /v1/auth/session`, `GET /v1/auth/me`, `POST /v1/admin/auth/session`, logout
+**Scope (as actually built — docs/07 ADR-037/038 revised this from the original Firebase
+design below before implementation started)**
+- `packages/auth`: scrypt password hashing, DB-backed session tokens, `Actor` model,
+  permission resolution + cache
+- Customer: `POST /v1/auth/register`, `POST /v1/auth/login`, `POST /v1/auth/logout`,
+  `GET /v1/auth/me` — bearer session token, cookie-free (mobile-readiness, docs/30 §2)
+- Admin: `POST /v1/admin/auth/login`, `POST /v1/admin/auth/logout`, `GET /v1/admin/auth/me` —
+  `__Host-` session cookie, DB-backed
+- `POST /v1/auth/password/setup` — one-time password establishment/reset, shared by the admin
+  invite flow and a future self-service "forgot password" flow
 - Permission seeding; role seeding (7 roles); super-admin bootstrap script
-- Admin user invitation flow (Firebase user + reset email)
-- Customer OTP sign-in in `apps/customer`
+- Admin user invitation flow (creates the user row directly, issues a password-setup token —
+  no external identity provider call)
+- Customer email/password sign-in in `apps/customer`
 - Admin sign-in in `apps/admin` with the `__Host-` session cookie
 - `audit_logs` writer helper
+- Login rate limiting, per IP and per email independently
 
-**Database** Seed `permissions`, `roles`, `role_permissions`.
+**Original scope (superseded before implementation, preserved for history):** dual Firebase
+verifiers, phone OTP for customers, `POST /v1/auth/session` token-exchange shape. See
+docs/07 §11 and docs/36 ADR-037/038 for why and what would be involved in reintroducing it.
+
+**Database** `password_hash` (nullable) on `users`; `sessions`; `password_reset_tokens`; seed
+`permissions`, `roles`, `role_permissions`.
 **API** Auth endpoints; admin-user and role CRUD.
-**Frontend** Customer OTP flow; admin login and session handling.
+**Frontend** Customer email/password flow; admin login and session handling.
 **Tests** Critical scenarios 1–9 (doc 24 §3), including the **role × endpoint matrix**
-generated from the route registry.
+generated from the route registry, plus password-hashing and session-lifecycle unit tests.
 
 **Acceptance**
-- A customer signs in with OTP and receives a `users` + `customer_profiles` row
-- A customer token is rejected by every admin route
+- A customer registers or logs in with email/password and receives a `users` +
+  `customer_profiles` row and a session token
+- A customer session is rejected on every admin route (different `user_type`, different query)
 - A suspended account is rejected on the next request
 - Each role reaches exactly its permitted endpoints
-- Deactivating an admin ends their session
+- Deactivating an admin ends every one of their sessions immediately
+- An invited admin cannot log in until they complete the password-setup flow; no default
+  password is ever assigned
 
 **Done** No further feature needs to think about authentication; it declares a permission and
 receives an `Actor`.

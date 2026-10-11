@@ -4,7 +4,6 @@ import { createLogger } from '@healthy-aahar/observability';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
-import { FakeAdminSession, FakeTokenVerifier } from './test-support/fake-auth.js';
 
 const BUSINESS_ID = '0193aaaa-0000-7000-8000-00000000000b';
 
@@ -32,10 +31,11 @@ function testEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     DATABASE_POOL_SIZE: 5,
     DATABASE_STATEMENT_TIMEOUT_MS: 10_000,
     ALLOWED_ORIGINS: ['http://localhost:3001'],
-    FIREBASE_CUSTOMER_PROJECT_ID: 'customer-test',
-    FIREBASE_ADMIN_PROJECT_ID: 'admin-test',
     ADMIN_SESSION_MAX_AGE_SECONDS: 43_200,
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: 1_800,
+    CUSTOMER_SESSION_MAX_AGE_SECONDS: 2_592_000,
+    LOGIN_RATE_LIMIT_PER_MIN: 5,
+    REGISTER_RATE_LIMIT_PER_MIN: 5,
     BREVO_SENDER_NAME: 'Healthy Aahar',
     NOTIFICATIONS_ENABLED: false,
     R2_BUCKET_NAME: 'test',
@@ -131,11 +131,6 @@ function buildApp(env = testEnv()) {
     prisma: fakePrisma(),
     logger: createLogger({ service: 'api-test', env: 'local', version: 'test', level: 'silent' }),
     businessId: BUSINESS_ID,
-    // No test here exercises auth, but createApp always constructs its
-    // verifiers at boot (fail-fast is deliberate — see docs/23 §"fail the
-    // boot, not a request"), so a fake stands in rather than a real
-    // Firebase project this suite has no credentials for.
-    authOverrides: { customerVerifier: new FakeTokenVerifier(), adminVerifier: new FakeTokenVerifier(), adminSession: new FakeAdminSession() },
   });
 }
 
@@ -294,7 +289,12 @@ describe('GET /v1/routes', () => {
   it('publishes the route manifest with audiences', async () => {
     const res = await buildApp().request('/v1/routes');
     const body = (await res.json()) as {
-      data: Array<{ path: string; audience: string; permission: string | null; auth_route: boolean }>;
+      data: Array<{
+        path: string;
+        audience: string;
+        permission: string | null;
+        auth_route: boolean;
+      }>;
     };
 
     expect(body.data.length).toBeGreaterThan(0);
@@ -309,47 +309,28 @@ describe('GET /v1/routes', () => {
   });
 });
 
-describe('graceful degradation when Firebase is not configured', () => {
-  // A staging deploy can legitimately have no real Firebase project yet
-  // (the two-project setup is provisioned outside this codebase). Firebase
-  // initialisation is deliberately LAZY (packages/auth/src/firebase.ts) so
-  // this state degrades the auth ROUTES only — it must never crash-loop
-  // the whole API, which would take health checks and every public/
-  // catalogue endpoint down with it.
-  function unconfiguredApp() {
-    return createApp({
-      env: testEnv(), // no authOverrides — builds the REAL Firebase adapters
-      prisma: fakePrisma(),
-      logger: createLogger({ service: 'api-test', env: 'local', version: 'test', level: 'silent' }),
-      businessId: BUSINESS_ID,
-    });
-  }
+describe('OpenAPI document (Fix #5 — contract accuracy)', () => {
+  it('POST /v1/auth/login never documents a 403 it cannot actually return', async () => {
+    // The implementation deliberately collapses a suspended customer
+    // account into the generic 401 INVALID_CREDENTIALS (no enumeration,
+    // Step 5) — this route must not advertise a 403 ACCOUNT_SUSPENDED
+    // response it will never produce. (GET /v1/auth/me legitimately still
+    // declares 403 — a session that WAS valid at login can belong to an
+    // account suspended since — this test is scoped to /login only.)
+    const res = await buildApp().request('/v1/openapi.json');
+    const doc = (await res.json()) as {
+      paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+    };
 
-  it('still boots and serves health checks and public routes', async () => {
-    const app = unconfiguredApp();
-    expect((await app.request('/v1/health')).status).toBe(200);
-    expect((await app.request('/v1/public/serviceability?pincode=201301')).status).toBe(200);
-  });
-
-  it('degrades the customer session route to 503, not a crash', async () => {
-    const res = await unconfiguredApp().request('/v1/auth/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_token: 'irrelevant' }),
-    });
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
-  });
-
-  it('degrades the admin session route to 503, not a crash', async () => {
-    const res = await unconfiguredApp().request('/v1/admin/auth/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_token: 'irrelevant' }),
-    });
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
+    const responses = doc.paths['/v1/auth/login']?.post?.responses;
+    expect(responses).toBeDefined();
+    expect(Object.keys(responses!)).not.toContain('403');
+    expect(Object.keys(responses!)).toEqual(expect.arrayContaining(['200', '401']));
   });
 });
+
+// PHASE 03 note: the "graceful degradation when Firebase is not configured"
+// suite that used to live here is removed along with the Firebase auth
+// design it tested. There is no equivalent "auth service unconfigured"
+// state under DB-backed email/password auth — the database is already a
+// boot-required dependency for every route, not a PHASE-03-specific one.

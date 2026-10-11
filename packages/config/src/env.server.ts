@@ -38,22 +38,34 @@ export const serverEnvSchema = z
           .filter(Boolean),
       ),
 
-    // ── Firebase: CUSTOMER project ───────────────────────────────────────
-    FIREBASE_CUSTOMER_PROJECT_ID: z.string().min(1),
+    // ── Firebase ─────────────────────────────────────────────────────────
+    // NOT part of the active PHASE 03 authentication path (email/password,
+    // DB-backed sessions — docs/07, docs/36 ADR-037/038). Kept optional and
+    // unvalidated so the schema does not force a decision on a FUTURE
+    // integration; nothing in the current code path reads these.
+    FIREBASE_CUSTOMER_PROJECT_ID: z.string().optional(),
     FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64: z.string().optional(),
-
-    // ── Firebase: ADMIN project (deliberately separate, ADR-010) ─────────
-    FIREBASE_ADMIN_PROJECT_ID: z.string().min(1),
+    FIREBASE_ADMIN_PROJECT_ID: z.string().optional(),
     FIREBASE_ADMIN_SERVICE_ACCOUNT_B64: z.string().optional(),
     FIREBASE_AUTH_EMULATOR_HOST: z.string().optional(),
 
-    // ── Sessions ─────────────────────────────────────────────────────────
+    // ── Sessions (PHASE 03 — DB-backed, docs/07 §5) ──────────────────────
     ADMIN_SESSION_MAX_AGE_SECONDS: z.coerce.number().int().default(43200),
     ADMIN_SESSION_IDLE_TIMEOUT_SECONDS: z.coerce.number().int().default(1800),
+    /** Customer sessions have no idle timeout (mobile-readiness, docs/30 §2) — only an absolute lifetime. */
+    CUSTOMER_SESSION_MAX_AGE_SECONDS: z.coerce
+      .number()
+      .int()
+      .default(60 * 60 * 24 * 30),
     /** HMAC secret for the double-submit CSRF token (docs/07 §5.2). Own
      *  secret, not reused from INTERNAL_SERVICE_TOKEN — a leak of one must
      *  not compromise the other. */
     ADMIN_CSRF_SECRET: z.string().min(16),
+
+    // ── Auth rate limiting (Step 6, docs/07 §5) ──────────────────────────
+    LOGIN_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(5),
+    /** Separate from login's limit (Fix #1) so hammering one never locks out the other. */
+    REGISTER_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(5),
 
     // ── Email ────────────────────────────────────────────────────────────
     BREVO_API_KEY: z.string().optional(),
@@ -76,9 +88,10 @@ export const serverEnvSchema = z
     INTERNAL_SERVICE_TOKEN: z.string().min(16),
 
     // NOTE: PHASE 02's ADMIN_DEV_TOKEN bypass (ADR-030) was removed in
-    // PHASE 03. Real admin authentication is Firebase session cookies +
-    // RBAC (docs/07, docs/08) — there is no shared-token fallback anywhere
-    // in this schema, and none may be reintroduced without a new ADR.
+    // PHASE 03. Real admin authentication is email/password with DB-backed
+    // sessions + RBAC (docs/07, docs/08, ADR-037/038) — there is no
+    // shared-token fallback anywhere in this schema, and none may be
+    // reintroduced without a new ADR.
 
     // ── Business defaults ────────────────────────────────────────────────
     // These SEED the settings table on first run; afterwards the database is
@@ -125,16 +138,6 @@ export const serverEnvSchema = z
     };
 
     if (env.APP_ENV === 'production') {
-      requireInProd(
-        'FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64',
-        env.FIREBASE_CUSTOMER_SERVICE_ACCOUNT_B64,
-        'token verification',
-      );
-      requireInProd(
-        'FIREBASE_ADMIN_SERVICE_ACCOUNT_B64',
-        env.FIREBASE_ADMIN_SERVICE_ACCOUNT_B64,
-        'token verification',
-      );
       requireInProd('SENTRY_DSN', env.SENTRY_DSN, 'error tracking');
       requireInProd('R2_PUBLIC_BASE_URL', env.R2_PUBLIC_BASE_URL, 'media delivery');
 
@@ -169,19 +172,6 @@ export const serverEnvSchema = z
           message: 'The Firebase auth emulator must never be configured in production',
         });
       }
-    }
-
-    // Two Firebase projects must genuinely be two projects (ADR-010). If they
-    // are equal, the token-audience separation that makes privilege escalation
-    // impossible simply does not exist, and nothing else in the system would
-    // notice.
-    if (env.FIREBASE_CUSTOMER_PROJECT_ID === env.FIREBASE_ADMIN_PROJECT_ID) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['FIREBASE_ADMIN_PROJECT_ID'],
-        message:
-          'Customer and admin Firebase projects must differ. A shared project removes the token-audience separation that prevents privilege escalation (ADR-010).',
-      });
     }
 
     // Non-production must be structurally incapable of contacting a real

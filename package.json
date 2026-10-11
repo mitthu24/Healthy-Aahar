@@ -30,7 +30,8 @@
     "infra:reset": "docker compose down -v && docker compose up -d",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "husky",
-    "db:check": "pnpm --filter @healthy-aahar/db check:invariants"
+    "db:check": "pnpm --filter @healthy-aahar/db check:invariants",
+    "db:check-duplicate-emails": "pnpm --filter @healthy-aahar/db check:duplicate-emails"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
@@ -50,5 +51,19 @@
     "*.{json,md,yml,yaml}": [
       "prettier --write"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "next@>=15.0.0 <15.5.27": "15.5.27",
+      "postcss@<8.5.10": "8.5.23",
+      "postcss@<=8.5.11": "8.5.23",
+      "postcss@<=8.5.17": "8.5.23",
+      "postcss@<=8.5.22": "8.5.23",
+      "postcss-selector-parser@<7.1.6": "7.1.6",
+      "source-map-js@>=1.0.0 <1.2.2": "1.2.2",
+      "sharp@<0.35.5": "0.35.5",
+      "micromatch@<4.0.8": "4.0.8",
+      "uuid@<11.1.1": "11.1.1"
+    }
   }
 }

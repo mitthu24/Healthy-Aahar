@@ -2,11 +2,13 @@ import type { ServerEnv } from '@healthy-aahar/config/env/server';
 import type {
   AdminAuthService,
   CustomerAuthService,
+  PasswordResetService,
   RbacService,
   ServiceabilityAdminService,
   ServiceabilityService,
 } from '@healthy-aahar/core';
-import type { AdminSessionPort, PermissionCache, TokenVerifierPort } from '@healthy-aahar/auth';
+import type { PermissionCache } from '@healthy-aahar/auth';
+import type { RateLimitStore } from './middleware/rate-limit.js';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 
@@ -34,13 +36,13 @@ export type AppServices = {
   customerAuth: CustomerAuthService;
   adminAuth: AdminAuthService;
   rbac: RbacService;
+  passwordReset: PasswordResetService;
 };
 
 export type AppAuth = {
-  customerVerifier: TokenVerifierPort;
-  adminVerifier: TokenVerifierPort;
-  adminSession: AdminSessionPort;
   permissionCache: PermissionCache;
+  /** Shared in-process store backing both the per-route and login rate limiters. */
+  loginRateLimitStore: RateLimitStore;
 };
 
 export type AppBindings = {

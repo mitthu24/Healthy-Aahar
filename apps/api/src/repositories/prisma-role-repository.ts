@@ -1,7 +1,9 @@
 import { newId, type BusinessScope, type RoleRepository, type RoleRow } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 
-const ROLE_INCLUDE = { permissions: { include: { permission: { select: { key: true } } } } } as const;
+const ROLE_INCLUDE = {
+  permissions: { include: { permission: { select: { key: true } } } },
+} as const;
 
 function toRoleRow(role: {
   id: string;
@@ -36,12 +38,18 @@ export class PrismaRoleRepository implements RoleRepository {
   }
 
   async findById(scope: BusinessScope, id: string): Promise<RoleRow | null> {
-    const role = await this.prisma.role.findFirst({ where: { id, businessId: scope }, include: ROLE_INCLUDE });
+    const role = await this.prisma.role.findFirst({
+      where: { id, businessId: scope },
+      include: ROLE_INCLUDE,
+    });
     return role ? toRoleRow(role) : null;
   }
 
   async findByKey(scope: BusinessScope, key: string): Promise<RoleRow | null> {
-    const role = await this.prisma.role.findFirst({ where: { key, businessId: scope }, include: ROLE_INCLUDE });
+    const role = await this.prisma.role.findFirst({
+      where: { key, businessId: scope },
+      include: ROLE_INCLUDE,
+    });
     return role ? toRoleRow(role) : null;
   }
 
@@ -72,7 +80,11 @@ export class PrismaRoleRepository implements RoleRepository {
     return toRoleRow(created);
   }
 
-  async updatePermissions(scope: BusinessScope, id: string, permissionKeys: string[]): Promise<RoleRow> {
+  async updatePermissions(
+    scope: BusinessScope,
+    id: string,
+    permissionKeys: string[],
+  ): Promise<RoleRow> {
     const permissions = await this.prisma.permission.findMany({
       where: { key: { in: permissionKeys } },
       select: { id: true },
