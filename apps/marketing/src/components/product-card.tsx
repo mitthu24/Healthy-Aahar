@@ -15,7 +15,7 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
   return (
     <a
       href={href}
-      className="bg-sand-0 border-sand-200 focus-visible:ring-green-600 group flex flex-col overflow-hidden rounded-xl border transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2"
+      className="bg-sand-0 border-sand-200 group flex flex-col overflow-hidden rounded-xl border transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
     >
       <div className="bg-sand-100 relative aspect-square w-full overflow-hidden">
         {product.image_url ? (
@@ -32,11 +32,11 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
           </div>
         )}
         {product.is_bestseller ? (
-          <span className="bg-citrus-500 text-caption text-sand-0 absolute top-2 left-2 rounded-full px-2.5 py-1 font-semibold">
+          <span className="bg-citrus-500 text-caption text-sand-0 absolute left-2 top-2 rounded-full px-2.5 py-1 font-semibold">
             Bestseller
           </span>
         ) : product.is_new ? (
-          <span className="bg-green-700 text-caption text-sand-0 absolute top-2 left-2 rounded-full px-2.5 py-1 font-semibold">
+          <span className="text-caption text-sand-0 absolute left-2 top-2 rounded-full bg-green-700 px-2.5 py-1 font-semibold">
             New
           </span>
         ) : null}
@@ -56,7 +56,7 @@ export function ProductCard({ product }: { product: ProductSummaryDto }) {
           {outOfStock ? (
             <span className="text-caption text-danger-600 font-medium">Out of stock</span>
           ) : (
-            <span className="text-caption text-green-700 font-semibold group-hover:underline">
+            <span className="text-caption font-semibold text-green-700 group-hover:underline">
               Shop now
             </span>
           )}

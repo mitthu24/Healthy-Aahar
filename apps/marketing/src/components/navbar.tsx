@@ -19,7 +19,7 @@ export function Navbar() {
   return (
     <header className="bg-sand-0/90 border-sand-200 sticky top-0 z-30 border-b backdrop-blur-sm">
       <Container className="flex h-16 items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-2 shrink-0">
+        <Link href="/" className="flex shrink-0 items-center gap-2">
           <span className="font-display text-heading-md text-green-800">Healthy Aahar</span>
         </Link>
 
@@ -28,7 +28,7 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className="text-body-sm text-sand-700 hover:text-green-700 focus-visible:ring-green-600 rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2"
+              className="text-body-sm text-sand-700 rounded-sm font-medium hover:text-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
             >
               {link.label}
             </Link>
@@ -38,7 +38,7 @@ export function Navbar() {
         <div className="hidden items-center gap-3 md:flex">
           <Link
             href="/#check-delivery"
-            className="text-body-sm text-sand-700 hover:text-green-700 focus-visible:ring-green-600 rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2"
+            className="text-body-sm text-sand-700 rounded-sm font-medium hover:text-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
           >
             Check delivery
           </Link>

@@ -18,9 +18,9 @@ export function LegalPage({
       <div
         className={[
           'mt-8',
-          '[&_h2]:text-heading-sm [&_h2]:text-sand-900 [&_h2]:mt-9 [&_h2]:mb-2 [&_h2:first-child]:mt-0',
+          '[&_h2]:text-heading-sm [&_h2]:text-sand-900 [&_h2:first-child]:mt-0 [&_h2]:mb-2 [&_h2]:mt-9',
           '[&_p]:text-body-md [&_p]:text-sand-600 [&_p]:mt-3',
-          '[&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:text-body-md [&_li]:text-sand-600 [&_li]:mt-1',
+          '[&_li]:text-body-md [&_li]:text-sand-600 [&_li]:mt-1 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-5',
         ].join(' ')}
       >
         {children}

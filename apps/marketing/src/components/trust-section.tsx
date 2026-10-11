@@ -26,7 +26,7 @@ export function TrustSection() {
         </div>
 
         <div className="order-1 lg:order-2">
-          <p className="text-caption font-semibold tracking-wide text-green-600 uppercase">
+          <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
             Freshness &amp; trust
           </p>
           <h2 className="font-display text-heading-lg sm:text-display-sm text-sand-900 mt-2 text-balance">

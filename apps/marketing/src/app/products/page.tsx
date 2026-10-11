@@ -54,7 +54,7 @@ export default async function ProductsPage({
   return (
     <Container className="py-10 sm:py-14">
       <div className="max-w-2xl">
-        <p className="text-caption font-semibold tracking-wide text-green-600 uppercase">Shop</p>
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-600">Shop</p>
         <h1 className="font-display text-display-sm text-sand-900 mt-2">
           {activeCategory ? activeCategory.name : "Today's menu"}
         </h1>
@@ -66,20 +66,17 @@ export default async function ProductsPage({
 
       <form method="get" className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1 sm:max-w-xs">
-          <SearchIcon className="text-sand-400 pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+          <SearchIcon className="text-sand-400 pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
           <input
             type="search"
             name="q"
             defaultValue={params.q ?? ''}
             placeholder="Search products"
-            className="border-sand-200 bg-sand-0 text-body-sm placeholder:text-sand-400 focus-visible:ring-green-600 h-11 w-full rounded-md border pl-9 pr-3 focus-visible:outline-none focus-visible:ring-2"
+            className="border-sand-200 bg-sand-0 text-body-sm placeholder:text-sand-400 h-11 w-full rounded-md border pl-9 pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
           />
         </div>
         {params.category ? <input type="hidden" name="category" value={params.category} /> : null}
-        <button
-          type="submit"
-          className="text-body-sm text-green-700 hover:underline sm:hidden"
-        >
+        <button type="submit" className="text-body-sm text-green-700 hover:underline sm:hidden">
           Search
         </button>
       </form>
@@ -88,9 +85,9 @@ export default async function ProductsPage({
         <div className="mt-5 flex flex-wrap gap-2">
           <Link
             href="/products"
-            className={`text-body-sm focus-visible:ring-green-600 rounded-full border px-3.5 py-1.5 font-medium focus-visible:outline-none focus-visible:ring-2 ${
+            className={`text-body-sm rounded-full border px-3.5 py-1.5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 ${
               !params.category
-                ? 'border-green-700 bg-green-700 text-sand-0'
+                ? 'text-sand-0 border-green-700 bg-green-700'
                 : 'border-sand-200 text-sand-700 hover:border-green-600'
             }`}
           >
@@ -100,9 +97,9 @@ export default async function ProductsPage({
             <Link
               key={category.id}
               href={`/products?category=${category.id}`}
-              className={`text-body-sm focus-visible:ring-green-600 rounded-full border px-3.5 py-1.5 font-medium focus-visible:outline-none focus-visible:ring-2 ${
+              className={`text-body-sm rounded-full border px-3.5 py-1.5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 ${
                 params.category === category.id
-                  ? 'border-green-700 bg-green-700 text-sand-0'
+                  ? 'text-sand-0 border-green-700 bg-green-700'
                   : 'border-sand-200 text-sand-700 hover:border-green-600'
               }`}
             >
@@ -117,7 +114,11 @@ export default async function ProductsPage({
           <ErrorState message="We couldn't load the menu right now. Please try again shortly." />
         ) : !page || page.data.length === 0 ? (
           <EmptyState
-            title={params.q || params.category ? 'No products match that filter' : 'The menu is being prepared'}
+            title={
+              params.q || params.category
+                ? 'No products match that filter'
+                : 'The menu is being prepared'
+            }
             description={
               params.q || params.category
                 ? 'Try a different search term or browse all products.'
@@ -125,7 +126,10 @@ export default async function ProductsPage({
             }
             action={
               params.q || params.category ? (
-                <Link href="/products" className="text-body-sm font-semibold text-green-700 hover:underline">
+                <Link
+                  href="/products"
+                  className="text-body-sm font-semibold text-green-700 hover:underline"
+                >
                   Clear filters
                 </Link>
               ) : undefined
@@ -147,7 +151,7 @@ export default async function ProductsPage({
                     ...(params.q ? { q: params.q } : {}),
                     cursor: page.pagination.next_cursor,
                   }).toString()}`}
-                  className="border-sand-200 text-body-sm hover:border-green-600 inline-flex h-11 items-center rounded-md border px-5 font-semibold text-green-700"
+                  className="border-sand-200 text-body-sm inline-flex h-11 items-center rounded-md border px-5 font-semibold text-green-700 hover:border-green-600"
                 >
                   Load more
                 </Link>

@@ -47,7 +47,7 @@ export function PincodeChecker({ id, className }: { id?: string; className?: str
           Delivery pincode
         </label>
         <div className="relative flex-1">
-          <PinIcon className="text-sand-400 pointer-events-none absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
+          <PinIcon className="text-sand-400 pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2" />
           <Input
             id="pincode"
             inputMode="numeric"

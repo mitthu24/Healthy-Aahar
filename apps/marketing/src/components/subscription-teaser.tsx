@@ -19,10 +19,10 @@ const POINTS = [
  */
 export function SubscriptionTeaser() {
   return (
-    <section className="bg-green-800 py-16 text-sand-0 sm:py-20">
+    <section className="text-sand-0 bg-green-800 py-16 sm:py-20">
       <Container className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
         <div>
-          <p className="text-caption font-semibold tracking-wide text-green-200 uppercase">
+          <p className="text-caption font-semibold uppercase tracking-wide text-green-200">
             Coming to your routine
           </p>
           <h2 className="font-display text-heading-lg sm:text-display-sm mt-2 text-balance">
@@ -43,10 +43,7 @@ export function SubscriptionTeaser() {
 
         <ul className="grid gap-4 sm:grid-cols-1">
           {POINTS.map((point) => (
-            <li
-              key={point.text}
-              className="flex items-center gap-4 rounded-xl bg-green-700/60 p-4"
-            >
+            <li key={point.text} className="flex items-center gap-4 rounded-xl bg-green-700/60 p-4">
               <point.icon className="h-6 w-6 shrink-0 text-green-100" />
               <span className="text-body-md">{point.text}</span>
             </li>

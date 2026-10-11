@@ -16,12 +16,14 @@ const VALUES = [
   {
     icon: SproutIcon,
     title: 'Fresh is a process, not a label',
-    description: 'We prepare the same day we deliver, instead of stocking ahead and calling it fresh.',
+    description:
+      'We prepare the same day we deliver, instead of stocking ahead and calling it fresh.',
   },
   {
     icon: ShieldCheckIcon,
     title: 'Say only what’s true',
-    description: 'No invented certifications or ratings. If we haven’t verified it, we don’t claim it.',
+    description:
+      'No invented certifications or ratings. If we haven’t verified it, we don’t claim it.',
   },
   {
     icon: LeafIcon,
@@ -35,7 +37,7 @@ export default function AboutPage() {
     <>
       <Container className="grid items-center gap-10 py-14 sm:py-20 lg:grid-cols-2 lg:gap-16">
         <div>
-          <p className="text-caption font-semibold tracking-wide text-green-600 uppercase">
+          <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
             About us
           </p>
           <h1 className="font-display text-display-sm text-sand-900 mt-2 text-balance">
@@ -44,8 +46,8 @@ export default function AboutPage() {
           <p className="text-body-lg text-sand-600 mt-4 max-w-md">
             Healthy Aahar started with a simple frustration: eating well in a busy day
             shouldn&rsquo;t mean choosing between &ldquo;fresh&rdquo; and &ldquo;convenient.&rdquo;
-            So we built a kitchen and delivery operation around doing both at once &mdash;
-            starting in Noida.
+            So we built a kitchen and delivery operation around doing both at once &mdash; starting
+            in Noida.
           </p>
           <p className="text-body-md text-sand-600 mt-4 max-w-md">
             Every order is prepared the same day it&rsquo;s delivered. We&rsquo;d rather keep our
@@ -86,8 +88,8 @@ export default function AboutPage() {
           Currently delivering in Noida
         </h2>
         <p className="text-body-md text-sand-600 mx-auto mt-2 max-w-md">
-          We&rsquo;re growing carefully, one neighbourhood at a time, rather than promising
-          coverage we can&rsquo;t yet deliver on.
+          We&rsquo;re growing carefully, one neighbourhood at a time, rather than promising coverage
+          we can&rsquo;t yet deliver on.
         </p>
         <div className="mt-6">
           <a href={`${env.NEXT_PUBLIC_APP_URL}/products?ref=marketing`}>

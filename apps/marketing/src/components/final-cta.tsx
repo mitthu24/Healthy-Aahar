@@ -13,8 +13,8 @@ export function FinalCta() {
           Fresh, healthy food &mdash; ready when you are
         </h2>
         <p className="text-body-md text-sand-600 mx-auto mt-3 max-w-md">
-          Check your pincode, browse today&rsquo;s menu, and get it delivered in a slot that
-          works for you.
+          Check your pincode, browse today&rsquo;s menu, and get it delivered in a slot that works
+          for you.
         </p>
 
         <div className="mx-auto mt-7 max-w-md">

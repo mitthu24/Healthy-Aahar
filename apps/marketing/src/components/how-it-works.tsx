@@ -38,12 +38,10 @@ export function HowItWorks() {
         <ol className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((step, index) => (
             <li key={step.title} className="relative text-center sm:text-left">
-              <div className="bg-green-100 text-green-700 mx-auto flex h-14 w-14 items-center justify-center rounded-2xl sm:mx-0">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-100 text-green-700 sm:mx-0">
                 <step.icon className="h-7 w-7" />
               </div>
-              <p className="text-caption text-sand-400 mt-4 font-semibold">
-                Step {index + 1}
-              </p>
+              <p className="text-caption text-sand-400 mt-4 font-semibold">Step {index + 1}</p>
               <h3 className="text-heading-sm text-sand-900 mt-1">{step.title}</h3>
               <p className="text-body-sm text-sand-600 mt-2">{step.description}</p>
             </li>

@@ -65,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-sand-50 font-body text-sand-800 min-h-dvh antialiased">
         <a
           href="#main-content"
-          className="bg-green-700 text-sand-0 focus-visible:outline-none sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:px-4 focus:py-2"
+          className="text-sand-0 sr-only bg-green-700 focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:px-4 focus:py-2 focus-visible:outline-none"
         >
           Skip to content
         </a>

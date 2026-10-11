@@ -13,7 +13,7 @@ export function Hero() {
       <div className="from-sand-50 via-sand-50 absolute inset-0 -z-10 bg-gradient-to-b to-green-50" />
       <Container className="grid items-center gap-10 py-14 sm:py-20 lg:grid-cols-2 lg:gap-12 lg:py-24">
         <div>
-          <p className="text-caption inline-flex items-center rounded-full bg-green-100 px-3 py-1 font-semibold tracking-wide text-green-700 uppercase">
+          <p className="text-caption inline-flex items-center rounded-full bg-green-100 px-3 py-1 font-semibold uppercase tracking-wide text-green-700">
             Fresh · Noida
           </p>
 
@@ -22,8 +22,8 @@ export function Hero() {
           </h1>
 
           <p className="text-body-lg text-sand-600 mt-5 max-w-md">
-            Fresh fruit, salads, sprouts and wholesome meals — made the same day and delivered in
-            a slot you choose. No preservatives, no guesswork.
+            Fresh fruit, salads, sprouts and wholesome meals — made the same day and delivered in a
+            slot you choose. No preservatives, no guesswork.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -55,7 +55,7 @@ export function Hero() {
             />
           </div>
           <div className="bg-sand-0 border-sand-200 absolute -bottom-5 -left-5 hidden rounded-2xl border p-4 shadow-lg sm:block">
-            <p className="text-heading-sm text-green-700 font-display">Same-day prep</p>
+            <p className="text-heading-sm font-display text-green-700">Same-day prep</p>
             <p className="text-caption text-sand-600 mt-0.5">No cold storage, no preservatives</p>
           </div>
         </div>

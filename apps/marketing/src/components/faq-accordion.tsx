@@ -13,8 +13,8 @@ export function FaqAccordion({ limit }: { limit?: number }) {
   return (
     <div className="divide-sand-200 border-sand-200 divide-y rounded-xl border">
       {items.map((item) => (
-        <details key={item.question} className="group p-5 open:bg-sand-50">
-          <summary className="text-body-md text-sand-900 focus-visible:ring-green-600 flex cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-none focus-visible:ring-2 [&::-webkit-details-marker]:hidden">
+        <details key={item.question} className="open:bg-sand-50 group p-5">
+          <summary className="text-body-md text-sand-900 flex cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 [&::-webkit-details-marker]:hidden">
             {item.question}
             <ChevronDownIcon className="text-sand-400 h-5 w-5 shrink-0 transition-transform duration-200 group-open:rotate-180" />
           </summary>

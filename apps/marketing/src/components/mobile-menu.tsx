@@ -42,7 +42,7 @@ export function MobileMenu() {
         aria-expanded={isOpen}
         aria-controls="mobile-nav"
         onClick={() => setIsOpen((v) => !v)}
-        className="text-sand-800 focus-visible:ring-green-600 -mr-2 flex h-11 w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2"
+        className="text-sand-800 -mr-2 flex h-11 w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
       >
         {isOpen ? <CloseIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
       </button>
@@ -58,7 +58,7 @@ export function MobileMenu() {
           <nav
             id="mobile-nav"
             aria-label="Mobile"
-            className="bg-sand-0 fixed top-0 right-0 bottom-0 flex h-dvh w-[82%] max-w-sm flex-col gap-1 overflow-y-auto px-6 py-6 shadow-xl"
+            className="bg-sand-0 fixed bottom-0 right-0 top-0 flex h-dvh w-[82%] max-w-sm flex-col gap-1 overflow-y-auto px-6 py-6 shadow-xl"
           >
             <div className="mb-4 flex items-center justify-between">
               <span className="font-display text-heading-sm text-green-800">Healthy Aahar</span>
@@ -66,7 +66,7 @@ export function MobileMenu() {
                 type="button"
                 aria-label="Close menu"
                 onClick={() => setIsOpen(false)}
-                className="text-sand-600 focus-visible:ring-green-600 flex h-11 w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2"
+                className="text-sand-600 flex h-11 w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
               >
                 <CloseIcon className="h-6 w-6" />
               </button>
@@ -77,7 +77,7 @@ export function MobileMenu() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setIsOpen(false)}
-                className="text-body-lg text-sand-800 hover:bg-sand-50 focus-visible:ring-green-600 -mx-2 rounded-md px-2 py-3 font-medium focus-visible:outline-none focus-visible:ring-2"
+                className="text-body-lg text-sand-800 hover:bg-sand-50 -mx-2 rounded-md px-2 py-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
               >
                 {link.label}
               </Link>

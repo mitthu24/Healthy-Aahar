@@ -13,7 +13,7 @@ export default function ContactPage() {
   return (
     <Container className="py-14 sm:py-20">
       <div className="max-w-xl">
-        <p className="text-caption font-semibold tracking-wide text-green-600 uppercase">
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
           Contact &amp; support
         </p>
         <h1 className="font-display text-display-sm text-sand-900 mt-2 text-balance">
@@ -21,17 +21,17 @@ export default function ContactPage() {
         </h1>
         <p className="text-body-md text-sand-600 mt-4">
           For order questions, delivery issues or anything else, reach us directly &mdash; we
-          don&rsquo;t yet have an online contact form wired up, so phone and email are the
-          fastest way to reach a real person.
+          don&rsquo;t yet have an online contact form wired up, so phone and email are the fastest
+          way to reach a real person.
         </p>
       </div>
 
-      <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-xl">
+      <div className="mt-10 grid grid-cols-1 gap-4 sm:max-w-xl sm:grid-cols-2">
         <a
           href="tel:+911204000000"
-          className="border-sand-200 hover:border-green-600 focus-visible:ring-green-600 flex items-center gap-4 rounded-xl border p-5 focus-visible:outline-none focus-visible:ring-2"
+          className="border-sand-200 flex items-center gap-4 rounded-xl border p-5 hover:border-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
         >
-          <span className="bg-green-100 text-green-700 flex h-11 w-11 shrink-0 items-center justify-center rounded-full">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
             <PhoneIcon className="h-5 w-5" />
           </span>
           <span>
@@ -42,9 +42,9 @@ export default function ContactPage() {
 
         <a
           href="mailto:support@healthyaahar.com"
-          className="border-sand-200 hover:border-green-600 focus-visible:ring-green-600 flex items-center gap-4 rounded-xl border p-5 focus-visible:outline-none focus-visible:ring-2"
+          className="border-sand-200 flex items-center gap-4 rounded-xl border p-5 hover:border-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
         >
-          <span className="bg-green-100 text-green-700 flex h-11 w-11 shrink-0 items-center justify-center rounded-full">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
             <MailIcon className="h-5 w-5" />
           </span>
           <span>

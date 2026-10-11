@@ -30,7 +30,7 @@ export async function CategoryRail() {
             <Link
               key={category.id}
               href={`/products?category=${category.id}`}
-              className="group focus-visible:ring-green-600 w-32 shrink-0 text-center focus-visible:outline-none focus-visible:ring-2 sm:w-auto"
+              className="group w-32 shrink-0 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 sm:w-auto"
             >
               <div className="bg-sand-100 relative aspect-square w-full overflow-hidden rounded-2xl">
                 {category.image_url ? (
@@ -47,7 +47,7 @@ export async function CategoryRail() {
                   </div>
                 )}
               </div>
-              <p className="text-body-sm text-sand-800 group-hover:text-green-700 mt-2 font-medium">
+              <p className="text-body-sm text-sand-800 mt-2 font-medium group-hover:text-green-700">
                 {category.name}
               </p>
             </Link>

@@ -18,7 +18,12 @@ const organizationJsonLd = {
   email: 'support@healthyaahar.com',
   telephone: '+911204000000',
   areaServed: { '@type': 'City', name: 'Noida' },
-  address: { '@type': 'PostalAddress', addressLocality: 'Noida', addressRegion: 'UP', addressCountry: 'IN' },
+  address: {
+    '@type': 'PostalAddress',
+    addressLocality: 'Noida',
+    addressRegion: 'UP',
+    addressCountry: 'IN',
+  },
 };
 
 const faqJsonLd = {

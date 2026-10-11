@@ -35,7 +35,7 @@ const FOOTER_FOCUS =
 
 export function Footer() {
   return (
-    <footer className="bg-green-900 text-sand-100">
+    <footer className="text-sand-100 bg-green-900">
       <Container className="py-14">
         <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
           <div className="col-span-2 sm:col-span-1">
@@ -63,7 +63,7 @@ export function Footer() {
           </div>
 
           <nav aria-label="Shop">
-            <h3 className="text-caption text-sand-400 font-semibold tracking-wide uppercase">
+            <h3 className="text-caption text-sand-400 font-semibold uppercase tracking-wide">
               Shop
             </h3>
             <ul className="mt-4 space-y-3">
@@ -89,7 +89,7 @@ export function Footer() {
           </nav>
 
           <nav aria-label="Company">
-            <h3 className="text-caption text-sand-400 font-semibold tracking-wide uppercase">
+            <h3 className="text-caption text-sand-400 font-semibold uppercase tracking-wide">
               Company
             </h3>
             <ul className="mt-4 space-y-3">
@@ -107,7 +107,7 @@ export function Footer() {
           </nav>
 
           <nav aria-label="Legal">
-            <h3 className="text-caption text-sand-400 font-semibold tracking-wide uppercase">
+            <h3 className="text-caption text-sand-400 font-semibold uppercase tracking-wide">
               Legal
             </h3>
             <ul className="mt-4 space-y-3">

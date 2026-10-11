@@ -36,11 +36,14 @@ export default function TermsPage() {
       </p>
 
       <h2>Changes</h2>
-      <p>We may update these terms as the service evolves. The date above reflects the latest version.</p>
+      <p>
+        We may update these terms as the service evolves. The date above reflects the latest
+        version.
+      </p>
 
       <LegalNotice>
-        We&rsquo;re a growing local food business. Specific legal-entity details (registered
-        company name and registration number) will be published here once finalised.
+        We&rsquo;re a growing local food business. Specific legal-entity details (registered company
+        name and registration number) will be published here once finalised.
       </LegalNotice>
     </LegalPage>
   );

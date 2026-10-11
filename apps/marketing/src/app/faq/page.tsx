@@ -8,7 +8,8 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: 'Frequently asked questions',
-  description: 'Delivery areas, slots, payment and more — answers to common Healthy Aahar questions.',
+  description:
+    'Delivery areas, slots, payment and more — answers to common Healthy Aahar questions.',
 };
 
 export default function FaqPage() {
@@ -28,7 +29,7 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
-      <p className="text-caption text-center font-semibold tracking-wide text-green-600 uppercase">
+      <p className="text-caption text-center font-semibold uppercase tracking-wide text-green-600">
         FAQ
       </p>
       <h1 className="font-display text-display-sm text-sand-900 mt-2 text-center">

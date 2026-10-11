@@ -16,15 +16,15 @@ export default function HowItWorksPage() {
   return (
     <>
       <Container className="py-14 text-center sm:py-20">
-        <p className="text-caption font-semibold tracking-wide text-green-600 uppercase">
+        <p className="text-caption font-semibold uppercase tracking-wide text-green-600">
           How it works
         </p>
         <h1 className="font-display text-display-sm text-sand-900 mx-auto mt-2 max-w-2xl text-balance">
           Order, prepare, deliver &mdash; the same day
         </h1>
         <p className="text-body-md text-sand-600 mx-auto mt-4 max-w-xl">
-          No stock sitting in cold storage. Every order starts a fresh prep, timed to your
-          delivery slot.
+          No stock sitting in cold storage. Every order starts a fresh prep, timed to your delivery
+          slot.
         </p>
         <div className="mx-auto mt-8 max-w-md">
           <PincodeChecker />
