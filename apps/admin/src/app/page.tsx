@@ -7,7 +7,8 @@ import Link from 'next/link';
  * A dashboard with real metrics is future work (docs/15 §3) — this is
  * deliberately just the entry point into the one module that exists today
  * (order fulfilment), rather than a dashboard showing numbers nobody built
- * yet.
+ * yet. Sign-in status is shown by `AdminNav` (rendered in `layout.tsx`
+ * above every page), not duplicated here.
  */
 export default function HomePage() {
   return (
