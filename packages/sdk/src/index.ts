@@ -87,7 +87,15 @@ export class ApiClient {
     this.getToken = options.getToken;
     this.getCsrfToken = options.getCsrfToken;
     this.clientId = options.clientId ?? 'web/0.2.0';
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Bound explicitly: native `fetch` is receiver-checked (browsers throw
+    // "Illegal invocation" when it's called as `this.fetchImpl(...)` with
+    // `this` set to the ApiClient instance rather than `window`/`self`) —
+    // storing the bare function reference on `this` and later invoking it
+    // as `this.fetchImpl(...)` hits exactly that, in every browser, for
+    // every request this client ever makes. `.bind()` is a no-op for an
+    // already-bound or arrow-function `options.fetchImpl` (e.g. a test
+    // double), so this is safe for both the default and the override.
+    this.fetchImpl = (options.fetchImpl ?? fetch).bind(globalThis);
   }
 
   private query(params: Record<string, string | number | undefined>): string {
