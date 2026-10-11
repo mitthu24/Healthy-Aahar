@@ -3,6 +3,7 @@ import type {
   AddressService,
   AdminAuthService,
   AdminCatalogueService,
+  AdminDeliverySlotService,
   CartService,
   CatalogueService,
   CheckoutService,
@@ -51,6 +52,7 @@ export type AppServices = {
   customerOrders: CustomerOrderService;
   orderFulfilment: OrderFulfilmentService;
   adminCatalogue: AdminCatalogueService;
+  adminDeliverySlots: AdminDeliverySlotService;
 };
 
 export type AppAuth = {

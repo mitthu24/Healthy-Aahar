@@ -85,37 +85,48 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
           where: { id: addressId, customerProfileId, deletedAt: null },
         });
         if (!address) throw new DomainError('NOT_FOUND', 'Address not found.');
-        if (!address.deliveryZoneId) {
-          // Not a hardcoded pincode allowlist — this address simply never
-          // resolved to a zone via the existing dynamic serviceability
-          // system (BR-SV1). Checkout cannot proceed without one because
-          // Order.delivery_zone_id is a required column.
-          throw new DomainError(
-            'ADDRESS_NOT_SERVICEABLE',
-            'This address is not yet assigned to a delivery zone.',
-          );
-        }
 
+        // Delivery-slot-only checkout (Phase 04): no DeliveryZone is
+        // resolved or required here. PHASE 06 owns real zone/capacity
+        // management; it was never built, so requiring one made checkout
+        // impossible in every environment. This is NOT a pincode allowlist
+        // — any address belonging to the customer is accepted; the only
+        // gate is the slot itself (active, offered on this day, has room).
         const slot = await tx.deliverySlot.findFirst({
           where: { id: deliverySlotId, businessId, isActive: true, deletedAt: null },
         });
         if (!slot) throw new DomainError('NOT_FOUND', 'Delivery slot not found.');
 
-        const assignment = await tx.slotZoneAssignment.findFirst({
-          where: {
-            deliverySlotId: slot.id,
-            deliveryZoneId: address.deliveryZoneId,
-            isActive: true,
-          },
-        });
-        if (!assignment) {
+        const serviceDateObj = new Date(serviceDate);
+        const isoWeekday = ((serviceDateObj.getUTCDay() + 6) % 7) + 1; // JS 0=Sun -> ISO 1=Mon..7=Sun
+        if (!slot.availableDays.includes(isoWeekday)) {
           throw new DomainError(
             'SLOT_NOT_AVAILABLE_ON_DAY',
-            'This delivery slot is not available for your address.',
+            `${slot.name} is not offered on the selected date.`,
           );
         }
 
-        const zone = await tx.deliveryZone.findUnique({ where: { id: address.deliveryZoneId } });
+        // Advisory lock keyed by (slot, date) serialises concurrent
+        // checkouts for the SAME slot+date within this transaction, so the
+        // booked-count read below cannot race with another request's
+        // insert — the same concurrency-safety goal the inventory
+        // conditional UPDATE achieves for stock, applied here because a
+        // slot's capacity has no row of its own to condition an UPDATE on.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${slot.id} || ${serviceDate}))`;
+
+        const bookedCount = await tx.order.count({
+          where: {
+            deliverySlotId: slot.id,
+            serviceDate: serviceDateObj,
+            status: { notIn: ['CANCELLED', 'FAILED'] },
+          },
+        });
+        if (bookedCount >= slot.defaultCapacity) {
+          throw new DomainError(
+            'SLOT_CAPACITY_EXCEEDED',
+            `${slot.name} is fully booked for the selected date. Please choose another slot or date.`,
+          );
+        }
 
         const orderId = newId();
         let subtotalPaise = 0n;
@@ -225,17 +236,16 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
           throw new DomainError('CART_EMPTY', 'Your cart is empty.');
         }
 
-        const deliveryFeePaise =
-          zone &&
-          (zone.freeDeliveryAbovePaise === null || subtotalPaise < zone.freeDeliveryAbovePaise)
-            ? zone.deliveryFeePaise
-            : 0n;
+        // Delivery fee and minimum order value now come from the SLOT
+        // (both fields already existed on DeliverySlot — no schema change
+        // needed), not a zone.
+        const deliveryFeePaise = slot.deliveryFeePaise ?? 0n;
         const totalPaise = subtotalPaise + deliveryFeePaise + taxPaise;
 
-        if (zone && subtotalPaise < zone.minOrderValuePaise) {
+        if (slot.minOrderValuePaise !== null && subtotalPaise < slot.minOrderValuePaise) {
           throw new DomainError(
             'MIN_ORDER_NOT_MET',
-            `A minimum order of ${zone.minOrderValuePaise} paise is required for this zone.`,
+            `A minimum order of ${slot.minOrderValuePaise} paise is required for this slot.`,
           );
         }
 
@@ -250,7 +260,6 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
             status: 'PENDING',
             source: 'ONE_TIME',
             channel: 'WEB',
-            deliveryZoneId: address.deliveryZoneId,
             deliverySlotId: slot.id,
             serviceDate: new Date(serviceDate),
             slotStartTime: slot.startTime,

@@ -51,17 +51,17 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedAddressId) return;
     setSlots(null);
     setSelectedSlotId(null);
     void apiClient
-      .listDeliverySlots(selectedAddressId)
+      .listDeliverySlots(serviceDate)
       .then((res) => {
         setSlots(res.data);
-        if (res.data[0]) setSelectedSlotId(res.data[0].id);
+        const firstAvailable = res.data.find((s) => s.is_available);
+        if (firstAvailable) setSelectedSlotId(firstAvailable.id);
       })
       .catch(() => setSlots([]));
-  }, [selectedAddressId]);
+  }, [serviceDate]);
 
   async function placeOrder() {
     if (!selectedAddressId || !selectedSlotId) return;
@@ -93,9 +93,11 @@ export default function CheckoutPage() {
         if (err.code === 'CART_EMPTY') setError('Your cart is empty.');
         else if (err.code === 'INSUFFICIENT_STOCK' || err.code === 'ITEM_NOT_AVAILABLE') {
           setError(`${err.message} Please review your cart.`);
-        } else if (err.code === 'ADDRESS_NOT_SERVICEABLE') {
-          setError('This address is not yet deliverable. Please choose a different address.');
-        } else if (err.code === 'MIN_ORDER_NOT_MET' || err.code === 'SLOT_NOT_AVAILABLE_ON_DAY') {
+        } else if (
+          err.code === 'MIN_ORDER_NOT_MET' ||
+          err.code === 'SLOT_NOT_AVAILABLE_ON_DAY' ||
+          err.code === 'SLOT_CAPACITY_EXCEEDED'
+        ) {
           setError(err.message);
         } else {
           setError('We could not place your order. Please try again.');
@@ -182,44 +184,54 @@ export default function CheckoutPage() {
         )}
       </section>
 
-      {selectedAddressId ? (
-        <section className="mt-6">
-          <h2 className="text-heading-sm text-sand-900">Delivery slot</h2>
+      <section className="mt-6">
+        <h2 className="text-heading-sm text-sand-900">Delivery slot</h2>
+        <div className="mt-3 space-y-3">
+          <input
+            type="date"
+            value={serviceDate}
+            min={todayPlusDays(1)}
+            onChange={(e) => setServiceDate(e.target.value)}
+            className="border-sand-200 bg-sand-0 text-body-md h-11 w-full rounded-md border px-3"
+          />
           {slots === null ? (
-            <Skeleton className="mt-3 h-11 w-full" />
+            <Skeleton className="h-11 w-full" />
           ) : slots.length === 0 ? (
-            <p className="text-body-sm text-danger-600 mt-2">
-              No delivery slots are available for this address yet.
+            <p className="text-body-sm text-danger-600">
+              No delivery slots are available on this date.
             </p>
           ) : (
-            <div className="mt-3 space-y-3">
-              <input
-                type="date"
-                value={serviceDate}
-                min={todayPlusDays(1)}
-                onChange={(e) => setServiceDate(e.target.value)}
-                className="border-sand-200 bg-sand-0 text-body-md h-11 w-full rounded-md border px-3"
-              />
-              <div className="flex flex-wrap gap-2">
-                {slots.map((slot) => (
-                  <button
-                    key={slot.id}
-                    type="button"
-                    onClick={() => setSelectedSlotId(slot.id)}
-                    className={`text-body-sm min-h-11 rounded-md border px-3 ${
-                      slot.id === selectedSlotId
+            <div className="flex flex-wrap gap-2">
+              {slots.map((slot) => (
+                <button
+                  key={slot.id}
+                  type="button"
+                  disabled={!slot.is_available}
+                  onClick={() => setSelectedSlotId(slot.id)}
+                  className={`text-body-sm min-h-11 rounded-md border px-3 text-left ${
+                    !slot.is_available
+                      ? 'border-sand-200 bg-sand-50 text-sand-400 cursor-not-allowed'
+                      : slot.id === selectedSlotId
                         ? 'border-green-600 bg-green-50 text-green-700'
                         : 'border-sand-200'
-                    }`}
-                  >
+                  }`}
+                >
+                  <span>
                     {slot.name} · {slot.start_time}–{slot.end_time}
-                  </button>
-                ))}
-              </div>
+                  </span>
+                  {!slot.is_available ? (
+                    <span className="text-caption ml-2">Full</span>
+                  ) : slot.delivery_fee.amount_paise > 0 ? (
+                    <span className="text-caption text-sand-600 ml-2">
+                      +{slot.delivery_fee.display} delivery
+                    </span>
+                  ) : null}
+                </button>
+              ))}
             </div>
           )}
-        </section>
-      ) : null}
+        </div>
+      </section>
 
       <section className="mt-6">
         <h2 className="text-heading-sm text-sand-900">Order summary</h2>

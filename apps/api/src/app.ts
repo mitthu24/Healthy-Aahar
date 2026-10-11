@@ -4,6 +4,7 @@ import {
   AddressService,
   AdminAuthService,
   AdminCatalogueService,
+  AdminDeliverySlotService,
   CartService,
   CatalogueService,
   CheckoutService,
@@ -55,11 +56,13 @@ import {
   PrismaAdminProductRepository,
   PrismaAdminVariantRepository,
 } from './repositories/prisma-admin-catalogue-repository.js';
+import { PrismaAdminDeliverySlotRepository } from './repositories/prisma-admin-delivery-slot-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
 import { adminOrdersRoutes } from './routes/admin/orders.js';
 import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
+import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
@@ -152,6 +155,10 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       categories: new PrismaAdminCategoryRepository(prisma),
       products: new PrismaAdminProductRepository(prisma),
       variants: new PrismaAdminVariantRepository(prisma),
+      audit: auditRepo,
+    }),
+    adminDeliverySlots: new AdminDeliverySlotService({
+      slots: new PrismaAdminDeliverySlotRepository(prisma),
       audit: auditRepo,
     }),
   };
@@ -293,6 +300,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin', rolesRoutes());
   app.route('/v1/admin', adminOrdersRoutes());
   app.route('/v1/admin', adminCatalogueRoutes());
+  app.route('/v1/admin', adminDeliverySlotsRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.

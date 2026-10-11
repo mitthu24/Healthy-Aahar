@@ -3,6 +3,8 @@ import type {
   AddressListResponse,
   AdminCategoryDto,
   AdminCategoryListResponse,
+  AdminDeliverySlotDto,
+  AdminDeliverySlotListResponse,
   AdminMe,
   AdminOrderDto,
   AdminOrderListResponse,
@@ -308,10 +310,16 @@ export class ApiClient {
     return this.request(`/v1/me/addresses/${id}`, { method: 'DELETE' });
   }
 
-  // ── Delivery slots (PHASE 04) ────────────────────────────────────────────
+  // ── Delivery slots (PHASE 04 — delivery-slot-only, no address/zone) ──────
 
-  listDeliverySlots(addressId: string): Promise<DeliverySlotListResponse> {
-    return this.request(`/v1/me/delivery-slots${this.query({ address_id: addressId })}`);
+  /**
+   * `serviceDate` (YYYY-MM-DD) is optional; omitting it returns every active
+   * slot with no capacity computed (`remaining_capacity: null`). Passing it
+   * filters to slots offered on that date's weekday and computes live
+   * remaining capacity server-side.
+   */
+  listDeliverySlots(serviceDate?: string): Promise<DeliverySlotListResponse> {
+    return this.request(`/v1/me/delivery-slots${this.query({ service_date: serviceDate })}`);
   }
 
   // ── Checkout & orders (PHASE 04) ─────────────────────────────────────────
@@ -555,6 +563,54 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
   }
+
+  // ── Admin: delivery-slot management (Phase 04) ───────────────────────────
+
+  listAdminDeliverySlots(): Promise<AdminDeliverySlotListResponse> {
+    return this.request('/v1/admin/delivery-slots');
+  }
+
+  getAdminDeliverySlot(id: string): Promise<AdminDeliverySlotDto> {
+    return this.request(`/v1/admin/delivery-slots/${id}`);
+  }
+
+  createDeliverySlot(body: {
+    name: string;
+    code: string;
+    start_time: string;
+    end_time: string;
+    cutoff_time?: string;
+    cutoff_days_before?: number;
+    available_days: number[];
+    default_capacity: number;
+    delivery_fee_paise?: number;
+    min_order_value_paise?: number;
+    display_order?: number;
+  }): Promise<AdminDeliverySlotDto> {
+    return this.request('/v1/admin/delivery-slots', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateDeliverySlot(
+    id: string,
+    body: Partial<{
+      name: string;
+      start_time: string;
+      end_time: string;
+      cutoff_time: string;
+      cutoff_days_before: number;
+      available_days: number[];
+      default_capacity: number;
+      delivery_fee_paise: number | null;
+      min_order_value_paise: number | null;
+      display_order: number;
+      is_active: boolean;
+    }>,
+  ): Promise<AdminDeliverySlotDto> {
+    return this.request(`/v1/admin/delivery-slots/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
 }
 
 export type {
@@ -562,6 +618,8 @@ export type {
   AddressListResponse,
   AdminCategoryDto,
   AdminCategoryListResponse,
+  AdminDeliverySlotDto,
+  AdminDeliverySlotListResponse,
   AdminMe,
   AdminOrderDto,
   AdminOrderListResponse,

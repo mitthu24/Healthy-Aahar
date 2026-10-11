@@ -94,6 +94,12 @@ export type {
   ProductListFilter,
   AdminProductRepository,
 } from './ports/admin-catalogue-repository.js';
+export type {
+  AdminDeliverySlotRow,
+  DeliverySlotInput,
+  DeliverySlotUpdateInput,
+  AdminDeliverySlotRepository,
+} from './ports/admin-delivery-slot-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
 export {
@@ -148,3 +154,8 @@ export {
   toAdminProductView,
   toAdminProductSummaryView,
 } from './services/admin-catalogue-view.js';
+export {
+  AdminDeliverySlotService,
+  type AdminDeliverySlotServiceDeps,
+} from './services/admin-delivery-slot-service.js';
+export { toAdminDeliverySlotView } from './services/admin-delivery-slot-view.js';

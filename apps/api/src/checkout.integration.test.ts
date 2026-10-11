@@ -113,7 +113,19 @@ async function seedOrderableProduct(
   return { product, variant };
 }
 
-async function seedDeliverySetup() {
+/**
+ * Delivery-slot-only checkout (Phase 04): no `DeliveryZone` or
+ * `SlotZoneAssignment` row is created or required here — any address
+ * belonging to the customer is accepted, and the slot itself is the only
+ * gate (active, offered on the day, has room).
+ */
+async function seedDeliverySetup(
+  overrides: {
+    availableDays?: number[];
+    defaultCapacity?: number;
+    isActive?: boolean;
+  } = {},
+) {
   const city = await prisma.city.create({
     data: {
       id: testId(),
@@ -125,16 +137,6 @@ async function seedDeliverySetup() {
       activatedAt: now(),
     },
   });
-  const zone = await prisma.deliveryZone.create({
-    data: {
-      id: testId(),
-      businessId,
-      cityId: city.id,
-      name: 'Zone A',
-      code: `ZONE-${testId()}`,
-      isActive: true,
-    },
-  });
   const pincode = String(500000 + Math.floor(Math.random() * 90000));
   await prisma.servicePincode.create({
     data: {
@@ -144,7 +146,6 @@ async function seedDeliverySetup() {
       pincode,
       status: 'ACTIVE',
       activatedAt: now(),
-      deliveryZoneId: zone.id,
     },
   });
   const slot = await prisma.deliverySlot.create({
@@ -152,17 +153,14 @@ async function seedDeliverySetup() {
       id: testId(),
       businessId,
       name: 'Morning',
-      code: `SLOT-${testId()}`,
+      code: `slot-${testId()}`,
       startTime: new Date('1970-01-01T09:00:00.000Z'),
       endTime: new Date('1970-01-01T12:00:00.000Z'),
       cutoffTime: new Date('1970-01-01T20:00:00.000Z'),
-      availableDays: [0, 1, 2, 3, 4, 5, 6],
-      defaultCapacity: 50,
-      isActive: true,
+      availableDays: overrides.availableDays ?? [1, 2, 3, 4, 5, 6, 7],
+      defaultCapacity: overrides.defaultCapacity ?? 50,
+      isActive: overrides.isActive ?? true,
     },
-  });
-  await prisma.slotZoneAssignment.create({
-    data: { id: testId(), deliverySlotId: slot.id, deliveryZoneId: zone.id, isActive: true },
   });
 
   return { pincode, slot };
@@ -261,7 +259,6 @@ describe('checkout auto-confirmation (Phase 04 requirement change)', () => {
     const { pincode, slot } = await seedDeliverySetup();
     const token = await registerCustomerAndGetToken('confirm-flow@example.test');
     const address = await createAddress(token, pincode);
-    expect(address.delivery_zone_id).not.toBeNull();
     await addToCart(token, variant.id, 2);
 
     const res = await checkout(
@@ -395,6 +392,84 @@ describe('checkout auto-confirmation (Phase 04 requirement change)', () => {
     expect(second.status).toBe(422);
     const body = (await second.json()) as { error: { code: string } };
     expect(body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await prisma.order.count()).toBe(1);
+  });
+});
+
+function isoWeekdayOf(serviceDate: string): number {
+  return ((new Date(serviceDate).getUTCDay() + 6) % 7) + 1;
+}
+
+describe('delivery-slot validation (Phase 04 — delivery-slot-only checkout)', () => {
+  it('an inactive slot is rejected as not found, not silently accepted', async () => {
+    const { variant } = await seedOrderableProduct({ quantityOnHand: 10 });
+    const { pincode, slot } = await seedDeliverySetup({ isActive: false });
+    const token = await registerCustomerAndGetToken('inactive-slot@example.test');
+    const address = await createAddress(token, pincode);
+    await addToCart(token, variant.id, 1);
+
+    const res = await checkout(
+      token,
+      { address_id: address.id, delivery_slot_id: slot.id, service_date: '2026-12-01' },
+      'checkout-key-inactive-slot',
+    );
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(await prisma.order.count()).toBe(0);
+  });
+
+  it('a slot not offered on the selected service date is rejected', async () => {
+    const { variant } = await seedOrderableProduct({ quantityOnHand: 10 });
+    const serviceDate = '2026-12-01';
+    const excludedDay = isoWeekdayOf(serviceDate);
+    const { pincode, slot } = await seedDeliverySetup({
+      availableDays: [1, 2, 3, 4, 5, 6, 7].filter((d) => d !== excludedDay),
+    });
+    const token = await registerCustomerAndGetToken('day-mismatch@example.test');
+    const address = await createAddress(token, pincode);
+    await addToCart(token, variant.id, 1);
+
+    const res = await checkout(
+      token,
+      { address_id: address.id, delivery_slot_id: slot.id, service_date: serviceDate },
+      'checkout-key-day-mismatch',
+    );
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('SLOT_NOT_AVAILABLE_ON_DAY');
+    expect(await prisma.order.count()).toBe(0);
+  });
+
+  it('a slot already at capacity for the service date is rejected, protecting against overbooking', async () => {
+    const { variant } = await seedOrderableProduct({ quantityOnHand: 100 });
+    const serviceDate = '2026-12-01';
+    const { pincode, slot } = await seedDeliverySetup({ defaultCapacity: 1 });
+
+    const firstToken = await registerCustomerAndGetToken('capacity-first@example.test');
+    const firstAddress = await createAddress(firstToken, pincode);
+    await addToCart(firstToken, variant.id, 1);
+    const first = await checkout(
+      firstToken,
+      { address_id: firstAddress.id, delivery_slot_id: slot.id, service_date: serviceDate },
+      'checkout-key-capacity-1',
+    );
+    expect(first.status).toBe(201);
+
+    const secondToken = await registerCustomerAndGetToken('capacity-second@example.test');
+    const secondAddress = await createAddress(secondToken, pincode);
+    await addToCart(secondToken, variant.id, 1);
+    const second = await checkout(
+      secondToken,
+      { address_id: secondAddress.id, delivery_slot_id: slot.id, service_date: serviceDate },
+      'checkout-key-capacity-2',
+    );
+
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('SLOT_CAPACITY_EXCEEDED');
     expect(await prisma.order.count()).toBe(1);
   });
 });
