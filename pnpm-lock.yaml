@@ -203,6 +203,9 @@ importers:
       '@healthy-aahar/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@healthy-aahar/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@healthy-aahar/ui':
         specifier: workspace:*
         version: link:../../packages/ui
