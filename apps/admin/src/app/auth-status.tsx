@@ -63,6 +63,9 @@ export function AuthStatus() {
       <p className="text-body-sm text-sand-600">
         Signed in as <span className="text-sand-900 font-medium">{me.full_name}</span>
       </p>
+      <Button size="sm" variant="ghost" onClick={() => router.push('/change-password')}>
+        Change password
+      </Button>
       <Button
         size="sm"
         variant="ghost"

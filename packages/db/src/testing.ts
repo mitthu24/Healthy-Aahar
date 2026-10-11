@@ -261,6 +261,25 @@ export async function seedAdminUser(
     status?: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
     /** Simulates a pre-PHASE-03 row that has never completed password setup. */
     noPassword?: boolean;
+    /**
+     * Defaults to false: this helper represents a fully onboarded admin.
+     * Sets the EXPLICIT, persisted `must_change_password` column directly
+     * (Phase 04 follow-up — this is no longer inferred from
+     * `last_password_change_at`). Set true to simulate an admin handed a
+     * credential someone else chose/knows (e.g. straight out of the
+     * bootstrap flow), which the admin-auth middleware blocks from every
+     * route except auth/me, change-password and logout.
+     */
+    mustChangePassword?: boolean;
+    /**
+     * Overrides the informational `last_password_change_at` timestamp
+     * directly. Defaults to "now" for an admin with a password (`null` for
+     * `noPassword`). Exists so a test can simulate a real-world row whose
+     * password was set long ago and never changed since — `null` here must
+     * NOT by itself trigger the `mustChangePassword` gate; use that override
+     * for that.
+     */
+    lastPasswordChangeAt?: Date | null;
   } = {},
 ): Promise<{ id: string; userId: string; email: string; password: string }> {
   const userId = uuidv7();
@@ -285,6 +304,13 @@ export async function seedAdminUser(
       userId,
       fullName: overrides.fullName ?? 'Test Admin',
       isSuperAdmin: overrides.isSuperAdmin ?? false,
+      mustChangePassword: overrides.mustChangePassword ?? false,
+      lastPasswordChangeAt:
+        overrides.lastPasswordChangeAt !== undefined
+          ? overrides.lastPasswordChangeAt
+          : overrides.noPassword
+            ? null
+            : new Date(),
     },
   });
 

@@ -13,6 +13,17 @@ export type AdminActor = {
   adminUserId: string;
   permissions: ReadonlySet<string>;
   isSuperAdmin: boolean;
+  /** Mirrors the persisted `AdminUserRow.mustChangePassword` — the
+   *  admin-auth middleware uses this to block every admin route except
+   *  auth/me, change-password and logout. Explicit and false by default;
+   *  set true only for an admin handed a credential someone else chose or
+   *  knows (today: the first-admin bootstrap script), never by the normal
+   *  invite flow. NOT derived from `lastPasswordChangeAt` (that field is
+   *  historical/informational only — an earlier version of this gate
+   *  inferred `mustChangePassword` from it being null, which incorrectly
+   *  caught every normally-invited admin who simply never used the
+   *  separate "change password" feature; fixed by making this explicit). */
+  mustChangePassword: boolean;
 };
 
 export type AdminLoginParams = {
@@ -87,6 +98,7 @@ export class AdminAuthService {
         adminUserId: found.admin.id,
         permissions: new Set(effective.permissions),
         isSuperAdmin: effective.isSuperAdmin,
+        mustChangePassword: found.admin.mustChangePassword,
       },
     };
   }
@@ -128,6 +140,7 @@ export class AdminAuthService {
       adminUserId: found.admin.id,
       permissions: new Set(effective.permissions),
       isSuperAdmin: effective.isSuperAdmin,
+      mustChangePassword: found.admin.mustChangePassword,
     };
   }
 

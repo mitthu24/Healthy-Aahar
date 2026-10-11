@@ -13,9 +13,16 @@ export type AdminUserRow = {
   invitationAcceptedAt: Date | null;
   deletedAt: Date | null;
   roleKeys: string[];
-  /** Null means "never changed since the account was created/bootstrapped" — the
-   *  signal the login response uses to force a password change (Phase 04). */
+  /** Informational/historical only — NOT read by any authorization decision.
+   *  See `mustChangePassword` for the actual gate. */
   lastPasswordChangeAt: Date | null;
+  /** Explicit, persisted gate (Phase 04 follow-up): true only for an admin
+   *  handed a credential someone else chose/knows (today: the first-admin
+   *  bootstrap script's temporary password) — never set by the normal
+   *  invite flow, where the admin picks their own password at setup. The
+   *  admin-auth middleware blocks every route except auth/me, change-
+   *  password and logout while this is true. */
+  mustChangePassword: boolean;
 };
 
 export type EffectivePermissions = {

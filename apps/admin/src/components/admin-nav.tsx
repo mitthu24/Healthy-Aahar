@@ -14,7 +14,9 @@ const LINKS = [
 
 export function AdminNav() {
   const pathname = usePathname();
-  if (pathname === '/login' || pathname === '/change-password') return null;
+  if (pathname === '/login' || pathname === '/change-password' || pathname === '/password-setup') {
+    return null;
+  }
 
   return (
     <header className="bg-sand-0 border-sand-200 sticky top-0 z-20 border-b">

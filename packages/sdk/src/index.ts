@@ -241,8 +241,22 @@ export class ApiClient {
 
   // ── Admin: self-service password change (PHASE 04) ──────────────────────
 
-  adminChangePassword(body: { current_password: string; new_password: string }): Promise<AdminMe> {
+  adminChangePassword(body: {
+    current_password: string;
+    new_password: string;
+  }): Promise<{ changed: boolean }> {
     return this.request('/v1/admin/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // ── One-time password setup (invite/bootstrap token — audience-agnostic,
+  // docs/07 §5.1) — no session required, the token itself identifies the
+  // account. ─────────────────────────────────────────────────────────────
+
+  passwordSetup(body: { token: string; password: string }): Promise<{ ok: boolean }> {
+    return this.request('/v1/auth/password/setup', {
       method: 'POST',
       body: JSON.stringify(body),
     });

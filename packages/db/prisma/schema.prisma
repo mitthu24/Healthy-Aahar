@@ -513,6 +513,14 @@ model AdminUser {
   isSuperAdmin         Boolean   @default(false) @map("is_super_admin")
   mfaEnabled           Boolean   @default(false) @map("mfa_enabled")
   lastPasswordChangeAt DateTime? @map("last_password_change_at") @db.Timestamptz(6)
+  // Explicit, persisted gate — distinct from lastPasswordChangeAt, which is
+  // historical/informational only. Set true ONLY by a flow that hands an
+  // admin a credential someone else chose or knows (today: the first-admin
+  // bootstrap script's temporary password) — never by the normal invite
+  // flow, where the admin picks their own password during setup. Cleared
+  // atomically with lastPasswordChangeAt by changeOwnPassword, in the same
+  // single UPDATE.
+  mustChangePassword   Boolean   @default(false) @map("must_change_password")
   invitedBy            String?   @map("invited_by") @db.Uuid
   invitationAcceptedAt DateTime? @map("invitation_accepted_at") @db.Timestamptz(6)
   deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)

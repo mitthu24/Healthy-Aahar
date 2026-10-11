@@ -35,6 +35,7 @@ export type Actor =
       adminUserId: string;
       permissions: ReadonlySet<string>;
       isSuperAdmin: boolean;
+      mustChangePassword: boolean;
     }
   | { kind: 'SYSTEM'; jobName: string };
 
