@@ -1,0 +1,19 @@
+-- Replaces the admin-auth middleware's "must change password" signal, which
+-- was inferring it from `last_password_change_at IS NULL`. That derivation
+-- was too broad: every admin who ever completed the normal invite/setup-
+-- token flow and simply never clicked "Change password" since would also
+-- have `last_password_change_at = NULL`, so the gate would have locked them
+-- out of every admin route except auth/me, change-password and logout —
+-- not just the intended case (an admin created with a temporary password
+-- someone else chose or knows, e.g. the first-admin bootstrap script).
+--
+-- `must_change_password` is explicit and false by default: nothing sets it
+-- true except a flow that deliberately hands an admin a credential someone
+-- else is aware of. The normal invite flow (PrismaAdminRepository.invite())
+-- is unaffected — the admin chooses their own password at setup time, so no
+-- forced change is needed, and this column's default leaves it false there.
+--
+-- `last_password_change_at` is unchanged and keeps its existing meaning
+-- (an informational timestamp); it is no longer read by any authorization
+-- decision.
+ALTER TABLE "admin_users" ADD COLUMN "must_change_password" BOOLEAN NOT NULL DEFAULT false;

@@ -31,6 +31,7 @@ function toAdminUserRow(admin: {
   invitationAcceptedAt: Date | null;
   deletedAt: Date | null;
   lastPasswordChangeAt: Date | null;
+  mustChangePassword: boolean;
   user: { email: string | null };
   roles: { role: { key: string } }[];
 }): AdminUserRow {
@@ -46,6 +47,7 @@ function toAdminUserRow(admin: {
     invitationAcceptedAt: admin.invitationAcceptedAt,
     deletedAt: admin.deletedAt,
     lastPasswordChangeAt: admin.lastPasswordChangeAt,
+    mustChangePassword: admin.mustChangePassword,
     roleKeys: admin.roles.map((r) => r.role.key),
   };
 }
@@ -258,9 +260,13 @@ export class PrismaAdminRepository implements AdminRepository {
 
   async markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void> {
     void scope;
+    // Single UPDATE — `mustChangePassword` clears atomically with the
+    // timestamp, in the same statement as the password hash is set by the
+    // caller (AdminAuthService.changeOwnPassword), never as a separate step
+    // that could leave the gate set after a password has already changed.
     await this.prisma.adminUser.update({
       where: { id: adminUserId },
-      data: { lastPasswordChangeAt: now() },
+      data: { lastPasswordChangeAt: now(), mustChangePassword: false },
     });
   }
 }

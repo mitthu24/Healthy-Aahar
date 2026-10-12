@@ -143,6 +143,16 @@ describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
     });
     expect(invited.passwordHash).toBeNull();
 
+    // The normal invite flow must NEVER set must_change_password — that's
+    // reserved for a flow that hands the admin a credential someone else
+    // chose/knows (the first-admin bootstrap script's temporary password).
+    // An invited admin chooses their own password at setup time, so no
+    // forced re-change is needed (this is the MEDIUM-finding fix: the gate
+    // used to be inferred from lastPasswordChangeAt === null, which
+    // incorrectly caught every admin invited this way too).
+    const invitedAdmin = await prisma.adminUser.findUniqueOrThrow({ where: { id: body.id } });
+    expect(invitedAdmin.mustChangePassword).toBe(false);
+
     // Cannot log in before completing password setup.
     const tooSoon = await app.request('/v1/admin/auth/login', {
       method: 'POST',
@@ -166,6 +176,12 @@ describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
       password: 'a-brand-new-password-1',
     });
     expect(session.headers.Cookie).toBeTruthy();
+
+    // Not gated — reaches a protected route immediately, no forced
+    // change-password detour (unlike a bootstrap-created admin).
+    const me = await app.request('/v1/admin/auth/me', { headers: session.headers });
+    const meBody = (await me.json()) as { must_change_password: boolean };
+    expect(meBody.must_change_password).toBe(false);
   });
 
   it('a password-setup token cannot be reused once consumed', async () => {

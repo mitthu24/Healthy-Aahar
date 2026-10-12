@@ -105,7 +105,10 @@ async function toMeResponse(
     is_super_admin: actor.isSuperAdmin,
     permissions: [...actor.permissions],
     roles: profile?.roleKeys ?? [],
-    must_change_password: profile?.lastPasswordChangeAt === null,
+    // Same value the admin-auth middleware already gated this request on —
+    // read from the actor rather than re-derived from `profile`, so the two
+    // can never disagree.
+    must_change_password: actor.mustChangePassword,
   };
 }
 

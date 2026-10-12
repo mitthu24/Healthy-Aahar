@@ -11,6 +11,19 @@ const SESSION_COOKIE = '__Host-admin_session';
 const LOGIN_PATH = '/v1/admin/auth/login';
 
 /**
+ * Routes a password-change-required admin may still reach: reading their
+ * own identity, changing their own password, and signing out. Everything
+ * else is blocked until `mustChangePassword` clears (Phase 04 — previously
+ * this was only a frontend redirect; an admin calling the API directly
+ * could bypass it entirely).
+ */
+const ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED = new Set([
+  '/v1/admin/auth/me',
+  '/v1/admin/auth/change-password',
+  '/v1/admin/auth/logout',
+]);
+
+/**
  * Resolves the `__Host-admin_session` cookie to a real `Actor` (docs/07 §5,
  * §6). PHASE 03: the cookie value is an opaque, DB-backed session token —
  * this REPLACES the Firebase session-cookie verification (and, before that,
@@ -43,6 +56,13 @@ export const adminAuth = createMiddleware<AppBindings>(async (c, next) => {
 
   const scope = businessScope(c.env.businessId);
   const actor = await c.env.services.adminAuth.resolveActor(scope, userId);
+
+  if (actor.mustChangePassword && !ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED.has(c.req.path)) {
+    throw new DomainError(
+      'PASSWORD_CHANGE_REQUIRED',
+      'You must change your password before continuing.',
+    );
+  }
 
   c.set('actor', actor);
   await next();

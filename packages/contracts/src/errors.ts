@@ -42,6 +42,7 @@ export const ERROR_CODES = {
   EMAIL_ALREADY_REGISTERED: 409,
   WEAK_PASSWORD: 422,
   PASSWORD_SETUP_TOKEN_INVALID: 401,
+  PASSWORD_CHANGE_REQUIRED: 403,
 
   // ── Serviceability (PHASE 01) ───────────────────────────────────────────
   CITY_NOT_FOUND: 404,
