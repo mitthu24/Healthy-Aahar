@@ -12,6 +12,7 @@
     "test": "node ../../scripts/with-env.mjs vitest run",
     "test:watch": "vitest",
     "bootstrap:first-admin": "tsx src/scripts/bootstrap-first-admin.ts",
+    "recover:admin-password-setup": "tsx src/scripts/recover-admin-password-setup.ts",
     "clean": "rm -rf .turbo dist coverage"
   },
   "dependencies": {
