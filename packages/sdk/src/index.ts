@@ -81,6 +81,21 @@ export class ApiClient {
   private readonly getCsrfToken?: () => string | undefined;
   private readonly clientId: string;
   private readonly fetchImpl: typeof fetch;
+  /**
+   * The admin CSRF token, captured from the `X-CSRF-Token` response header
+   * the login route sends (and CORS already exposes). This is the ONLY
+   * reliable source when the admin app and API are on different origins:
+   * the `admin_csrf` cookie the header's value also gets written into is
+   * set by the API's own origin, and a browser never lets JS on a
+   * different origin read it via `document.cookie` — no `SameSite` or
+   * `Secure` setting changes that. The browser still ATTACHES the cookie
+   * to outgoing same-session requests on its own (that part only needed
+   * `SameSite=None`); this field supplies the matching header value the
+   * server's double-submit check compares it against. A caller-supplied
+   * `getCsrfToken` (e.g. reading a cookie that genuinely is same-origin)
+   * still takes priority when provided.
+   */
+  private csrfToken: string | undefined;
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -118,7 +133,7 @@ export class ApiClient {
 
     const method = (init.method ?? 'GET').toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') {
-      const csrfToken = this.getCsrfToken?.();
+      const csrfToken = this.getCsrfToken?.() ?? this.csrfToken;
       if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
     }
 
@@ -130,6 +145,12 @@ export class ApiClient {
       // between a Vercel-hosted app and the API's own domain.
       credentials: 'include',
     });
+
+    // Captured on every response that carries it (today: only the admin
+    // login route sets this header) — see the `csrfToken` field doc for
+    // why this, not a cookie read, is the real source of truth cross-origin.
+    const csrfHeader = res.headers.get('X-CSRF-Token');
+    if (csrfHeader) this.csrfToken = csrfHeader;
 
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
