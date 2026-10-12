@@ -145,6 +145,32 @@ describe('resolveRecoveryConfig', () => {
       expect(result.ok).toBe(false);
     });
   });
+
+  describe('--business-id', () => {
+    it('defaults to undefined when omitted', () => {
+      const result = resolveRecoveryConfig(VALID_ARGS, {});
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.config.businessId).toBeUndefined();
+    });
+
+    it('accepts an explicit --business-id', () => {
+      const result = resolveRecoveryConfig(
+        [...VALID_ARGS, '--business-id', '01930000-0000-7000-8000-000000000001'],
+        {},
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.config.businessId).toBe('01930000-0000-7000-8000-000000000001');
+    });
+
+    it('rejects an empty --business-id', () => {
+      const result = resolveRecoveryConfig([...VALID_ARGS, '--business-id', '   '], {});
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toMatch(/--business-id/);
+    });
+  });
 });
 
 describe('describeDatabaseTarget', () => {

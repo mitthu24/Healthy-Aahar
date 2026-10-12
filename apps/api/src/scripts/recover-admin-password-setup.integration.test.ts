@@ -188,4 +188,114 @@ describe('recoverAdminPasswordSetup — finds the existing Super Admin, never cr
     const result = await recoverAdminPasswordSetup(prisma, { email: 'admin@gmail.com' });
     expect(result).toEqual({ ok: false, reason: 'NO_BUSINESS' });
   });
+
+  describe('multiple businesses — must not silently guess the wrong tenant', () => {
+    it('refuses with AMBIGUOUS_BUSINESS when --business-id is omitted and more than one business exists', async () => {
+      const otherBusiness = await seedBusiness(prisma, {
+        slug: 'recover-it-other',
+        name: 'Other Business',
+      });
+      await seedRole(prisma, otherBusiness.id, {
+        key: 'SUPER_ADMIN',
+        name: 'Super Admin',
+        permissionKeys: ['roles:manage', 'admin_users:create'],
+      });
+      await seedAdminUser(prisma, businessId, {
+        email: 'admin@gmail.com',
+        isSuperAdmin: true,
+        fullName: 'Business One Admin',
+      });
+
+      const result = await recoverAdminPasswordSetup(prisma, { email: 'admin@gmail.com' });
+      expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_BUSINESS', businessCount: 2 });
+    });
+
+    it('refuses with BUSINESS_NOT_FOUND for an unknown --business-id, even with exactly one real business', async () => {
+      await seedAdminUser(prisma, businessId, {
+        email: 'admin@gmail.com',
+        isSuperAdmin: true,
+        fullName: 'Business One Admin',
+      });
+
+      const result = await recoverAdminPasswordSetup(prisma, {
+        email: 'admin@gmail.com',
+        businessId: '01930000-0000-7000-8000-00000000dead',
+      });
+      expect(result).toEqual({ ok: false, reason: 'BUSINESS_NOT_FOUND' });
+    });
+
+    it('with an explicit --business-id, recovers only the Super Admin scoped to THAT business — never the other one', async () => {
+      const otherBusiness = await seedBusiness(prisma, {
+        slug: 'recover-it-other-2',
+        name: 'Other Business',
+      });
+      await seedRole(prisma, otherBusiness.id, {
+        key: 'SUPER_ADMIN',
+        name: 'Super Admin',
+        permissionKeys: ['roles:manage', 'admin_users:create'],
+      });
+
+      // Same email reused on purpose would collide on the (email, user_type)
+      // unique constraint, so the two businesses' admins use different
+      // emails here — the point under test is that --business-id scopes
+      // countActiveSuperAdmins/findByUserId to ONE business, not that emails
+      // can collide across businesses.
+      const target = await seedAdminUser(prisma, businessId, {
+        email: 'admin@gmail.com',
+        isSuperAdmin: true,
+        fullName: 'Business One Admin',
+      });
+      await seedAdminUser(prisma, otherBusiness.id, {
+        email: 'other-business-admin@example.test',
+        isSuperAdmin: true,
+        fullName: 'Business Two Admin',
+      });
+
+      const result = await recoverAdminPasswordSetup(prisma, {
+        email: 'admin@gmail.com',
+        businessId,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const token = await prisma.passwordResetToken.findFirst({
+        where: { userId: target.userId, purpose: 'RESET' },
+      });
+      expect(token).not.toBeNull();
+
+      // Nothing was issued for the OTHER business's admin.
+      const otherAdmin = await prisma.adminUser.findFirst({
+        where: { businessId: otherBusiness.id },
+        select: { userId: true },
+      });
+      const otherToken = await prisma.passwordResetToken.findFirst({
+        where: { userId: otherAdmin!.userId },
+      });
+      expect(otherToken).toBeNull();
+    });
+
+    it('refuses rather than searching every business for a matching email when --business-id is omitted', async () => {
+      // Two businesses exist; only ONE has an admin matching the given
+      // email. Omitting --business-id must still refuse on the business
+      // count alone — it must never fall through to "search every
+      // business for a matching email" as an implicit scoping mechanism.
+      const otherBusiness = await seedBusiness(prisma, {
+        slug: 'recover-it-other-3',
+        name: 'Other Business',
+      });
+      await seedRole(prisma, otherBusiness.id, {
+        key: 'SUPER_ADMIN',
+        name: 'Super Admin',
+        permissionKeys: ['roles:manage', 'admin_users:create'],
+      });
+      await seedAdminUser(prisma, businessId, {
+        email: 'admin@gmail.com',
+        isSuperAdmin: true,
+        fullName: 'Business One Admin',
+      });
+
+      const result = await recoverAdminPasswordSetup(prisma, { email: 'admin@gmail.com' });
+      expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_BUSINESS', businessCount: 2 });
+    });
+  });
 });

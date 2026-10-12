@@ -19,6 +19,13 @@ const urlSchema = z.string().url();
 export type RecoveryConfig = {
   databaseUrl: string;
   email: string;
+  /**
+   * Optional — when omitted, the script itself refuses unless exactly one
+   * business row exists (see `recoverAdminPasswordSetup`'s `NO_BUSINESS`/
+   * `AMBIGUOUS_BUSINESS` results). Not validated as a UUID here: the
+   * database is the only authority on whether it refers to a real business.
+   */
+  businessId: string | undefined;
   continueUrl: string | undefined;
   /** True only if `--yes` was passed. Without it, the caller must dry-run only. */
   confirmed: boolean;
@@ -48,6 +55,7 @@ export function resolveRecoveryConfig(
   const PARSE_OPTIONS = {
     'database-url': { type: 'string' },
     email: { type: 'string' },
+    'business-id': { type: 'string' },
     'continue-url': { type: 'string' },
     yes: { type: 'boolean', default: false },
   } as const;
@@ -92,6 +100,15 @@ export function resolveRecoveryConfig(
     return { ok: false, error: '--email is required and must be a valid email address.' };
   }
 
+  let businessId: string | undefined;
+  if (values['business-id'] !== undefined) {
+    const trimmed = values['business-id'].trim();
+    if (trimmed.length === 0) {
+      return { ok: false, error: '--business-id, if given, must not be empty.' };
+    }
+    businessId = trimmed;
+  }
+
   let continueUrl: string | undefined;
   if (values['continue-url'] !== undefined) {
     const continueUrlResult = urlSchema.safeParse(values['continue-url']);
@@ -106,6 +123,7 @@ export function resolveRecoveryConfig(
     config: {
       databaseUrl,
       email: emailResult.data,
+      businessId,
       continueUrl,
       confirmed: values.yes === true,
     },
