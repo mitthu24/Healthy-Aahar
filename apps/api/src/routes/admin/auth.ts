@@ -24,10 +24,21 @@ const SESSION_COOKIE = '__Host-admin_session';
  *
  * Email + password is verified against `users.password_hash` (scrypt); a
  * successful login mints a DB-backed session (`sessions` table) and hands
- * the caller its raw token as an `HttpOnly`, `__Host-`, `SameSite=Strict`
+ * the caller its raw token as an `HttpOnly`, `__Host-`, `SameSite=None`
  * cookie, plus a readable CSRF token (docs/23 §6). This REPLACES the
  * Firebase ID-token exchange (and, before that, the PHASE 02
  * `ADMIN_DEV_TOKEN` bypass) entirely.
+ *
+ * `SameSite=None` (not `Strict`): the admin app and this API are deployed
+ * on unrelated base domains (e.g. a Vercel project vs a Railway service),
+ * so every request from the admin app to this API is cross-site from the
+ * browser's point of view. `SameSite=Strict` silently drops the cookie on
+ * every one of those requests — the cookie gets SET on login but is never
+ * SENT back, so the admin immediately appears unauthenticated again. CSRF
+ * risk from relaxing this is independently covered by the `X-CSRF-Token`
+ * double-submit cookie below, which `SameSite` was never the only defense
+ * for. `secure: true` (required for `None`, and already set) still blocks
+ * the cookie over plain HTTP.
  */
 
 registerRoute({
@@ -164,7 +175,7 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'Strict',
+      sameSite: 'None',
       path: '/',
       maxAge: maxAgeSeconds,
     });
@@ -173,7 +184,7 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     setCookie(c, CSRF_COOKIE, csrfToken, {
       httpOnly: false, // client JS must read this to echo it in the X-CSRF-Token header.
       secure: true,
-      sameSite: 'Strict',
+      sameSite: 'None',
       path: '/',
       maxAge: maxAgeSeconds,
     });
@@ -191,8 +202,8 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     // __Host- cookies require secure: true even on deletion — Hono's
     // serializer enforces the prefix's own rules, so an omitted `secure`
     // here throws rather than silently clearing the cookie (ADR-036).
-    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
-    deleteCookie(c, CSRF_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true, sameSite: 'None' });
+    deleteCookie(c, CSRF_COOKIE, { path: '/', secure: true, sameSite: 'None' });
     return c.json({ signed_out: true });
   });
 
@@ -218,8 +229,8 @@ export function adminAuthRoutes(): Hono<AppBindings> {
 
     // The session this request used was just revoked along with every
     // other one — clear the cookie rather than leaving a dead one behind.
-    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
-    deleteCookie(c, CSRF_COOKIE, { path: '/', secure: true, sameSite: 'Strict' });
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true, sameSite: 'None' });
+    deleteCookie(c, CSRF_COOKIE, { path: '/', secure: true, sameSite: 'None' });
 
     return c.json({ changed: true });
   });
