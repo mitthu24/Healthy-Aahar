@@ -149,7 +149,7 @@ describe('admin authorization (real RBAC)', () => {
   });
 
   it('rejects a mutating request with a missing or wrong CSRF token', async () => {
-    // SameSite=Strict is not trusted alone — the double-submit token is
+    // SameSite is not trusted alone — the double-submit token is
     // checked independently (docs/23 §6).
     const res = await app.request('/v1/admin/cities', {
       method: 'POST',
