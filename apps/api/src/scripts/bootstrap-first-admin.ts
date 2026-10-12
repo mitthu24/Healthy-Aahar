@@ -260,12 +260,11 @@ async function main(): Promise<void> {
       const messages: Record<(typeof result)['reason'], string> = {
         ADMIN_ALREADY_EXISTS:
           'Refusing: an admin account already exists for this business. This script only ' +
-          'ever creates the FIRST admin — use the admin panel\'s invite flow, or ' +
+          "ever creates the FIRST admin — use the admin panel's invite flow, or " +
           'POST /v1/admin/admin-users/{id}/reset-password, for every admin after that.',
         EMAIL_TAKEN: 'An account with this email already exists.',
         NO_BUSINESS: 'No business row found — run the main seed (pnpm db:seed) first.',
-        NO_SUPER_ADMIN_ROLE:
-          'SUPER_ADMIN role not found — run the main seed (pnpm db:seed) first.',
+        NO_SUPER_ADMIN_ROLE: 'SUPER_ADMIN role not found — run the main seed (pnpm db:seed) first.',
       };
       console.error(`[bootstrap-first-admin] ${messages[result.reason]}`);
       process.exitCode = 1;

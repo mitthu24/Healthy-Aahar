@@ -95,16 +95,12 @@ describe('bootstrapFirstAdmin — safe account/token creation', () => {
     // End to end: the token this script printed is a genuine, working
     // password-setup token through the real route logic.
     const { PasswordResetService } = await import('@healthy-aahar/core');
-    const { scryptPasswordHasher, sha256SessionTokenHasher } = await import(
-      '@healthy-aahar/auth'
-    );
+    const { scryptPasswordHasher, sha256SessionTokenHasher } = await import('@healthy-aahar/auth');
     const { PrismaUserRepository } = await import('../repositories/prisma-user-repository.js');
-    const { PrismaPasswordResetRepository } = await import(
-      '../repositories/prisma-password-reset-repository.js'
-    );
-    const { PrismaSessionRepository } = await import(
-      '../repositories/prisma-session-repository.js'
-    );
+    const { PrismaPasswordResetRepository } =
+      await import('../repositories/prisma-password-reset-repository.js');
+    const { PrismaSessionRepository } =
+      await import('../repositories/prisma-session-repository.js');
     const passwordReset = new PasswordResetService(
       new PrismaUserRepository(prisma),
       new PrismaPasswordResetRepository(prisma),
