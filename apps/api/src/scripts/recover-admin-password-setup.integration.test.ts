@@ -78,12 +78,10 @@ describe('recoverAdminPasswordSetup — finds the existing Super Admin, never cr
     const { PasswordResetService } = await import('@healthy-aahar/core');
     const { scryptPasswordHasher, sha256SessionTokenHasher } = await import('@healthy-aahar/auth');
     const { PrismaUserRepository } = await import('../repositories/prisma-user-repository.js');
-    const { PrismaPasswordResetRepository } = await import(
-      '../repositories/prisma-password-reset-repository.js'
-    );
-    const { PrismaSessionRepository } = await import(
-      '../repositories/prisma-session-repository.js'
-    );
+    const { PrismaPasswordResetRepository } =
+      await import('../repositories/prisma-password-reset-repository.js');
+    const { PrismaSessionRepository } =
+      await import('../repositories/prisma-session-repository.js');
     const passwordReset = new PasswordResetService(
       new PrismaUserRepository(prisma),
       new PrismaPasswordResetRepository(prisma),
