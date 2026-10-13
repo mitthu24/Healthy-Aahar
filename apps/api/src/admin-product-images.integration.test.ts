@@ -19,6 +19,21 @@ import { loginAsAdmin } from './test-support/admin-session.js';
 import type { AppBindings } from './types.js';
 
 /**
+ * Whether local MinIO (docker-compose.yml's `minio` service) is actually
+ * reachable in THIS run. Checked once at module load (not inside a
+ * `beforeAll`): `describe.skipIf` needs its condition at collection time,
+ * before any hook runs. The "authorization" suite below never touches
+ * storage over the network (presigning is pure HMAC, no I/O) and always
+ * runs; only the "full round trip against real object storage" suite,
+ * which does genuine PUT/GET calls, is skipped when storage is
+ * unreachable — reported as explicitly SKIPPED, not silently passing or
+ * failing, so a missing environment is never mistaken for a passing test.
+ */
+const MINIO_AVAILABLE = await fetch('http://localhost:9000/minio/health/live')
+  .then((res) => res.ok)
+  .catch(() => false);
+
+/**
  * API integration tests for the PHASE 05 device-upload flow, against a
  * REAL database AND real object storage — `docker-compose.yml`'s `minio`
  * service, the same S3-compatible surface standing in for Cloudflare R2
@@ -197,121 +212,124 @@ describe('product image upload (PHASE 05) — authorization', () => {
   });
 });
 
-describe('product image upload (PHASE 05) — full round trip against real object storage', () => {
-  it('uploads a real file, confirms it, and the product shows it; invalid files and storage errors are rejected along the way', async () => {
-    // Step 1: request the presigned URL.
-    const ticketRes = await app.request(`/v1/admin/products/${productId}/images/upload-url`, {
-      method: 'POST',
-      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content_type: 'image/png', display_order: 0 }),
-    });
-    expect(ticketRes.status).toBe(200);
-    const ticket = (await ticketRes.json()) as {
-      image_id: string;
-      upload_url: string;
-      max_bytes: number;
-    };
-    expect(ticket.image_id).toBeTruthy();
-    expect(ticket.upload_url).toMatch(/^http:\/\/localhost:9000\//);
-
-    // The image must not be visible on the product yet — it is PENDING.
-    const beforeConfirm = await app.request(`/v1/admin/products/${productId}`, {
-      headers: adminHeaders,
-    });
-    const beforeBody = (await beforeConfirm.json()) as { images: unknown[] };
-    expect(beforeBody.images).toHaveLength(0);
-
-    // Step 2: upload real bytes directly to MinIO, exactly as a browser would.
-    const putRes = await fetch(ticket.upload_url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'image/png' },
-      body: ONE_PIXEL_PNG,
-    });
-    expect(putRes.ok).toBe(true);
-
-    // Step 3: confirm.
-    const confirmRes = await app.request(
-      `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
-      { method: 'POST', headers: adminHeaders },
-    );
-    expect(confirmRes.status).toBe(200);
-    const confirmed = (await confirmRes.json()) as { images: Array<{ id: string; url: string }> };
-    expect(confirmed.images).toHaveLength(1);
-    expect(confirmed.images[0]!.id).toBe(ticket.image_id);
-
-    // The confirmed image is genuinely fetchable from the public URL.
-    const publicFetch = await fetch(confirmed.images[0]!.url);
-    expect(publicFetch.ok).toBe(true);
-
-    // It now also shows up on a fresh GET.
-    const afterConfirm = await app.request(`/v1/admin/products/${productId}`, {
-      headers: adminHeaders,
-    });
-    const afterBody = (await afterConfirm.json()) as { images: unknown[] };
-    expect(afterBody.images).toHaveLength(1);
-
-    // Removing it deletes the underlying object too.
-    const deleteRes = await app.request(
-      `/v1/admin/products/${productId}/images/${ticket.image_id}`,
-      { method: 'DELETE', headers: adminHeaders },
-    );
-    expect(deleteRes.status).toBe(200);
-    const afterDeleteFetch = await fetch(confirmed.images[0]!.url);
-    expect(afterDeleteFetch.ok).toBe(false);
-  }, 30_000);
-
-  it('refuses to confirm when nothing was actually uploaded to the presigned URL', async () => {
-    const ticketRes = await app.request(`/v1/admin/products/${productId}/images/upload-url`, {
-      method: 'POST',
-      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content_type: 'image/jpeg' }),
-    });
-    const ticket = (await ticketRes.json()) as { image_id: string };
-
-    // Deliberately skip the PUT step.
-    const confirmRes = await app.request(
-      `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
-      { method: 'POST', headers: adminHeaders },
-    );
-    expect(confirmRes.status).toBe(422);
-
-    const productRes = await app.request(`/v1/admin/products/${productId}`, {
-      headers: adminHeaders,
-    });
-    const body = (await productRes.json()) as { images: unknown[] };
-    expect(body.images).toHaveLength(0);
-  }, 30_000);
-
-  it('refuses to confirm a file larger than the configured limit', async () => {
-    const smallLimitApp = buildApp(testEnv({ R2_UPLOAD_MAX_BYTES: 100 }));
-    const writerRole = await seedRole(prisma, businessId, {
-      key: 'TEST_CATALOGUE_WRITER_SMALL_LIMIT',
-      permissionKeys: ['catalog:read', 'catalog:update'],
-    });
-    const writer = await seedAdminUser(prisma, businessId, { roleIds: [writerRole.id] });
-    const headers = (await loginAsAdmin(smallLimitApp, writer)).headers;
-
-    const ticketRes = await smallLimitApp.request(
-      `/v1/admin/products/${productId}/images/upload-url`,
-      {
+describe.skipIf(!MINIO_AVAILABLE)(
+  'product image upload (PHASE 05) — full round trip against real object storage',
+  () => {
+    it('uploads a real file, confirms it, and the product shows it; invalid files and storage errors are rejected along the way', async () => {
+      // Step 1: request the presigned URL.
+      const ticketRes = await app.request(`/v1/admin/products/${productId}/images/upload-url`, {
         method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content_type: 'image/png' }),
-      },
-    );
-    const ticket = (await ticketRes.json()) as { image_id: string; upload_url: string };
+        headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_type: 'image/png', display_order: 0 }),
+      });
+      expect(ticketRes.status).toBe(200);
+      const ticket = (await ticketRes.json()) as {
+        image_id: string;
+        upload_url: string;
+        max_bytes: number;
+      };
+      expect(ticket.image_id).toBeTruthy();
+      expect(ticket.upload_url).toMatch(/^http:\/\/localhost:9000\//);
 
-    const putRes = await fetch(ticket.upload_url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'image/png' },
-      body: ONE_PIXEL_PNG, // well over the 100-byte test limit
-    });
-    expect(putRes.ok).toBe(true); // storage itself has no opinion on the app's limit
+      // The image must not be visible on the product yet — it is PENDING.
+      const beforeConfirm = await app.request(`/v1/admin/products/${productId}`, {
+        headers: adminHeaders,
+      });
+      const beforeBody = (await beforeConfirm.json()) as { images: unknown[] };
+      expect(beforeBody.images).toHaveLength(0);
 
-    const confirmRes = await smallLimitApp.request(
-      `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
-      { method: 'POST', headers },
-    );
-    expect(confirmRes.status).toBe(422);
-  }, 30_000);
-});
+      // Step 2: upload real bytes directly to MinIO, exactly as a browser would.
+      const putRes = await fetch(ticket.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/png' },
+        body: ONE_PIXEL_PNG,
+      });
+      expect(putRes.ok).toBe(true);
+
+      // Step 3: confirm.
+      const confirmRes = await app.request(
+        `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
+        { method: 'POST', headers: adminHeaders },
+      );
+      expect(confirmRes.status).toBe(200);
+      const confirmed = (await confirmRes.json()) as { images: Array<{ id: string; url: string }> };
+      expect(confirmed.images).toHaveLength(1);
+      expect(confirmed.images[0]!.id).toBe(ticket.image_id);
+
+      // The confirmed image is genuinely fetchable from the public URL.
+      const publicFetch = await fetch(confirmed.images[0]!.url);
+      expect(publicFetch.ok).toBe(true);
+
+      // It now also shows up on a fresh GET.
+      const afterConfirm = await app.request(`/v1/admin/products/${productId}`, {
+        headers: adminHeaders,
+      });
+      const afterBody = (await afterConfirm.json()) as { images: unknown[] };
+      expect(afterBody.images).toHaveLength(1);
+
+      // Removing it deletes the underlying object too.
+      const deleteRes = await app.request(
+        `/v1/admin/products/${productId}/images/${ticket.image_id}`,
+        { method: 'DELETE', headers: adminHeaders },
+      );
+      expect(deleteRes.status).toBe(200);
+      const afterDeleteFetch = await fetch(confirmed.images[0]!.url);
+      expect(afterDeleteFetch.ok).toBe(false);
+    }, 30_000);
+
+    it('refuses to confirm when nothing was actually uploaded to the presigned URL', async () => {
+      const ticketRes = await app.request(`/v1/admin/products/${productId}/images/upload-url`, {
+        method: 'POST',
+        headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_type: 'image/jpeg' }),
+      });
+      const ticket = (await ticketRes.json()) as { image_id: string };
+
+      // Deliberately skip the PUT step.
+      const confirmRes = await app.request(
+        `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
+        { method: 'POST', headers: adminHeaders },
+      );
+      expect(confirmRes.status).toBe(422);
+
+      const productRes = await app.request(`/v1/admin/products/${productId}`, {
+        headers: adminHeaders,
+      });
+      const body = (await productRes.json()) as { images: unknown[] };
+      expect(body.images).toHaveLength(0);
+    }, 30_000);
+
+    it('refuses to confirm a file larger than the configured limit', async () => {
+      const smallLimitApp = buildApp(testEnv({ R2_UPLOAD_MAX_BYTES: 100 }));
+      const writerRole = await seedRole(prisma, businessId, {
+        key: 'TEST_CATALOGUE_WRITER_SMALL_LIMIT',
+        permissionKeys: ['catalog:read', 'catalog:update'],
+      });
+      const writer = await seedAdminUser(prisma, businessId, { roleIds: [writerRole.id] });
+      const headers = (await loginAsAdmin(smallLimitApp, writer)).headers;
+
+      const ticketRes = await smallLimitApp.request(
+        `/v1/admin/products/${productId}/images/upload-url`,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content_type: 'image/png' }),
+        },
+      );
+      const ticket = (await ticketRes.json()) as { image_id: string; upload_url: string };
+
+      const putRes = await fetch(ticket.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/png' },
+        body: ONE_PIXEL_PNG, // well over the 100-byte test limit
+      });
+      expect(putRes.ok).toBe(true); // storage itself has no opinion on the app's limit
+
+      const confirmRes = await smallLimitApp.request(
+        `/v1/admin/products/${productId}/images/${ticket.image_id}/confirm`,
+        { method: 'POST', headers },
+      );
+      expect(confirmRes.status).toBe(422);
+    }, 30_000);
+  },
+);
