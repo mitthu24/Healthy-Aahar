@@ -92,6 +92,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: healthyaahar
+          MINIO_ROOT_PASSWORD: healthyaahar_local
+          MINIO_DEFAULT_BUCKETS: healthy-aahar-media-local:download
+        ports: ['9000:9000']
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://healthy_aahar:healthy_aahar_ci@localhost:5432/healthy_aahar_ci?schema=public
       APP_ENV: local
@@ -107,28 +119,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
-
-      # Run directly via `docker run` rather than a `services:` entry — the
-      # official image's default CMD needs explicit `server /data` args,
-      # which GitHub Actions' `services:` block has no way to supply. Same
-      # image and bucket-creation logic as docker-compose.yml's local
-      # `minio` + `minio-init` services (PHASE 05).
-      - name: Start MinIO (object storage for product image upload tests)
-        run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=healthyaahar \
-            -e MINIO_ROOT_PASSWORD=healthyaahar_local \
-            quay.io/minio/minio:latest server /data
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9000/minio/health/live && break
-            sleep 1
-          done
-          docker run --rm --network host \
-            -e MC_HOST_local=http://healthyaahar:healthyaahar_local@localhost:9000 \
-            quay.io/minio/mc:latest mb --ignore-existing local/healthy-aahar-media-local
-          docker run --rm --network host \
-            -e MC_HOST_local=http://healthyaahar:healthyaahar_local@localhost:9000 \
-            quay.io/minio/mc:latest anonymous set download local/healthy-aahar-media-local
 
       # The integration suite provisions its own test database from these
       # migrations, so the base database only needs to exist.
