@@ -74,11 +74,6 @@ jobs:
     # Integration tests run against a REAL PostgreSQL. The invariants they
     # verify are CHECK constraints, partial unique indexes and triggers — a
     # mocked database proves nothing about any of them (ADR-028).
-    #
-    # MinIO mirrors docker-compose.yml's local `minio` service (PHASE 05) —
-    # the product-image-upload integration test exercises a REAL presigned
-    # PUT against it, the same S3-compatible surface Cloudflare R2 presents
-    # in production, rather than stubbing storage out.
     services:
       postgres:
         image: postgres:16-alpine
@@ -89,18 +84,6 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U healthy_aahar"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: healthyaahar
-          MINIO_ROOT_PASSWORD: healthyaahar_local
-          MINIO_DEFAULT_BUCKETS: healthy-aahar-media-local:download
-        ports: ['9000:9000']
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
