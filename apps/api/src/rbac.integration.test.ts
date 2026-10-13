@@ -592,6 +592,15 @@ describe('Phase 05 — employee details, reactivation, self-deactivation guard',
   });
 
   it('a Super Admin cannot deactivate their own account', async () => {
+    // If superAdminId were the only active Super Admin, this would ALSO be
+    // blocked by BR-SEC6 (LAST_SUPER_ADMIN), which would prove nothing about
+    // the self-deactivation guard specifically. A second super admin is
+    // seeded first so the 403 below can only be CANNOT_DEACTIVATE_SELF.
+    await seedAdminUser(prisma, businessId, {
+      isSuperAdmin: true,
+      fullName: 'Second Super For Self-Deactivation Test',
+    });
+
     const res = await app.request(`/v1/admin/admin-users/${superAdminId}/deactivate`, {
       method: 'POST',
       headers: superAdminHeaders,
