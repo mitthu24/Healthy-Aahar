@@ -33,6 +33,7 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   perm('orders:update', 'Edit internal notes, reassign slot'),
   perm('orders:cancel', 'Cancel an order'),
   perm('orders:refund', 'Initiate a refund'),
+  perm('orders:assign', 'Assign or reassign an order to a delivery partner'),
 
   perm('subscriptions:read', 'List and view subscriptions and deliveries'),
   perm(
@@ -65,6 +66,14 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   // now so a role can already be scoped for it ahead of that build.
   perm('delivery_partners:read', 'View delivery partner records and assignment status'),
   perm('delivery_partners:manage', 'Create, suspend and assign delivery partners'),
+  // The delivery PARTNER's own self-service surface (duty toggle, accepting
+  // and updating a delivery assigned to them) — distinct from
+  // delivery_partners:* above, which is the ADMIN managing partner accounts.
+  // Deliberately its own resource rather than reusing orders:update_status:
+  // a partner must only ever act on an order assigned to THEM (an ownership
+  // check in the service layer, not expressible as a permission key), and
+  // granting orders:update_status would let them touch any order.
+  perm('deliveries:fulfil', 'Accept, update and complete deliveries assigned to you'),
 
   perm('payments:read', 'View payment records'),
   perm('payments:collect', 'Mark COD as collected'),
@@ -158,6 +167,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'customers:suspend',
       'delivery:read',
       'delivery:manage',
+      'delivery_partners:read',
+      'delivery_partners:manage',
       'payments:read',
       'payments:collect',
       'admin_users:read',
@@ -183,6 +194,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'orders:update_status',
       'orders:update',
       'orders:cancel',
+      'orders:assign',
       'subscriptions:read',
       'subscriptions:update',
       'catalog:read',
@@ -192,6 +204,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'customers:read_pii',
       'delivery:read',
       'delivery:manage',
+      'delivery_partners:read',
+      'delivery_partners:manage',
       'payments:read',
       'payments:collect',
       'notifications:send',
@@ -259,5 +273,14 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'reviews:moderate',
       'promotions:read',
     ),
+  },
+  {
+    key: 'DELIVERY_PARTNER',
+    name: 'Delivery Partner',
+    description:
+      'Field delivery staff. Can only act on deliveries assigned to them (an ownership ' +
+      'check the service layer enforces — this permission alone grants no visibility ' +
+      'into any other order).',
+    permissions: expand('deliveries:fulfil'),
   },
 ] as const;

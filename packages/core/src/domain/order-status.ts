@@ -21,7 +21,7 @@ export type OrderStatusValue =
   | 'FAILED'
   | 'RETURNED';
 
-export type TransitionActor = 'CUSTOMER' | 'ADMIN' | 'SYSTEM';
+export type TransitionActor = 'CUSTOMER' | 'ADMIN' | 'SYSTEM' | 'DELIVERY_PARTNER';
 
 export type OrderTransition = {
   from: OrderStatusValue;
@@ -69,9 +69,13 @@ export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
     requiresReason: true,
   },
   {
+    // The partner accepting their assignment and starting the trip — a
+    // delivery partner may only trigger this on an order currently assigned
+    // to them (an ownership check the service layer makes; `canTransition`
+    // itself has no notion of "which order, whose assignment").
     from: 'READY_FOR_DISPATCH',
     to: 'OUT_FOR_DELIVERY',
-    actors: ['ADMIN'],
+    actors: ['ADMIN', 'DELIVERY_PARTNER'],
     permission: 'orders:update_status',
   },
   {
@@ -84,13 +88,13 @@ export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
   {
     from: 'OUT_FOR_DELIVERY',
     to: 'DELIVERED',
-    actors: ['ADMIN'],
+    actors: ['ADMIN', 'DELIVERY_PARTNER'],
     permission: 'orders:update_status',
   },
   {
     from: 'OUT_FOR_DELIVERY',
     to: 'FAILED',
-    actors: ['ADMIN'],
+    actors: ['ADMIN', 'DELIVERY_PARTNER'],
     permission: 'orders:update_status',
     requiresReason: true,
   },

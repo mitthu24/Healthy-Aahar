@@ -130,9 +130,17 @@ export function adminOrdersRoutes(): Hono<AppBindings> {
       limit: c.req.query('limit'),
       cursor: c.req.query('cursor'),
       status: c.req.query('status'),
+      assigned_partner_id: c.req.query('assigned_partner_id'),
+      unassigned: c.req.query('unassigned'),
     });
 
-    const page = await c.env.services.orderFulfilment.list(businessScope(c.env.businessId), query);
+    const page = await c.env.services.orderFulfilment.list(businessScope(c.env.businessId), {
+      limit: query.limit,
+      cursor: query.cursor,
+      status: query.status,
+      assignedPartnerId: query.assigned_partner_id,
+      unassigned: query.unassigned,
+    });
     return c.json(page);
   });
 

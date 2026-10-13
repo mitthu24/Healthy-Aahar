@@ -18,7 +18,13 @@ import type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliveryDashboardDto,
+  DeliveryOrderDto,
+  DeliveryOrderListResponse,
+  DeliveryPartnerDto,
+  DeliveryPartnerListResponse,
   DeliverySlotListResponse,
+  AssignmentHistoryEntryDto,
   OrderDto,
   OrderListResponse,
   PincodeListResponse,
@@ -406,8 +412,16 @@ export class ApiClient {
 
   // ── Admin: orders (PHASE 04) ─────────────────────────────────────────────
 
-  listAdminOrders(params: PageParams & { status?: string } = {}): Promise<AdminOrderListResponse> {
-    return this.request(`/v1/admin/orders${this.query(params)}`);
+  listAdminOrders(
+    params: PageParams & {
+      status?: string;
+      assigned_partner_id?: string;
+      unassigned?: boolean;
+    } = {},
+  ): Promise<AdminOrderListResponse> {
+    return this.request(
+      `/v1/admin/orders${this.query({ ...params, unassigned: params.unassigned === undefined ? undefined : String(params.unassigned) })}`,
+    );
   }
 
   getAdminOrder(id: string): Promise<AdminOrderDto> {
@@ -440,6 +454,99 @@ export class ApiClient {
 
   recordCodCollection(id: string, amountPaise: number): Promise<AdminOrderDto> {
     return this.request(`/v1/admin/orders/${id}/cod-collection`, {
+      method: 'POST',
+      body: JSON.stringify({ amount_paise: amountPaise }),
+    });
+  }
+
+  // ── Admin: delivery partners & order assignment (Phase 06) ──────────────
+
+  listDeliveryPartners(
+    params: { q?: string; duty_status?: 'ON_DUTY' | 'OFF_DUTY' } = {},
+  ): Promise<DeliveryPartnerListResponse> {
+    return this.request(`/v1/admin/delivery-partners${this.query(params)}`);
+  }
+
+  getDeliveryPartner(id: string): Promise<DeliveryPartnerDto> {
+    return this.request(`/v1/admin/delivery-partners/${id}`);
+  }
+
+  createDeliveryPartner(body: {
+    email: string;
+    full_name: string;
+    employee_code?: string;
+    vehicle_type?: string;
+    vehicle_number?: string;
+  }): Promise<DeliveryPartnerDto & { password_setup_link: string }> {
+    return this.request('/v1/admin/delivery-partners', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  suspendDeliveryPartner(id: string): Promise<DeliveryPartnerDto> {
+    return this.request(`/v1/admin/delivery-partners/${id}/suspend`, { method: 'POST' });
+  }
+
+  reactivateDeliveryPartner(id: string): Promise<DeliveryPartnerDto> {
+    return this.request(`/v1/admin/delivery-partners/${id}/reactivate`, { method: 'POST' });
+  }
+
+  assignOrder(
+    orderId: string,
+    body: { partner_admin_user_id: string; reason?: string },
+  ): Promise<AdminOrderDto> {
+    return this.request(`/v1/admin/orders/${orderId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  getOrderAssignmentHistory(orderId: string): Promise<{ data: AssignmentHistoryEntryDto[] }> {
+    return this.request(`/v1/admin/orders/${orderId}/assignment-history`);
+  }
+
+  // ── Delivery partner self-service (Phase 06) — same admin session, gated
+  // by the `deliveries:fulfil` permission rather than a separate audience.
+
+  deliveryMe(): Promise<DeliveryDashboardDto> {
+    return this.request('/v1/admin/delivery/me');
+  }
+
+  setDeliveryDutyStatus(dutyStatus: 'ON_DUTY' | 'OFF_DUTY'): Promise<DeliveryDashboardDto> {
+    return this.request('/v1/admin/delivery/duty', {
+      method: 'POST',
+      body: JSON.stringify({ duty_status: dutyStatus }),
+    });
+  }
+
+  listMyDeliveries(
+    params: PageParams & { status?: string } = {},
+  ): Promise<DeliveryOrderListResponse> {
+    return this.request(`/v1/admin/delivery/orders${this.query(params)}`);
+  }
+
+  getMyDelivery(id: string): Promise<DeliveryOrderDto> {
+    return this.request(`/v1/admin/delivery/orders/${id}`);
+  }
+
+  acceptDelivery(id: string): Promise<DeliveryOrderDto> {
+    return this.request(`/v1/admin/delivery/orders/${id}/accept`, { method: 'POST' });
+  }
+
+  markDeliveryDelivered(id: string): Promise<DeliveryOrderDto> {
+    return this.request(`/v1/admin/delivery/orders/${id}/delivered`, { method: 'POST' });
+  }
+
+  markDeliveryFailed(id: string, reason: string): Promise<DeliveryOrderDto> {
+    return this.request(`/v1/admin/delivery/orders/${id}/failed`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  recordDeliveryCodCollection(id: string, amountPaise: number): Promise<DeliveryOrderDto> {
+    return this.request(`/v1/admin/delivery/orders/${id}/cod-collection`, {
       method: 'POST',
       body: JSON.stringify({ amount_paise: amountPaise }),
     });
@@ -803,8 +910,14 @@ export type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DeliveryDashboardDto,
+  DeliveryOrderDto,
+  DeliveryOrderListResponse,
+  DeliveryPartnerDto,
+  DeliveryPartnerListResponse,
   DeliverySlotDto,
   DeliverySlotListResponse,
+  AssignmentHistoryEntryDto,
   OrderDto,
   OrderItemDto,
   OrderListResponse,

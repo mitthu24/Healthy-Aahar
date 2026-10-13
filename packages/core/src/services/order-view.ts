@@ -74,5 +74,8 @@ export function toAdminOrderView(order: OrderRow) {
     cancellation_reason: order.cancellationReason,
     placed_at: order.placedAt.toISOString(),
     updated_at: order.updatedAt.toISOString(),
+    assigned_partner_id: order.assignedPartnerId,
+    assigned_partner_name: order.assignedPartnerName,
+    assigned_at: order.assignedAt?.toISOString() ?? null,
   };
 }

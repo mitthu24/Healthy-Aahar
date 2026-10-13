@@ -27,12 +27,20 @@ export class OrderFulfilmentService {
 
   async list(
     scope: BusinessScope,
-    filter: { status?: OrderStatusValue; limit: number; cursor?: string },
+    filter: {
+      status?: OrderStatusValue;
+      assignedPartnerId?: string;
+      unassigned?: boolean;
+      limit: number;
+      cursor?: string;
+    },
   ) {
     const page = await this.orders.listForAdmin(scope, {
       limit: filter.limit + 1,
       cursor: filter.cursor ? decodeCursor(filter.cursor) : undefined,
       ...(filter.status ? { status: filter.status } : {}),
+      ...(filter.assignedPartnerId ? { assignedPartnerId: filter.assignedPartnerId } : {}),
+      ...(filter.unassigned ? { unassigned: filter.unassigned } : {}),
     });
 
     const built = buildPage(page.data, filter.limit, (row) => ({

@@ -61,8 +61,8 @@ describe('isKnownPermission', () => {
   });
 });
 
-describe('SYSTEM_ROLES (docs/08 §3)', () => {
-  it('defines exactly the seven MVP roles', () => {
+describe('SYSTEM_ROLES (docs/08 §3, +Phase 06 DELIVERY_PARTNER)', () => {
+  it('defines the seven MVP roles plus Phase 06 DELIVERY_PARTNER', () => {
     const keys = SYSTEM_ROLES.map((r) => r.key);
     expect(keys).toEqual([
       'SUPER_ADMIN',
@@ -72,6 +72,7 @@ describe('SYSTEM_ROLES (docs/08 §3)', () => {
       'ORDER_MANAGER',
       'CUSTOMER_SUPPORT',
       'CONTENT_MANAGER',
+      'DELIVERY_PARTNER',
     ]);
   });
 

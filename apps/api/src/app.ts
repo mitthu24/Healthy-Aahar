@@ -10,6 +10,9 @@ import {
   CheckoutService,
   CustomerAuthService,
   CustomerOrderService,
+  DeliveryFulfilmentService,
+  DeliveryPartnerService,
+  OrderAssignmentService,
   OrderFulfilmentService,
   PasswordResetService,
   RbacService,
@@ -53,6 +56,8 @@ import { PrismaCatalogueRepository } from './repositories/prisma-catalogue-repos
 import { PrismaCartRepository } from './repositories/prisma-cart-repository.js';
 import { PrismaCheckoutRepository } from './repositories/prisma-checkout-repository.js';
 import { PrismaOrderRepository } from './repositories/prisma-order-repository.js';
+import { PrismaDeliveryPartnerRepository } from './repositories/prisma-delivery-partner-repository.js';
+import { PrismaOrderAssignmentRepository } from './repositories/prisma-order-assignment-repository.js';
 import {
   PrismaAdminCategoryRepository,
   PrismaAdminProductRepository,
@@ -66,6 +71,9 @@ import { auditLogRoutes } from './routes/admin/audit-log.js';
 import { adminOrdersRoutes } from './routes/admin/orders.js';
 import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
 import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
+import { adminDeliveryPartnersRoutes } from './routes/admin/delivery-partners.js';
+import { adminOrderAssignmentRoutes } from './routes/admin/order-assignment.js';
+import { deliveryRoutes } from './routes/admin/delivery.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
@@ -140,6 +148,8 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     sha256SessionTokenHasher,
   );
 
+  const rbacService = new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo);
+
   const services = {
     serviceability: new ServiceabilityService({
       repository: new PrismaServiceabilityRepository(prisma),
@@ -162,7 +172,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       scryptPasswordHasher,
       sha256SessionTokenHasher,
     ),
-    rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
+    rbac: rbacService,
     auditLog: new AuditLogService(auditRepo),
     passwordReset,
     catalogue: new CatalogueService({ catalogue: new PrismaCatalogueRepository(prisma) }),
@@ -181,6 +191,24 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     }),
     adminDeliverySlots: new AdminDeliverySlotService({
       slots: new PrismaAdminDeliverySlotRepository(prisma),
+      audit: auditRepo,
+    }),
+    deliveryPartners: new DeliveryPartnerService({
+      partners: new PrismaDeliveryPartnerRepository(prisma),
+      roles: roleRepo,
+      rbac: rbacService,
+      audit: auditRepo,
+    }),
+    orderAssignment: new OrderAssignmentService({
+      orders: new PrismaOrderRepository(prisma),
+      assignments: new PrismaOrderAssignmentRepository(prisma),
+      partners: new PrismaDeliveryPartnerRepository(prisma),
+      audit: auditRepo,
+    }),
+    deliveryFulfilment: new DeliveryFulfilmentService({
+      orders: new PrismaOrderRepository(prisma),
+      assignments: new PrismaOrderAssignmentRepository(prisma),
+      partners: new PrismaDeliveryPartnerRepository(prisma),
       audit: auditRepo,
     }),
   };
@@ -322,8 +350,11 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin', rolesRoutes());
   app.route('/v1/admin/audit-log', auditLogRoutes());
   app.route('/v1/admin', adminOrdersRoutes());
+  app.route('/v1/admin', adminOrderAssignmentRoutes());
   app.route('/v1/admin', adminCatalogueRoutes());
   app.route('/v1/admin', adminDeliverySlotsRoutes());
+  app.route('/v1/admin/delivery-partners', adminDeliveryPartnersRoutes());
+  app.route('/v1/admin/delivery', deliveryRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.
