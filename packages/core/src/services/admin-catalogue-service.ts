@@ -398,14 +398,13 @@ export class AdminCatalogueService {
     }
 
     const stored = await this.storage.headObject(image.storageKey);
-    const failure =
-      !stored
-        ? 'nothing was uploaded to the expected location'
-        : !isAllowedImageType(stored.contentType ?? '')
-          ? `uploaded content type "${stored.contentType ?? 'unknown'}" is not an allowed image type`
-          : stored.sizeBytes > this.maxUploadBytes
-            ? `uploaded file (${stored.sizeBytes} bytes) exceeds the ${this.maxUploadBytes}-byte limit`
-            : undefined;
+    const failure = !stored
+      ? 'nothing was uploaded to the expected location'
+      : !isAllowedImageType(stored.contentType ?? '')
+        ? `uploaded content type "${stored.contentType ?? 'unknown'}" is not an allowed image type`
+        : stored.sizeBytes > this.maxUploadBytes
+          ? `uploaded file (${stored.sizeBytes} bytes) exceeds the ${this.maxUploadBytes}-byte limit`
+          : undefined;
 
     if (failure) {
       if (stored) await this.storage.delete(image.storageKey);

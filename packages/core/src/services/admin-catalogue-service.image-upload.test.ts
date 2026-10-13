@@ -48,7 +48,12 @@ function productRow(overrides: Partial<AdminProductRow> = {}): AdminProductRow {
   };
 }
 
-type ImageRecord = { id: string; storageKey: string; url: string; status: 'PENDING' | 'READY' | 'FAILED' };
+type ImageRecord = {
+  id: string;
+  storageKey: string;
+  url: string;
+  status: 'PENDING' | 'READY' | 'FAILED';
+};
 
 /** In-memory repository — same pattern as admin-delivery-slot-service.test.ts. */
 class FakeProductRepository implements AdminProductRepository {

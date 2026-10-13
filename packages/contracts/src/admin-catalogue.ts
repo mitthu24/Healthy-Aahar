@@ -152,7 +152,12 @@ export const addProductImageBodySchema = z.object({
 });
 export type AddProductImageBody = z.infer<typeof addProductImageBodySchema>;
 
-const ALLOWED_UPLOAD_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const;
+const ALLOWED_UPLOAD_CONTENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+] as const;
 
 /**
  * Device-upload workflow (PHASE 05) — the counterpart to

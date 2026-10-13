@@ -116,7 +116,9 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     accessKeyId: env.R2_ACCESS_KEY_ID ?? 'healthyaahar',
     secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? 'healthyaahar_local',
     bucket: env.R2_BUCKET_NAME,
-    endpoint: env.R2_ENDPOINT ?? (env.R2_ACCOUNT_ID ? resolveR2Endpoint(env.R2_ACCOUNT_ID) : 'http://localhost:9000'),
+    endpoint:
+      env.R2_ENDPOINT ??
+      (env.R2_ACCOUNT_ID ? resolveR2Endpoint(env.R2_ACCOUNT_ID) : 'http://localhost:9000'),
     publicBaseUrl: env.R2_PUBLIC_BASE_URL ?? `http://localhost:9000/${env.R2_BUCKET_NAME}`,
     presignTtlSeconds: env.R2_PRESIGN_TTL_SECONDS,
     maxBytes: env.R2_UPLOAD_MAX_BYTES,

@@ -58,8 +58,4 @@ export function isAllowedImageType(value: string): value is AllowedImageType {
   return (ALLOWED_IMAGE_TYPES as readonly string[]).includes(value);
 }
 
-export {
-  createR2StorageAdapter,
-  resolveR2Endpoint,
-  type R2AdapterConfig,
-} from './r2-adapter.js';
+export { createR2StorageAdapter, resolveR2Endpoint, type R2AdapterConfig } from './r2-adapter.js';

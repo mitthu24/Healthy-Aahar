@@ -453,10 +453,7 @@ function UploadImageForm({ productId, onAdded }: { productId: string; onAdded: (
           aria-valuemin={0}
           aria-valuemax={100}
         >
-          <div
-            className="h-full bg-green-600 transition-all"
-            style={{ width: `${progress}%` }}
-          />
+          <div className="h-full bg-green-600 transition-all" style={{ width: `${progress}%` }} />
         </div>
       ) : null}
 
@@ -590,7 +587,9 @@ export default function ProductDetailPage() {
           </div>
         </Card>
         <Card className="mt-3 p-4">
-          <h3 className="text-body-sm text-sand-900 font-medium">Or link an already-hosted image</h3>
+          <h3 className="text-body-sm text-sand-900 font-medium">
+            Or link an already-hosted image
+          </h3>
           <div className="mt-3">
             <AddImageForm productId={product.id} onAdded={() => void load()} />
           </div>

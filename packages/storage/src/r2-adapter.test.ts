@@ -49,7 +49,9 @@ describe('createR2StorageAdapter', () => {
   });
 
   it('builds the public URL by joining the configured base with the storage key', () => {
-    expect(adapter().publicUrl('products/x/y.png')).toBe('https://cdn.test/test-bucket/products/x/y.png');
+    expect(adapter().publicUrl('products/x/y.png')).toBe(
+      'https://cdn.test/test-bucket/products/x/y.png',
+    );
   });
 
   it('headObject returns size and content type for an object that exists', async () => {
