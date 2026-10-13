@@ -231,7 +231,12 @@ export default function EmployeeDetailPage() {
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" isLoading={isBusy} onClick={() => void onResetPassword()}>
+        <Button
+          size="sm"
+          variant="secondary"
+          isLoading={isBusy}
+          onClick={() => void onResetPassword()}
+        >
           Send password reset link
         </Button>
         <Button

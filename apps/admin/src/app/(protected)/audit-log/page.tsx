@@ -69,9 +69,7 @@ export default function AuditLogPage() {
           entries.map((entry) => (
             <Card key={entry.id} className="p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-body-sm text-sand-900 font-mono font-semibold">
-                  {entry.action}
-                </p>
+                <p className="text-body-sm text-sand-900 font-mono font-semibold">{entry.action}</p>
                 <p className="text-caption text-sand-500">
                   {new Date(entry.created_at).toLocaleString()}
                 </p>

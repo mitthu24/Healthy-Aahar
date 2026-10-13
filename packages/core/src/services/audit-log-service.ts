@@ -1,6 +1,10 @@
 import type { BusinessScope } from '../domain/business-scope.js';
 import { buildPage, normaliseLimit, type Page, type PageRequest } from '../domain/pagination.js';
-import type { AuditLogFilter, AuditLogRepository, AuditLogRow } from '../ports/audit-log-repository.js';
+import type {
+  AuditLogFilter,
+  AuditLogRepository,
+  AuditLogRow,
+} from '../ports/audit-log-repository.js';
 
 /**
  * Read path for the audit trail every other admin service already writes to

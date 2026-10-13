@@ -601,7 +601,7 @@ describe('Phase 05 — employee details, reactivation, self-deactivation guard',
     expect(body.error.code).toBe('CANNOT_DEACTIVATE_SELF');
   });
 
-  it('a role change revokes the target\'s existing sessions', async () => {
+  it("a role change revokes the target's existing sessions", async () => {
     const roleA = await seedRole(prisma, businessId, {
       key: 'ROLE_CHANGE_A',
       permissionKeys: ['catalog:read'],
@@ -728,10 +728,9 @@ describe('Phase 05 — audit log read path', () => {
     const auditAdmin = await seedAdminUser(prisma, businessId, { roleIds: [auditRole.id] });
     const auditHeaders = (await loginAsAdmin(app, auditAdmin)).headers;
 
-    const res = await app.request(
-      '/v1/admin/audit-log?action=admin_user.deactivated',
-      { headers: auditHeaders },
-    );
+    const res = await app.request('/v1/admin/audit-log?action=admin_user.deactivated', {
+      headers: auditHeaders,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: Array<{ action: string; resource_id: string | null }>;
@@ -742,7 +741,7 @@ describe('Phase 05 — audit log read path', () => {
     expect(body.data.some((e) => e.resource_id === target.id)).toBe(true);
   });
 
-  it('does not leak another business\'s audit entries', async () => {
+  it("does not leak another business's audit entries", async () => {
     const otherBusiness = await seedBusiness(prisma, {
       slug: 'rbac-it-other',
       name: 'Rival Foods',

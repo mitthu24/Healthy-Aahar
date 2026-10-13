@@ -56,8 +56,8 @@ export default function InviteEmployeePage() {
         <h1 className="font-display text-heading-lg text-sand-900">Employee invited</h1>
         <Card className="mt-5 p-5">
           <p className="text-body-sm text-sand-700">
-            Share this one-time setup link with <strong>{fullName}</strong> through a secure
-            channel (not a public one). It expires in 7 days and can only be used once.
+            Share this one-time setup link with <strong>{fullName}</strong> through a secure channel
+            (not a public one). It expires in 7 days and can only be used once.
           </p>
           <p className="border-sand-200 bg-sand-50 text-body-sm mt-4 break-all rounded-md border p-3 font-mono">
             {setupLink}
@@ -68,7 +68,7 @@ export default function InviteEmployeePage() {
           <div className="mt-5 flex gap-3">
             <a
               href="/employees"
-              className="bg-green-600 hover:bg-green-700 text-sand-0 inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors"
+              className="text-sand-0 inline-flex h-9 items-center justify-center rounded-md bg-green-600 px-4 text-sm font-medium transition-colors hover:bg-green-700"
             >
               Back to employees
             </a>

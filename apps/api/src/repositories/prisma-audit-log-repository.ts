@@ -41,10 +41,7 @@ export class PrismaAuditLogRepository implements AuditLogRepository {
       const { sortValue, id } = decodeCursor(page.cursor);
       const createdAt = new Date(sortValue);
       cursorFilter = {
-        OR: [
-          { createdAt: { lt: createdAt } },
-          { createdAt, id: { lt: id } },
-        ],
+        OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }],
       };
     }
 

@@ -280,13 +280,16 @@ export default function RolesPage() {
       ) : null}
 
       <div className="mt-6 space-y-3">
-        {roles === null || permissions === null ? (
-          Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)
-        ) : (
-          roles.map((role) => (
-            <RoleCard key={role.id} role={role} permissions={permissions} onChanged={() => void load()} />
-          ))
-        )}
+        {roles === null || permissions === null
+          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)
+          : roles.map((role) => (
+              <RoleCard
+                key={role.id}
+                role={role}
+                permissions={permissions}
+                onChanged={() => void load()}
+              />
+            ))}
       </div>
     </main>
   );

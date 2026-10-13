@@ -40,7 +40,7 @@ export default function EmployeesPage() {
         <h1 className="font-display text-heading-lg text-sand-900">Employees</h1>
         <Link
           href="/employees/new"
-          className="bg-green-600 hover:bg-green-700 active:bg-green-800 text-sand-0 inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors"
+          className="text-sand-0 inline-flex h-9 items-center justify-center rounded-md bg-green-600 px-4 text-sm font-medium transition-colors hover:bg-green-700 active:bg-green-800"
         >
           Invite employee
         </Link>
@@ -69,9 +69,7 @@ export default function EmployeesPage() {
               <Card className="flex items-center justify-between p-4 transition-colors hover:border-green-300">
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-body-sm text-sand-900 font-semibold">
-                      {employee.full_name}
-                    </p>
+                    <p className="text-body-sm text-sand-900 font-semibold">{employee.full_name}</p>
                     {employee.is_super_admin ? <Badge tone="success">Super Admin</Badge> : null}
                     {employee.deactivated ? <Badge tone="danger">Deactivated</Badge> : null}
                   </div>

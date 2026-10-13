@@ -13,7 +13,11 @@ import type {
   UpdateAdminDetailsInput,
 } from '../ports/admin-repository.js';
 import type { AuditEvent, AuditLogRepository } from '../ports/audit-log-repository.js';
-import type { CreateSessionInput, SessionRepository, SessionRow } from '../ports/session-repository.js';
+import type {
+  CreateSessionInput,
+  SessionRepository,
+  SessionRow,
+} from '../ports/session-repository.js';
 import type { PasswordResetService } from './password-reset-service.js';
 import { RbacService } from './rbac-service.js';
 
