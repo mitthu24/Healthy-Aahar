@@ -235,21 +235,12 @@ export class RbacService {
     scope: BusinessScope,
     params: { targetAdminUserId: string; actorAdminUserId: string; actorUserId: string },
   ): Promise<AdminUserRow> {
-    // An admin cannot deactivate their own account — the obvious way to
-    // defeat BR-SEC6's "at least one active Super Admin" guard would
-    // otherwise be for the LAST Super Admin to simply deactivate someone
-    // else down to a count the guard still permits, but a self-lockout (or
-    // a non-super-admin cutting off their own access) is its own failure
-    // mode worth refusing outright rather than relying on the count check
-    // alone to catch every path to it.
-    if (params.targetAdminUserId === params.actorAdminUserId) {
-      throw new DomainError('CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own account.');
-    }
-
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
 
-    // BR-SEC6, deactivation path.
+    // BR-SEC6, deactivation path. Checked before the self-deactivation guard
+    // below: the sole active Super Admin deactivating themselves must still
+    // surface as LAST_SUPER_ADMIN, matching the established contract.
     if (target.isSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
@@ -258,6 +249,15 @@ export class RbacService {
           'At least one active Super Admin must always exist.',
         );
       }
+    }
+
+    // An admin cannot deactivate their own account otherwise — the obvious
+    // way to defeat BR-SEC6's guard would be for a Super Admin (who isn't
+    // the last one) to simply deactivate someone else down to a count the
+    // guard still permits, but a self-lockout (or a non-super-admin cutting
+    // off their own access) is its own failure mode worth refusing outright.
+    if (params.targetAdminUserId === params.actorAdminUserId) {
+      throw new DomainError('CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own account.');
     }
 
     const updated = await this.admins.deactivate(scope, params.targetAdminUserId);
