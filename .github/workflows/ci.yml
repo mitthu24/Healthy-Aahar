@@ -118,17 +118,17 @@ jobs:
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=healthyaahar \
             -e MINIO_ROOT_PASSWORD=healthyaahar_local \
-            quay.io/minio/minio:latest server /data
+            minio/minio:latest server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 1
           done
           docker run --rm --network host \
             -e MC_HOST_local=http://healthyaahar:healthyaahar_local@localhost:9000 \
-            quay.io/minio/mc:latest mb --ignore-existing local/healthy-aahar-media-local
+            minio/mc:latest mb --ignore-existing local/healthy-aahar-media-local
           docker run --rm --network host \
             -e MC_HOST_local=http://healthyaahar:healthyaahar_local@localhost:9000 \
-            quay.io/minio/mc:latest anonymous set download local/healthy-aahar-media-local
+            minio/mc:latest anonymous set download local/healthy-aahar-media-local
 
       # The integration suite provisions its own test database from these
       # migrations, so the base database only needs to exist.
