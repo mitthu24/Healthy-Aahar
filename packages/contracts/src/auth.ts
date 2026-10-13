@@ -114,6 +114,7 @@ export const adminUserSchema = z.object({
   email: z.string().nullable(),
   full_name: z.string(),
   designation: z.string().nullable(),
+  department: z.string().nullable(),
   is_super_admin: z.boolean(),
   roles: z.array(z.string()),
   deactivated: z.boolean(),
@@ -123,9 +124,20 @@ export const inviteAdminBodySchema = z.object({
   email: z.string().trim().email(),
   full_name: z.string().trim().min(1).max(120),
   designation: z.string().trim().max(120).optional(),
+  department: z.string().trim().max(120).optional(),
   role_ids: z.array(uuidSchema).min(1),
   /** Base URL the API appends `?token=<raw>` to — the admin app's "set your password" page. */
   password_setup_continue_url: z.string().url().optional(),
+});
+
+export const updateAdminDetailsBodySchema = z.object({
+  full_name: z.string().trim().min(1).max(120).optional(),
+  designation: z.string().trim().max(120).optional(),
+  department: z.string().trim().max(120).optional(),
+});
+
+export const listAdminUsersQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
 });
 
 export const inviteAdminResponseSchema = adminUserSchema.extend({
@@ -192,8 +204,42 @@ export const updateRolePermissionsBodySchema = z.object({
 export const roleListResponseSchema = z.object({ data: z.array(roleSchema) });
 export const permissionListResponseSchema = z.object({ data: z.array(permissionSchema) });
 
+// ── Audit log (read path) ────────────────────────────────────────────────
+
+export const auditLogEntrySchema = z.object({
+  id: uuidSchema,
+  actor_user_id: uuidSchema.nullable(),
+  actor_type: z.enum(['ADMIN', 'SYSTEM']),
+  actor_email: z.string().nullable(),
+  action: z.string(),
+  resource_type: z.string(),
+  resource_id: z.string().nullable(),
+  metadata: z.record(z.unknown()).nullable(),
+  created_at: z.string(),
+});
+
+export const listAuditLogQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  actor_user_id: uuidSchema.optional(),
+  action: z.string().trim().max(100).optional(),
+  resource_type: z.string().trim().max(100).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
+export const auditLogListResponseSchema = z.object({
+  data: z.array(auditLogEntrySchema),
+  pagination: z.object({
+    limit: z.number(),
+    next_cursor: z.string().nullable(),
+    has_more: z.boolean(),
+  }),
+});
+
 export type CustomerSessionResponse = z.infer<typeof customerSessionResponseSchema>;
 export type AdminMe = z.infer<typeof adminMeSchema>;
 export type AdminUser = z.infer<typeof adminUserSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type Permission = z.infer<typeof permissionSchema>;
+export type AuditLogEntry = z.infer<typeof auditLogEntrySchema>;

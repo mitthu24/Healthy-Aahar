@@ -11,6 +11,8 @@ import type {
   AdminProductDto,
   AdminProductListResponse,
   AdminVariantDto,
+  AdminUser,
+  AuditLogEntry,
   CartDto,
   CategoryDto,
   CityListResponse,
@@ -22,6 +24,8 @@ import type {
   PincodeListResponse,
   ProductDetailDto,
   ProductListResponse,
+  Role,
+  Permission,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';
 
@@ -677,6 +681,105 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
   }
+
+  // ── Admin: staff / employees (Phase 05) ──────────────────────────────────
+
+  listAdminUsers(params: { q?: string } = {}): Promise<{ data: AdminUser[] }> {
+    return this.request(`/v1/admin/admin-users${this.query(params)}`);
+  }
+
+  getAdminUser(id: string): Promise<AdminUser> {
+    return this.request(`/v1/admin/admin-users/${id}`);
+  }
+
+  inviteAdminUser(body: {
+    email: string;
+    full_name: string;
+    designation?: string;
+    department?: string;
+    role_ids: string[];
+    password_setup_continue_url?: string;
+  }): Promise<AdminUser & { password_setup_link: string }> {
+    return this.request('/v1/admin/admin-users', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateAdminUser(
+    id: string,
+    body: { full_name?: string; designation?: string; department?: string },
+  ): Promise<AdminUser> {
+    return this.request(`/v1/admin/admin-users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  setAdminUserRoles(id: string, roleIds: string[]): Promise<AdminUser> {
+    return this.request(`/v1/admin/admin-users/${id}/roles`, {
+      method: 'POST',
+      body: JSON.stringify({ role_ids: roleIds }),
+    });
+  }
+
+  resetAdminUserPassword(
+    id: string,
+    body: { password_setup_continue_url?: string } = {},
+  ): Promise<{ password_setup_link: string }> {
+    return this.request(`/v1/admin/admin-users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  deactivateAdminUser(id: string): Promise<AdminUser> {
+    return this.request(`/v1/admin/admin-users/${id}/deactivate`, { method: 'POST' });
+  }
+
+  reactivateAdminUser(id: string): Promise<AdminUser> {
+    return this.request(`/v1/admin/admin-users/${id}/reactivate`, { method: 'POST' });
+  }
+
+  // ── Admin: roles & permissions (Phase 05) ────────────────────────────────
+
+  listRoles(): Promise<{ data: Role[] }> {
+    return this.request('/v1/admin/roles');
+  }
+
+  listPermissions(): Promise<{ data: Permission[] }> {
+    return this.request('/v1/admin/permissions');
+  }
+
+  createRole(body: {
+    key: string;
+    name: string;
+    description?: string;
+    permission_keys: string[];
+  }): Promise<Role> {
+    return this.request('/v1/admin/roles', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  updateRolePermissions(id: string, permissionKeys: string[]): Promise<Role> {
+    return this.request(`/v1/admin/roles/${id}/permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ permission_keys: permissionKeys }),
+    });
+  }
+
+  // ── Admin: audit log (Phase 05) ───────────────────────────────────────────
+
+  listAuditLog(
+    params: {
+      cursor?: string;
+      limit?: number;
+      actor_user_id?: string;
+      action?: string;
+      resource_type?: string;
+    } = {},
+  ): Promise<{
+    data: AuditLogEntry[];
+    pagination: { limit: number; next_cursor: string | null; has_more: boolean };
+  }> {
+    return this.request(`/v1/admin/audit-log${this.query(params)}`);
+  }
 }
 
 export type {
@@ -692,6 +795,8 @@ export type {
   AdminProductDto,
   AdminProductListResponse,
   AdminVariantDto,
+  AdminUser,
+  AuditLogEntry,
   CartDto,
   CartItemDto,
   CategoryDto,
@@ -703,10 +808,12 @@ export type {
   OrderDto,
   OrderItemDto,
   OrderListResponse,
+  Permission,
   PincodeListResponse,
   ProductDetailDto,
   ProductListResponse,
   ProductSummaryDto,
   ProductVariantDto,
+  Role,
   ServiceabilityResponse,
 } from '@healthy-aahar/contracts';

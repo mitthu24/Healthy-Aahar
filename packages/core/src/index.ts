@@ -34,9 +34,11 @@ export type {
 } from './ports/user-repository.js';
 export type {
   AdminUserRow,
+  AdminUserListFilter,
   EffectivePermissions,
   InviteAdminInput,
   InviteAdminResult,
+  UpdateAdminDetailsInput,
   AdminRepository,
   RoleRow,
   RoleRepository,
@@ -54,7 +56,12 @@ export type {
   CreatePasswordResetTokenInput,
   PasswordResetRepository,
 } from './ports/password-reset-repository.js';
-export type { AuditEvent, AuditLogRepository } from './ports/audit-log-repository.js';
+export type {
+  AuditEvent,
+  AuditLogRepository,
+  AuditLogRow,
+  AuditLogFilter,
+} from './ports/audit-log-repository.js';
 export type { AddressInput, AddressRow, AddressRepository } from './ports/address-repository.js';
 export type {
   CategoryRow,
@@ -124,6 +131,7 @@ export {
   type AdminLoginResult,
 } from './services/admin-auth-service.js';
 export { RbacService } from './services/rbac-service.js';
+export { AuditLogService } from './services/audit-log-service.js';
 export { PasswordResetService } from './services/password-reset-service.js';
 export { validateSession, type ValidatedSession } from './services/session-validation.js';
 export { AddressService, type AddressServiceDeps } from './services/address-service.js';

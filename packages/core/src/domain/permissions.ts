@@ -59,6 +59,12 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
 
   perm('delivery:read', 'View zones, slots, capacity, holidays'),
   perm('delivery:manage', 'Create and edit zones, slots, capacity overrides, holidays'),
+  // Distinct from delivery:* above (zones/slots/capacity) — these cover the
+  // delivery-partner PERSONNEL record itself. The partner module (accounts,
+  // assignment, duty status) is a later phase; these permission keys exist
+  // now so a role can already be scoped for it ahead of that build.
+  perm('delivery_partners:read', 'View delivery partner records and assignment status'),
+  perm('delivery_partners:manage', 'Create, suspend and assign delivery partners'),
 
   perm('payments:read', 'View payment records'),
   perm('payments:collect', 'Mark COD as collected'),

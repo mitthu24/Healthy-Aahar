@@ -8,6 +8,7 @@ export type AdminUserRow = {
   email: string | null;
   fullName: string;
   designation: string | null;
+  department: string | null;
   isSuperAdmin: boolean;
   invitedBy: string | null;
   invitationAcceptedAt: Date | null;
@@ -34,8 +35,20 @@ export type InviteAdminInput = {
   email: string;
   fullName: string;
   designation?: string | undefined;
+  department?: string | undefined;
   roleIds: string[];
   invitedByUserId: string;
+};
+
+export type UpdateAdminDetailsInput = {
+  fullName?: string | undefined;
+  designation?: string | undefined;
+  department?: string | undefined;
+};
+
+export type AdminUserListFilter = {
+  /** Case-insensitive substring match against full name or email. */
+  q?: string | undefined;
 };
 
 /**
@@ -55,7 +68,7 @@ export interface AdminRepository {
     userId: string,
   ): Promise<{ user: UserRow; admin: AdminUserRow } | null>;
   findById(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow | null>;
-  list(scope: BusinessScope): Promise<AdminUserRow[]>;
+  list(scope: BusinessScope, filter?: AdminUserListFilter): Promise<AdminUserRow[]>;
 
   /** Effective permissions = union across every role the admin holds. */
   loadEffectivePermissions(
@@ -82,6 +95,16 @@ export interface AdminRepository {
 
   /** Soft-deactivates the admin_user row and sets users.status = DEACTIVATED. */
   deactivate(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow>;
+
+  /** Reverses `deactivate`: clears `deleted_at` and sets users.status = ACTIVE. */
+  reactivate(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow>;
+
+  /** Updates own-record fields only — never roles or super-admin status (see `setRoles`). */
+  update(
+    scope: BusinessScope,
+    adminUserId: string,
+    input: UpdateAdminDetailsInput,
+  ): Promise<AdminUserRow>;
 
   /** Stamps `last_password_change_at`, clearing the "must change password" signal. */
   markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void>;

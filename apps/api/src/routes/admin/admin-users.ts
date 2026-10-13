@@ -5,9 +5,11 @@ import {
   idParamSchema,
   inviteAdminBodySchema,
   inviteAdminResponseSchema,
+  listAdminUsersQuerySchema,
   passwordSetupLinkResponseSchema,
   resetAdminPasswordBodySchema,
   setAdminRolesBodySchema,
+  updateAdminDetailsBodySchema,
 } from '@healthy-aahar/contracts';
 import { businessScope, DomainError, type AdminUserRow } from '@healthy-aahar/core';
 import { Hono } from 'hono';
@@ -28,11 +30,48 @@ registerRoute({
   path: '/v1/admin/admin-users',
   audience: 'admin',
   permission: 'admin_users:read',
-  summary: 'List staff accounts',
+  summary: 'List staff accounts (optionally filtered by name/email)',
   phase: '03',
   openapi: {
     tags: ['Admin: Staff'],
+    request: { query: listAdminUsersQuerySchema },
     responses: { 200: { description: 'Staff accounts', schema: adminUserListResponseSchema } },
+  },
+});
+
+registerRoute({
+  method: 'GET',
+  path: '/v1/admin/admin-users/{id}',
+  audience: 'admin',
+  permission: 'admin_users:read',
+  summary: 'Get a single staff account',
+  phase: '05',
+  errors: ['NOT_FOUND'],
+  openapi: {
+    tags: ['Admin: Staff'],
+    request: { params: idParamSchema },
+    responses: {
+      200: { description: 'Staff account', schema: adminUserSchema },
+      404: jsonError('Not found'),
+    },
+  },
+});
+
+registerRoute({
+  method: 'PATCH',
+  path: '/v1/admin/admin-users/{id}',
+  audience: 'admin',
+  permission: 'admin_users:update',
+  summary: "Update a staff member's name, designation, or department (never roles)",
+  phase: '05',
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
+  openapi: {
+    tags: ['Admin: Staff'],
+    request: { params: idParamSchema, body: updateAdminDetailsBodySchema },
+    responses: {
+      200: { description: 'Updated', schema: adminUserSchema },
+      404: jsonError('Not found'),
+    },
   },
 });
 
@@ -101,14 +140,34 @@ registerRoute({
   permission: 'admin_users:deactivate',
   summary: 'Deactivate a staff account (revokes every active session immediately)',
   phase: '03',
-  errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN'],
+  errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN', 'CANNOT_DEACTIVATE_SELF'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema },
     responses: {
       200: { description: 'Deactivated', schema: adminUserSchema },
+      403: jsonError('Cannot deactivate your own account'),
       404: jsonError('Not found'),
       409: jsonError('Would leave the business with no active Super Admin'),
+    },
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/admin-users/{id}/reactivate',
+  audience: 'admin',
+  permission: 'admin_users:deactivate',
+  summary: 'Reactivate a previously deactivated staff account',
+  phase: '05',
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
+  openapi: {
+    tags: ['Admin: Staff'],
+    request: { params: idParamSchema },
+    responses: {
+      200: { description: 'Reactivated', schema: adminUserSchema },
+      404: jsonError('Not found'),
+      422: jsonError('Account is already active'),
     },
   },
 });
@@ -120,6 +179,7 @@ function toResponse(row: AdminUserRow) {
     email: row.email,
     full_name: row.fullName,
     designation: row.designation,
+    department: row.department,
     is_super_admin: row.isSuperAdmin,
     roles: row.roleKeys,
     deactivated: row.deletedAt !== null,
@@ -130,9 +190,18 @@ export function adminUsersRoutes(): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
 
   app.get('/', async (c) => {
+    const query = listAdminUsersQuerySchema.parse(c.req.query());
     const scope = businessScope(c.env.businessId);
-    const rows = await c.env.services.rbac.admins.list(scope);
+    const rows = await c.env.services.rbac.admins.list(scope, { q: query.q });
     return c.json({ data: rows.map(toResponse) });
+  });
+
+  app.get('/:id', async (c) => {
+    const params = idParamSchema.parse({ id: c.req.param('id') });
+    const scope = businessScope(c.env.businessId);
+    const admin = await c.env.services.rbac.admins.findById(scope, params.id);
+    if (!admin) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    return c.json(toResponse(admin));
   });
 
   app.post('/', async (c) => {
@@ -145,6 +214,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
       email: body.email,
       fullName: body.full_name,
       designation: body.designation,
+      department: body.department,
       roleIds: body.role_ids,
       invitedByUserId: actor.userId,
       invitedByIsSuperAdmin: actor.isSuperAdmin,
@@ -152,6 +222,24 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     });
 
     return c.json({ ...toResponse(admin), password_setup_link: passwordResetLink }, 201);
+  });
+
+  app.patch('/:id', async (c) => {
+    const params = idParamSchema.parse({ id: c.req.param('id') });
+    const body = updateAdminDetailsBodySchema.parse(await c.req.json());
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    const scope = businessScope(c.env.businessId);
+    const updated = await c.env.services.rbac.updateDetails(scope, {
+      targetAdminUserId: params.id,
+      fullName: body.full_name,
+      designation: body.designation,
+      department: body.department,
+      actorUserId: actor.userId,
+    });
+
+    return c.json(toResponse(updated));
   });
 
   app.post('/:id/roles', async (c) => {
@@ -198,6 +286,21 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
 
     const updated = await c.env.services.rbac.deactivate(scope, {
+      targetAdminUserId: params.id,
+      actorAdminUserId: actor.adminUserId,
+      actorUserId: actor.userId,
+    });
+
+    return c.json(toResponse(updated));
+  });
+
+  app.post('/:id/reactivate', async (c) => {
+    const params = idParamSchema.parse({ id: c.req.param('id') });
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    const scope = businessScope(c.env.businessId);
+    const updated = await c.env.services.rbac.reactivate(scope, {
       targetAdminUserId: params.id,
       actorUserId: actor.userId,
     });
