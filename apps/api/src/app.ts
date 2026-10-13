@@ -23,6 +23,7 @@ import {
 } from '@healthy-aahar/auth';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
+import { createR2StorageAdapter, resolveR2Endpoint } from '@healthy-aahar/storage';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
@@ -107,6 +108,22 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   const sessionRepo = new PrismaSessionRepository(prisma);
   const passwordResetRepo = new PrismaPasswordResetRepository(prisma);
 
+  // Falls back to MinIO's local, non-production credentials when the real
+  // R2 ones aren't set — exactly the same fallback shape `.env.example`
+  // documents, and refused outright in production by the env schema's own
+  // `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_ENDPOINT` checks.
+  const productImageStorage = createR2StorageAdapter({
+    accessKeyId: env.R2_ACCESS_KEY_ID ?? 'healthyaahar',
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? 'healthyaahar_local',
+    bucket: env.R2_BUCKET_NAME,
+    endpoint:
+      env.R2_ENDPOINT ??
+      (env.R2_ACCOUNT_ID ? resolveR2Endpoint(env.R2_ACCOUNT_ID) : 'http://localhost:9000'),
+    publicBaseUrl: env.R2_PUBLIC_BASE_URL ?? `http://localhost:9000/${env.R2_BUCKET_NAME}`,
+    presignTtlSeconds: env.R2_PRESIGN_TTL_SECONDS,
+    maxBytes: env.R2_UPLOAD_MAX_BYTES,
+  });
+
   const permissionCache = new PermissionCache();
   void permissionCache; // Reserved for a future cached AdminRepository decorator; resolveActor already re-queries per request, which is correct but not yet cache-backed (see PHASE-03 report §"Known limitations").
 
@@ -156,6 +173,8 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       products: new PrismaAdminProductRepository(prisma),
       variants: new PrismaAdminVariantRepository(prisma),
       audit: auditRepo,
+      storage: productImageStorage,
+      maxUploadBytes: env.R2_UPLOAD_MAX_BYTES,
     }),
     adminDeliverySlots: new AdminDeliverySlotService({
       slots: new PrismaAdminDeliverySlotRepository(prisma),

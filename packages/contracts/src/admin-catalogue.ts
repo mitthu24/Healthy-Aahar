@@ -128,12 +128,13 @@ export const adminProductImageSchema = z.object({
 export type AdminProductImageDto = z.infer<typeof adminProductImageSchema>;
 
 /**
- * Direct-URL image workflow (Phase 04B) — packages/storage has only a
- * presign PORT today; the R2 adapter is PHASE 05 (see that package's own
- * doc comment). Until it exists, an admin supplies an already-hosted image
- * URL rather than this API inventing an upload pipeline or storing bytes
- * itself. Validated as a well-formed https URL with a recognised image
- * extension — the strongest check possible without fetching the bytes.
+ * Direct-URL image workflow (Phase 04B) — kept alongside the PHASE 05
+ * device-upload flow (`requestProductImageUploadBodySchema` below) as a
+ * separate, backward-compatible path for an admin who already has an
+ * image hosted elsewhere and just wants to link it, without re-uploading
+ * through this API. Validated as a well-formed https URL with a
+ * recognised image extension — the strongest check possible without
+ * fetching the bytes.
  */
 export const addProductImageBodySchema = z.object({
   url: z
@@ -150,6 +151,34 @@ export const addProductImageBodySchema = z.object({
   display_order: z.number().int().min(0).default(0),
 });
 export type AddProductImageBody = z.infer<typeof addProductImageBodySchema>;
+
+const ALLOWED_UPLOAD_CONTENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+] as const;
+
+/**
+ * Device-upload workflow (PHASE 05) — the counterpart to
+ * `addProductImageBodySchema`'s "already-hosted URL" path. The client
+ * never chooses where the object lands or what content-type it claims
+ * beyond this allow-list; the server mints a presigned URL scoped to
+ * exactly the content type given here.
+ */
+export const requestProductImageUploadBodySchema = z.object({
+  content_type: z.enum(ALLOWED_UPLOAD_CONTENT_TYPES),
+  display_order: z.number().int().min(0).default(0),
+});
+export type RequestProductImageUploadBody = z.infer<typeof requestProductImageUploadBodySchema>;
+
+export const productImageUploadTicketSchema = z.object({
+  image_id: uuidSchema,
+  upload_url: z.string(),
+  expires_at: z.string().datetime(),
+  max_bytes: z.number().int(),
+});
+export type ProductImageUploadTicket = z.infer<typeof productImageUploadTicketSchema>;
 
 // ── Products ─────────────────────────────────────────────────────────────
 

@@ -1,3 +1,5 @@
+import { isAllowedImageType, type StoragePort } from '@healthy-aahar/storage';
+
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
 import { buildPage, decodeCursor } from '../domain/pagination.js';
@@ -19,6 +21,15 @@ export type AdminCatalogueServiceDeps = {
   products: AdminProductRepository;
   variants: AdminVariantRepository;
   audit: AuditLogRepository;
+  storage: StoragePort;
+  maxUploadBytes: number;
+};
+
+const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
 };
 
 /**
@@ -36,12 +47,23 @@ export class AdminCatalogueService {
   private readonly products: AdminProductRepository;
   private readonly variants: AdminVariantRepository;
   private readonly audit: AuditLogRepository;
+  private readonly storage: StoragePort;
+  private readonly maxUploadBytes: number;
 
-  constructor({ categories, products, variants, audit }: AdminCatalogueServiceDeps) {
+  constructor({
+    categories,
+    products,
+    variants,
+    audit,
+    storage,
+    maxUploadBytes,
+  }: AdminCatalogueServiceDeps) {
     this.categories = categories;
     this.products = products;
     this.variants = variants;
     this.audit = audit;
+    this.storage = storage;
+    this.maxUploadBytes = maxUploadBytes;
   }
 
   // ── Categories ───────────────────────────────────────────────────────
@@ -268,12 +290,134 @@ export class AdminCatalogueService {
     actorUserId: string,
   ) {
     await this.getProduct(scope, productId);
+    // Look up BEFORE deleting the row — need the storageKey to also clean
+    // up the object store, and `removeImage` itself returns the product
+    // view, not the deleted row.
+    const existing = await this.products.findImage(scope, productId, imageId);
     const updated = await this.products.removeImage(scope, productId, imageId);
+
+    // A pasted-URL image (addProductImage) stores the URL itself as the
+    // "storage key" — nothing for this service to own or delete from an
+    // object store. Only a real device-uploaded image's key is ours to
+    // delete; `addImage`'s own write always sets the key to an
+    // `https://...` URL, while `createPendingImage` always sets it to a
+    // server-generated path (never starting with a scheme) — the two paths'
+    // own invariants make this check exact, not a heuristic.
+    if (existing && !existing.storageKey.startsWith('http')) {
+      await this.storage.delete(existing.storageKey);
+    }
 
     await this.audit.write(scope, {
       actorUserId,
       actorType: 'ADMIN',
       action: 'product.image_removed',
+      resourceType: 'product',
+      resourceId: productId,
+      metadata: { imageId },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Step 1 of the device-upload flow (PHASE 05): creates a PENDING image
+   * row against a server-generated storage key and returns a short-lived
+   * presigned PUT URL. The caller (the admin app) uploads the file bytes
+   * directly to that URL — this service and the API never see the bytes.
+   */
+  async requestProductImageUpload(
+    scope: BusinessScope,
+    productId: string,
+    input: { contentType: string; displayOrder: number },
+    actorUserId: string,
+  ) {
+    await this.getProduct(scope, productId);
+
+    if (!isAllowedImageType(input.contentType)) {
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        `Unsupported image type "${input.contentType}". Allowed: image/jpeg, image/png, image/webp, image/avif.`,
+      );
+    }
+    const extension = EXTENSION_BY_CONTENT_TYPE[input.contentType]!;
+
+    const presigned = await this.storage.presignUpload({
+      prefix: `products/${productId}`,
+      contentType: input.contentType,
+      extension,
+    });
+
+    const { id: imageId } = await this.products.createPendingImage(scope, productId, {
+      storageKey: presigned.storageKey,
+      url: this.storage.publicUrl(presigned.storageKey),
+      displayOrder: input.displayOrder,
+    });
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'product.image_upload_requested',
+      resourceType: 'product',
+      resourceId: productId,
+      metadata: { imageId, storageKey: presigned.storageKey },
+    });
+
+    return {
+      imageId,
+      uploadUrl: presigned.uploadUrl,
+      expiresAt: presigned.expiresAt,
+      maxBytes: this.maxUploadBytes,
+    };
+  }
+
+  /**
+   * Step 2: the admin app calls this once its direct upload to R2/MinIO
+   * finishes. Independently re-verifies what actually landed in storage —
+   * never trusts the client's say-so that the upload succeeded or was the
+   * right size — before marking the image READY (visible on the product).
+   * On any failure, the PENDING row and (if present) the stored object are
+   * both cleaned up rather than left behind as orphaned/broken state.
+   */
+  async confirmProductImageUpload(
+    scope: BusinessScope,
+    productId: string,
+    imageId: string,
+    actorUserId: string,
+  ) {
+    await this.getProduct(scope, productId);
+
+    const image = await this.products.findImage(scope, productId, imageId);
+    if (!image) {
+      throw new DomainError('IMAGE_NOT_FOUND', 'Image not found for this product.');
+    }
+    if (image.status !== 'PENDING') {
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        `This image has already been ${image.status === 'READY' ? 'confirmed' : 'rejected'}.`,
+      );
+    }
+
+    const stored = await this.storage.headObject(image.storageKey);
+    const failure = !stored
+      ? 'nothing was uploaded to the expected location'
+      : !isAllowedImageType(stored.contentType ?? '')
+        ? `uploaded content type "${stored.contentType ?? 'unknown'}" is not an allowed image type`
+        : stored.sizeBytes > this.maxUploadBytes
+          ? `uploaded file (${stored.sizeBytes} bytes) exceeds the ${this.maxUploadBytes}-byte limit`
+          : undefined;
+
+    if (failure) {
+      if (stored) await this.storage.delete(image.storageKey);
+      await this.products.removeImage(scope, productId, imageId);
+      throw new DomainError('VALIDATION_FAILED', `Upload could not be confirmed: ${failure}.`);
+    }
+
+    const updated = await this.products.confirmImage(scope, productId, imageId, {});
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'product.image_upload_confirmed',
       resourceType: 'product',
       resourceId: productId,
       metadata: { imageId },

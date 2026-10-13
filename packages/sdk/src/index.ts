@@ -553,6 +553,29 @@ export class ApiClient {
     return this.request(`/v1/admin/products/${id}/images/${imageId}`, { method: 'DELETE' });
   }
 
+  /**
+   * Step 1 of the device-upload flow: returns a short-lived presigned PUT
+   * URL. The caller uploads the file bytes directly to `upload_url` (a
+   * plain `fetch(upload_url, { method: 'PUT', body: file, headers: {
+   * 'Content-Type': file.type } })`, NOT through this SDK/API — object
+   * storage credentials never touch this server), then calls
+   * `confirmProductImageUpload`.
+   */
+  requestProductImageUpload(
+    id: string,
+    body: { content_type: string; display_order?: number },
+  ): Promise<{ image_id: string; upload_url: string; expires_at: string; max_bytes: number }> {
+    return this.request(`/v1/admin/products/${id}/images/upload-url`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Step 2: call once the direct upload to `upload_url` finishes (2xx response). */
+  confirmProductImageUpload(id: string, imageId: string): Promise<AdminProductDto> {
+    return this.request(`/v1/admin/products/${id}/images/${imageId}/confirm`, { method: 'POST' });
+  }
+
   createVariant(
     productId: string,
     body: {

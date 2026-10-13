@@ -14,9 +14,12 @@ import {
 } from '@healthy-aahar/ui';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 
 import { apiClient } from '@/lib/api-client';
+import { uploadWithProgress } from '@/lib/upload-with-progress';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
 
 function statusTone(status: string): BadgeTone {
   switch (status) {
@@ -305,6 +308,160 @@ function AddImageForm({ productId, onAdded }: { productId: string; onAdded: () =
   );
 }
 
+/**
+ * Device-upload counterpart to `AddImageForm` (PHASE 05). Selects a file
+ * (click-to-browse or drag-and-drop), shows a preview before anything
+ * uploads, then: request a presigned URL -> PUT the file directly to
+ * object storage (with progress) -> confirm. The product's image list
+ * only updates once confirm succeeds — a failed or abandoned upload never
+ * leaves a broken image visible.
+ */
+function UploadImageForm({ productId, onAdded }: { productId: string; onAdded: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function selectFile(candidate: File | null) {
+    setError(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+
+    if (!candidate) {
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    if (!ALLOWED_IMAGE_TYPES.includes(candidate.type)) {
+      setError('Unsupported file type. Use JPEG, PNG, WebP, or AVIF.');
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    setFile(candidate);
+    setPreviewUrl(URL.createObjectURL(candidate));
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    selectFile(event.dataTransfer.files[0] ?? null);
+  }
+
+  async function upload() {
+    if (!file) return;
+    setError(null);
+    setIsUploading(true);
+    setProgress(0);
+    try {
+      const ticket = await apiClient.requestProductImageUpload(productId, {
+        content_type: file.type,
+      });
+      if (file.size > ticket.max_bytes) {
+        throw new Error(
+          `This file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ` +
+            `${(ticket.max_bytes / 1024 / 1024).toFixed(1)} MB.`,
+        );
+      }
+
+      await uploadWithProgress(ticket.upload_url, file, setProgress);
+      await apiClient.confirmProductImageUpload(productId, ticket.image_id);
+
+      selectFile(null);
+      onAdded();
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Upload failed. Please try again.',
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={onDrop}
+        className={`flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 ${
+          isDragging ? 'border-green-500 bg-green-50' : 'border-sand-200 bg-sand-0'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ALLOWED_IMAGE_TYPES.join(',')}
+          className="sr-only"
+          onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+        />
+        {previewUrl ? (
+          <div className="relative h-24 w-24 overflow-hidden rounded-md">
+            {/* Local blob preview — next/image can't optimize a blob: URL. */}
+            <img src={previewUrl} alt="Selected preview" className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <>
+            <p className="text-body-sm text-sand-700">
+              Drag an image here, or <span className="font-medium text-green-700">browse</span>
+            </p>
+            <p className="text-caption text-sand-400">JPEG, PNG, WebP, or AVIF</p>
+          </>
+        )}
+      </div>
+
+      {file ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-caption text-sand-600 min-w-0 flex-1 truncate">
+            {file.name} ({(file.size / 1024).toFixed(0)} KB)
+          </p>
+          <Button type="button" size="sm" isLoading={isUploading} onClick={() => void upload()}>
+            Upload
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={isUploading}
+            onClick={() => selectFile(null)}
+          >
+            Remove
+          </Button>
+        </div>
+      ) : null}
+
+      {isUploading ? (
+        <div
+          className="bg-sand-100 h-1.5 w-full overflow-hidden rounded-full"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div className="h-full bg-green-600 transition-all" style={{ width: `${progress}%` }} />
+        </div>
+      ) : null}
+
+      {error ? <p className="text-caption text-danger-600">{error}</p> : null}
+    </div>
+  );
+}
+
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<AdminProductDto | null>(null);
@@ -424,7 +581,18 @@ export default function ProductDetailPage() {
           ))}
         </div>
         <Card className="mt-3 p-4">
-          <AddImageForm productId={product.id} onAdded={() => void load()} />
+          <h3 className="text-body-sm text-sand-900 font-medium">Upload from device</h3>
+          <div className="mt-3">
+            <UploadImageForm productId={product.id} onAdded={() => void load()} />
+          </div>
+        </Card>
+        <Card className="mt-3 p-4">
+          <h3 className="text-body-sm text-sand-900 font-medium">
+            Or link an already-hosted image
+          </h3>
+          <div className="mt-3">
+            <AddImageForm productId={product.id} onAdded={() => void load()} />
+          </div>
         </Card>
       </section>
 

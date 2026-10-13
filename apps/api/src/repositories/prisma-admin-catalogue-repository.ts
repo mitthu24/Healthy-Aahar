@@ -80,7 +80,11 @@ function toVariantRow(raw: RawVariant): AdminVariantRow {
 
 const PRODUCT_INCLUDE = {
   category: { select: { id: true, name: true } },
-  images: { orderBy: { displayOrder: 'asc' } },
+  // PENDING (upload not yet confirmed) and FAILED images are never surfaced
+  // here — only READY images have a URL guaranteed to resolve. A product
+  // fetched mid-upload (e.g. the operator refreshed the page) must never
+  // show a broken image link.
+  images: { where: { status: 'READY' }, orderBy: { displayOrder: 'asc' } },
   variants: {
     where: { deletedAt: null },
     select: VARIANT_SELECT,
@@ -407,6 +411,63 @@ export class PrismaAdminProductRepository implements AdminProductRepository {
   ): Promise<AdminProductRow> {
     void scope;
     await this.prisma.productImage.deleteMany({ where: { id: imageId, productId } });
+
+    const updated = await this.prisma.product.findUniqueOrThrow({
+      where: { id: productId },
+      include: PRODUCT_INCLUDE,
+    });
+    return toProductRow(updated);
+  }
+
+  async createPendingImage(
+    scope: BusinessScope,
+    productId: string,
+    input: { storageKey: string; url: string; altText?: string | undefined; displayOrder: number },
+  ): Promise<{ id: string }> {
+    void scope;
+    const id = newId();
+    await this.prisma.productImage.create({
+      data: {
+        id,
+        productId,
+        storageKey: input.storageKey,
+        url: input.url,
+        altText: input.altText ?? null,
+        displayOrder: input.displayOrder,
+        status: 'PENDING',
+      },
+    });
+    return { id };
+  }
+
+  async findImage(
+    scope: BusinessScope,
+    productId: string,
+    imageId: string,
+  ): Promise<{ id: string; storageKey: string; status: 'PENDING' | 'READY' | 'FAILED' } | null> {
+    void scope;
+    const image = await this.prisma.productImage.findFirst({
+      where: { id: imageId, productId },
+      select: { id: true, storageKey: true, status: true },
+    });
+    return image;
+  }
+
+  async confirmImage(
+    scope: BusinessScope,
+    productId: string,
+    imageId: string,
+    input: { width?: number | undefined; height?: number | undefined },
+  ): Promise<AdminProductRow> {
+    void scope;
+    await this.prisma.productImage.updateMany({
+      where: { id: imageId, productId },
+      data: {
+        status: 'READY',
+        width: input.width ?? null,
+        height: input.height ?? null,
+      },
+    });
 
     const updated = await this.prisma.product.findUniqueOrThrow({
       where: { id: productId },
