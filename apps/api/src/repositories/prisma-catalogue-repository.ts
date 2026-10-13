@@ -81,7 +81,14 @@ export class PrismaCatalogueRepository implements CatalogueRepository {
           select: VARIANT_SELECT,
           orderBy: { displayOrder: 'asc' },
         },
-        images: { where: { variantId: null }, take: 1, orderBy: { displayOrder: 'asc' } },
+        // READY only (PHASE 05) — a PENDING image's URL points to an object
+        // that may not have finished uploading yet; the public catalogue
+        // must never show a link that can 404 for a customer.
+        images: {
+          where: { variantId: null, status: 'READY' },
+          take: 1,
+          orderBy: { displayOrder: 'asc' },
+        },
       },
     });
 
@@ -116,7 +123,7 @@ export class PrismaCatalogueRepository implements CatalogueRepository {
           select: VARIANT_SELECT,
           orderBy: { displayOrder: 'asc' },
         },
-        images: { where: { variantId: null }, orderBy: { displayOrder: 'asc' } },
+        images: { where: { variantId: null, status: 'READY' }, orderBy: { displayOrder: 'asc' } },
       },
     });
 

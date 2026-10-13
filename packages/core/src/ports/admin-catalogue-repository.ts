@@ -242,4 +242,30 @@ export interface AdminProductRepository {
     input: { url: string; altText?: string | undefined; displayOrder: number },
   ): Promise<AdminProductRow>;
   removeImage(scope: BusinessScope, productId: string, imageId: string): Promise<AdminProductRow>;
+
+  /**
+   * Device-upload counterpart to `addImage` (PHASE 05). `addImage` is for
+   * an already-hosted URL pasted in directly (status READY immediately,
+   * `storageKey` is just that URL). This creates a row in PENDING status
+   * against a real, server-generated `storageKey` the caller is about to
+   * upload bytes to via a presigned URL — `confirmImage` flips it to READY
+   * once the upload is independently verified.
+   */
+  createPendingImage(
+    scope: BusinessScope,
+    productId: string,
+    input: { storageKey: string; url: string; altText?: string | undefined; displayOrder: number },
+  ): Promise<{ id: string }>;
+  /** `null` if no such image exists for this product (wrong id, wrong product, or already removed). */
+  findImage(
+    scope: BusinessScope,
+    productId: string,
+    imageId: string,
+  ): Promise<{ id: string; storageKey: string; status: 'PENDING' | 'READY' | 'FAILED' } | null>;
+  confirmImage(
+    scope: BusinessScope,
+    productId: string,
+    imageId: string,
+    input: { width?: number | undefined; height?: number | undefined },
+  ): Promise<AdminProductRow>;
 }

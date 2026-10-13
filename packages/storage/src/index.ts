@@ -30,10 +30,24 @@ export type PresignUploadInput = {
   extension: string;
 };
 
+export type StoredObjectInfo = {
+  sizeBytes: number;
+  contentType: string | undefined;
+};
+
 export interface StoragePort {
   presignUpload(input: PresignUploadInput): Promise<PresignedUpload>;
   publicUrl(storageKey: string): string;
   delete(storageKey: string): Promise<void>;
+  /**
+   * Looks up what was actually written to `storageKey`, or `null` if
+   * nothing is there. The presign constrains content-type at signature
+   * time, but not upload size (a plain presigned PUT has no built-in size
+   * cap) — this is how the confirm step independently verifies size
+   * (and re-checks content-type) against what was actually stored, rather
+   * than trusting whatever the client claims finished uploading.
+   */
+  headObject(storageKey: string): Promise<StoredObjectInfo | null>;
 }
 
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const;
@@ -43,3 +57,9 @@ export type AllowedImageType = (typeof ALLOWED_IMAGE_TYPES)[number];
 export function isAllowedImageType(value: string): value is AllowedImageType {
   return (ALLOWED_IMAGE_TYPES as readonly string[]).includes(value);
 }
+
+export {
+  createR2StorageAdapter,
+  resolveR2Endpoint,
+  type R2AdapterConfig,
+} from './r2-adapter.js';

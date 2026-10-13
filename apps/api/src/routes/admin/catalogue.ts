@@ -11,6 +11,8 @@ import {
   errorResponseSchema,
   listAdminCategoriesQuerySchema,
   listAdminProductsQuerySchema,
+  productImageUploadTicketSchema,
+  requestProductImageUploadBodySchema,
   setProductStatusBodySchema,
   setVariantStockBodySchema,
   updateCategoryBodySchema,
@@ -236,6 +238,46 @@ registerRoute({
   openapi: {
     tags: ['Admin: Catalogue'],
     responses: { 200: { description: 'Image removed', schema: adminProductSchema } },
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/products/{id}/images/upload-url',
+  audience: 'admin',
+  permission: 'catalog:update',
+  summary: 'Request a presigned URL to upload a product image from a device',
+  phase: '05',
+  errors: ['PRODUCT_NOT_FOUND', 'VALIDATION_FAILED'],
+  openapi: {
+    description:
+      'Step 1 of the device-upload flow. The returned upload_url is a short-lived ' +
+      'presigned PUT URL — the client uploads the file bytes directly to object ' +
+      'storage, then calls the confirm endpoint. The image does not appear on the ' +
+      'product until confirmed.',
+    tags: ['Admin: Catalogue'],
+    request: { body: requestProductImageUploadBodySchema },
+    responses: {
+      200: { description: 'Upload ticket issued', schema: productImageUploadTicketSchema },
+    },
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/products/{id}/images/{imageId}/confirm',
+  audience: 'admin',
+  permission: 'catalog:update',
+  summary: 'Confirm a device upload finished and attach it to the product',
+  phase: '05',
+  errors: ['PRODUCT_NOT_FOUND', 'IMAGE_NOT_FOUND', 'VALIDATION_FAILED'],
+  openapi: {
+    description:
+      'Step 2 of the device-upload flow. Independently re-verifies what actually ' +
+      'landed in storage (existence, content type, size) before the image becomes ' +
+      'visible — never trusts the client that the upload succeeded.',
+    tags: ['Admin: Catalogue'],
+    responses: { 200: { description: 'Upload confirmed', schema: adminProductSchema } },
   },
 });
 
@@ -481,6 +523,38 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
     if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
 
     const product = await c.env.services.adminCatalogue.removeProductImage(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      c.req.param('imageId'),
+      actor.userId,
+    );
+    return c.json(toAdminProductView(product));
+  });
+
+  app.post('/products/:id/images/upload-url', async (c) => {
+    const body = requestProductImageUploadBodySchema.parse(await c.req.json());
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+
+    const ticket = await c.env.services.adminCatalogue.requestProductImageUpload(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      { contentType: body.content_type, displayOrder: body.display_order },
+      actor.userId,
+    );
+    return c.json({
+      image_id: ticket.imageId,
+      upload_url: ticket.uploadUrl,
+      expires_at: ticket.expiresAt.toISOString(),
+      max_bytes: ticket.maxBytes,
+    });
+  });
+
+  app.post('/products/:id/images/:imageId/confirm', async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+
+    const product = await c.env.services.adminCatalogue.confirmProductImageUpload(
       businessScope(c.env.businessId),
       c.req.param('id'),
       c.req.param('imageId'),

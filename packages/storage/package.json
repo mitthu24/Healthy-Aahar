@@ -15,6 +15,8 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1150.0",
+    "@aws-sdk/s3-request-presigner": "^3.1150.0",
     "@healthy-aahar/config": "workspace:*"
   },
   "devDependencies": {

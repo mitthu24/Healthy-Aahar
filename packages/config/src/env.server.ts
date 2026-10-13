@@ -140,6 +140,16 @@ export const serverEnvSchema = z
     if (env.APP_ENV === 'production') {
       requireInProd('SENTRY_DSN', env.SENTRY_DSN, 'error tracking');
       requireInProd('R2_PUBLIC_BASE_URL', env.R2_PUBLIC_BASE_URL, 'media delivery');
+      requireInProd('R2_ACCESS_KEY_ID', env.R2_ACCESS_KEY_ID, 'product image uploads');
+      requireInProd('R2_SECRET_ACCESS_KEY', env.R2_SECRET_ACCESS_KEY, 'product image uploads');
+      if (!env.R2_ENDPOINT && !env.R2_ACCOUNT_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['R2_ENDPOINT'],
+          message:
+            'R2_ENDPOINT or R2_ACCOUNT_ID is required when APP_ENV=production (product image uploads)',
+        });
+      }
 
       if (env.NOTIFICATIONS_ENABLED && !env.BREVO_API_KEY) {
         ctx.addIssue({
