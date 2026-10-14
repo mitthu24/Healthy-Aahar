@@ -46,4 +46,17 @@ describe('MobileNav', () => {
     rerender(<MobileNav permissions={new Set(['delivery_partners:read'])} />);
     expect(screen.getByText('Delivery Partners')).toBeInTheDocument();
   });
+
+  it('a Super Admin sees every bottom-nav item even with an empty permission set', () => {
+    render(<MobileNav permissions={new Set()} isSuperAdmin />);
+    expect(screen.getByText('Delivery Partners')).toBeInTheDocument();
+  });
+
+  it('a Super Admin sees every drawer item even with an empty permission set', async () => {
+    render(<MobileNav permissions={new Set()} isSuperAdmin />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
+    expect(screen.getByRole('dialog', { name: 'Navigation' })).toContainElement(
+      screen.getByRole('link', { name: 'Customers' }),
+    );
+  });
 });

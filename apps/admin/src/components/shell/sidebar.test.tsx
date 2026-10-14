@@ -31,4 +31,17 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Employees')).not.toBeInTheDocument();
     expect(screen.getByText('Orders')).toBeInTheDocument();
   });
+
+  it('a Super Admin sees every permission-gated item even with an empty permission set — matches the API\'s own isSuperAdmin bypass', () => {
+    render(<Sidebar permissions={new Set()} isSuperAdmin />);
+    expect(screen.getByText('Employees')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+    expect(screen.getByText('Roles & Permissions')).toBeInTheDocument();
+  });
+
+  it('a non-Super-Admin with an empty permission set still sees nothing gated', () => {
+    render(<Sidebar permissions={new Set()} isSuperAdmin={false} />);
+    expect(screen.queryByText('Employees')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Customers' })).not.toBeInTheDocument();
+  });
 });

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { NAV_GROUPS, isNavItemActive } from '@/lib/nav';
+import { NAV_GROUPS, isNavItemActive, isNavItemVisible } from '@/lib/nav';
 
 import { ChevronLeftIcon } from './icons';
 
@@ -15,7 +15,13 @@ const COLLAPSE_KEY = 'admin-sidebar-collapsed';
  * entirely). Collapse state is a per-browser convenience persisted in
  * localStorage, never anything auth-related.
  */
-export function Sidebar({ permissions }: { permissions: Set<string> | null }) {
+export function Sidebar({
+  permissions,
+  isSuperAdmin = false,
+}: {
+  permissions: Set<string> | null;
+  isSuperAdmin?: boolean;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -60,8 +66,8 @@ export function Sidebar({ permissions }: { permissions: Set<string> | null }) {
 
       <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary">
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter(
-            (item) => !item.permission || permissions?.has(item.permission),
+          const visibleItems = group.items.filter((item) =>
+            isNavItemVisible(item, permissions, isSuperAdmin),
           );
           if (visibleItems.length === 0) return null;
           return (

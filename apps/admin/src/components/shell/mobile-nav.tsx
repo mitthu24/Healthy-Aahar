@@ -5,12 +5,18 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AuthStatus } from '@/app/auth-status';
-import { BOTTOM_NAV_HREFS, NAV_GROUPS, isNavItemActive } from '@/lib/nav';
+import { BOTTOM_NAV_HREFS, NAV_GROUPS, isNavItemActive, isNavItemVisible } from '@/lib/nav';
 
 import { CloseIcon, MenuIcon } from './icons';
 
 /** Compact header + full-nav drawer + bottom tab bar — below the `lg` breakpoint, replacing the desktop sidebar entirely. */
-export function MobileNav({ permissions }: { permissions: Set<string> | null }) {
+export function MobileNav({
+  permissions,
+  isSuperAdmin = false,
+}: {
+  permissions: Set<string> | null;
+  isSuperAdmin?: boolean;
+}) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -35,7 +41,7 @@ export function MobileNav({ permissions }: { permissions: Set<string> | null }) 
   const allItems = NAV_GROUPS.flatMap((g) => g.items);
   const bottomItems = BOTTOM_NAV_HREFS.map((href) => allItems.find((i) => i.href === href)).filter(
     (item): item is NonNullable<typeof item> =>
-      item !== undefined && (!item.permission || permissions?.has(item.permission) === true),
+      item !== undefined && isNavItemVisible(item, permissions, isSuperAdmin),
   );
 
   return (
@@ -86,8 +92,8 @@ export function MobileNav({ permissions }: { permissions: Set<string> | null }) 
             </div>
             <nav className="flex-1 px-3 pb-4">
               {NAV_GROUPS.map((group) => {
-                const visibleItems = group.items.filter(
-                  (item) => !item.permission || permissions?.has(item.permission),
+                const visibleItems = group.items.filter((item) =>
+                  isNavItemVisible(item, permissions, isSuperAdmin),
                 );
                 if (visibleItems.length === 0) return null;
                 return (

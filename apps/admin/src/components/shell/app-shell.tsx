@@ -30,12 +30,19 @@ const CHROMELESS_PATHS = new Set(['/login', '/password-setup', '/change-password
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [permissions, setPermissions] = useState<Set<string> | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     void apiClient
       .adminMe()
-      .then((me) => setPermissions(new Set(me.permissions)))
-      .catch(() => setPermissions(new Set()));
+      .then((me) => {
+        setPermissions(new Set(me.permissions));
+        setIsSuperAdmin(me.is_super_admin);
+      })
+      .catch(() => {
+        setPermissions(new Set());
+        setIsSuperAdmin(false);
+      });
   }, [pathname]);
 
   if (CHROMELESS_PATHS.has(pathname)) {
@@ -44,9 +51,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh">
-      <Sidebar permissions={permissions} />
+      <Sidebar permissions={permissions} isSuperAdmin={isSuperAdmin} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav permissions={permissions} />
+        <MobileNav permissions={permissions} isSuperAdmin={isSuperAdmin} />
         <div className="border-sand-200 bg-sand-0 hidden justify-end border-b px-6 py-2.5 lg:flex">
           <AuthStatus />
         </div>
