@@ -18,6 +18,7 @@ import type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DashboardSummary,
   DeliveryDashboardDto,
   DeliveryOrderDto,
   DeliveryOrderListResponse,
@@ -25,6 +26,7 @@ import type {
   DeliveryPartnerListResponse,
   DeliverySlotListResponse,
   AssignmentHistoryEntryDto,
+  InventoryAlertsResponse,
   OrderDto,
   OrderListResponse,
   PincodeListResponse,
@@ -32,7 +34,9 @@ import type {
   ProductListResponse,
   Role,
   Permission,
+  SalesTrendResponse,
   ServiceabilityResponse,
+  TopProductsResponse,
 } from '@healthy-aahar/contracts';
 
 /**
@@ -516,6 +520,28 @@ export class ApiClient {
 
   getOrderAssignmentHistory(orderId: string): Promise<{ data: AssignmentHistoryEntryDto[] }> {
     return this.request(`/v1/admin/orders/${orderId}/assignment-history`);
+  }
+
+  // ── Admin: founder dashboard (Stage D) ───────────────────────────────────
+
+  getDashboardSummary(params: { from: string; to: string }): Promise<DashboardSummary> {
+    return this.request(`/v1/admin/dashboard/summary${this.query(params)}`);
+  }
+
+  getSalesTrend(params: { from: string; to: string }): Promise<SalesTrendResponse> {
+    return this.request(`/v1/admin/dashboard/sales-trend${this.query(params)}`);
+  }
+
+  getTopProducts(params: {
+    from: string;
+    to: string;
+    limit?: number;
+  }): Promise<TopProductsResponse> {
+    return this.request(`/v1/admin/dashboard/top-products${this.query(params)}`);
+  }
+
+  getInventoryAlerts(params: { limit?: number } = {}): Promise<InventoryAlertsResponse> {
+    return this.request(`/v1/admin/dashboard/inventory-alerts${this.query(params)}`);
   }
 
   // ── Delivery partner self-service (Phase 06) — same admin session, gated

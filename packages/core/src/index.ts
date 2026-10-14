@@ -120,6 +120,15 @@ export type {
   DeliverySlotUpdateInput,
   AdminDeliverySlotRepository,
 } from './ports/admin-delivery-slot-repository.js';
+export type {
+  DashboardDateRange,
+  OrderStatusCount,
+  DashboardSummaryRow,
+  SalesTrendPoint,
+  TopProductRow,
+  InventoryAlertRow,
+  DashboardRepository,
+} from './ports/dashboard-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
 export {
@@ -193,3 +202,12 @@ export {
   DeliveryFulfilmentService,
   type DeliveryFulfilmentServiceDeps,
 } from './services/delivery-fulfilment-service.js';
+export {
+  DashboardService,
+  type DashboardServiceDeps,
+  type DashboardDateRangeInput,
+  type DashboardSummaryView,
+  type SalesTrendPointView,
+  type TopProductView,
+  type InventoryAlertView,
+} from './services/dashboard-service.js';

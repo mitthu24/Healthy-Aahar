@@ -10,6 +10,7 @@ import {
   CheckoutService,
   CustomerAuthService,
   CustomerOrderService,
+  DashboardService,
   DeliveryFulfilmentService,
   DeliveryPartnerService,
   OrderAssignmentService,
@@ -58,6 +59,7 @@ import { PrismaCheckoutRepository } from './repositories/prisma-checkout-reposit
 import { PrismaOrderRepository } from './repositories/prisma-order-repository.js';
 import { PrismaDeliveryPartnerRepository } from './repositories/prisma-delivery-partner-repository.js';
 import { PrismaOrderAssignmentRepository } from './repositories/prisma-order-assignment-repository.js';
+import { PrismaDashboardRepository } from './repositories/prisma-dashboard-repository.js';
 import {
   PrismaAdminCategoryRepository,
   PrismaAdminProductRepository,
@@ -74,6 +76,7 @@ import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
 import { adminDeliveryPartnersRoutes } from './routes/admin/delivery-partners.js';
 import { adminOrderAssignmentRoutes } from './routes/admin/order-assignment.js';
 import { deliveryRoutes } from './routes/admin/delivery.js';
+import { dashboardRoutes } from './routes/admin/dashboard.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
@@ -211,6 +214,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       partners: new PrismaDeliveryPartnerRepository(prisma),
       audit: auditRepo,
     }),
+    dashboard: new DashboardService({ dashboard: new PrismaDashboardRepository(prisma) }),
   };
 
   const app = new Hono<AppBindings>();
@@ -355,6 +359,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin', adminDeliverySlotsRoutes());
   app.route('/v1/admin/delivery-partners', adminDeliveryPartnersRoutes());
   app.route('/v1/admin/delivery', deliveryRoutes());
+  app.route('/v1/admin/dashboard', dashboardRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.
