@@ -23,6 +23,11 @@ const BUSINESS_ID = businessScope('0193aaaa-0000-7000-8000-00000000000b');
 const PARTNER_ID = '0193dddd-0000-7000-8000-000000000001';
 const OTHER_PARTNER_ID = '0193dddd-0000-7000-8000-000000000002';
 const ORDER_ID = '0193cccc-0000-7000-8000-000000000001';
+/** The partner's real `users.id` — deliberately distinct from PARTNER_ID
+ *  (the AdminUser id) so a test that accidentally mixed the two up would
+ *  fail, the same mix-up a real FK constraint on audit_logs.actor_user_id
+ *  catches in production/CI but a fake AuditLogRepository cannot. */
+const ACTOR_USER_ID = '0193ffff-0000-7000-8000-000000000001';
 
 function orderRow(overrides: Partial<OrderRow> = {}): OrderRow {
   return {
@@ -239,31 +244,45 @@ describe('DeliveryFulfilmentService', () => {
       service.getMyDelivery(BUSINESS_ID, OTHER_PARTNER_ID, ORDER_ID),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(
-      service.acceptAndDispatch(BUSINESS_ID, OTHER_PARTNER_ID, ORDER_ID),
+      service.acceptAndDispatch(BUSINESS_ID, OTHER_PARTNER_ID, ORDER_ID, ACTOR_USER_ID),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
   it('accepts and dispatches an assigned order (READY_FOR_DISPATCH → OUT_FOR_DELIVERY)', async () => {
-    const result = await service.acceptAndDispatch(BUSINESS_ID, PARTNER_ID, ORDER_ID);
+    const result = await service.acceptAndDispatch(
+      BUSINESS_ID,
+      PARTNER_ID,
+      ORDER_ID,
+      ACTOR_USER_ID,
+    );
     expect(result.status).toBe('OUT_FOR_DELIVERY');
     expect(orders.transitionCalls[0]?.actor).toBe('DELIVERY_PARTNER');
+    // Caught a real bug: the audit event's actorUserId must be the caller's
+    // users.id (audit_logs.actor_user_id has a real FK to users), never the
+    // AdminUser id — a prior version of this service passed PARTNER_ID here
+    // and crashed every write path in CI with a foreign-key violation.
+    expect(audit.events[0]?.actorUserId).toBe(ACTOR_USER_ID);
   });
 
   it('refuses an invalid transition (cannot deliver before dispatch)', async () => {
-    await expect(service.markDelivered(BUSINESS_ID, PARTNER_ID, ORDER_ID)).rejects.toMatchObject({
+    await expect(
+      service.markDelivered(BUSINESS_ID, PARTNER_ID, ORDER_ID, ACTOR_USER_ID),
+    ).rejects.toMatchObject({
       code: 'INVALID_STATUS_TRANSITION',
     });
   });
 
   it('marking delivered closes the active assignment', async () => {
     orders.orders.set(ORDER_ID, orderRow({ status: 'OUT_FOR_DELIVERY' }));
-    await service.markDelivered(BUSINESS_ID, PARTNER_ID, ORDER_ID);
+    await service.markDelivered(BUSINESS_ID, PARTNER_ID, ORDER_ID, ACTOR_USER_ID);
     expect(assignments.closeActiveCalls).toEqual([{ orderId: ORDER_ID, status: 'COMPLETED' }]);
   });
 
   it('requires a reason to mark a delivery failed', async () => {
     orders.orders.set(ORDER_ID, orderRow({ status: 'OUT_FOR_DELIVERY' }));
-    await expect(service.markFailed(BUSINESS_ID, PARTNER_ID, ORDER_ID, '')).rejects.toMatchObject({
+    await expect(
+      service.markFailed(BUSINESS_ID, PARTNER_ID, ORDER_ID, '', ACTOR_USER_ID),
+    ).rejects.toMatchObject({
       code: 'VALIDATION_FAILED',
     });
     const result = await service.markFailed(
@@ -271,34 +290,43 @@ describe('DeliveryFulfilmentService', () => {
       PARTNER_ID,
       ORDER_ID,
       'Customer not reachable',
+      ACTOR_USER_ID,
     );
     expect(result.status).toBe('FAILED');
   });
 
   it('records COD collection for an assigned COD order', async () => {
-    const result = await service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n);
+    const result = await service.recordCodCollection(
+      BUSINESS_ID,
+      PARTNER_ID,
+      ORDER_ID,
+      10000n,
+      ACTOR_USER_ID,
+    );
     expect(result.cod_collected).toBe(true);
     expect(audit.events.map((e) => e.action)).toContain('delivery.cod_collected');
+    expect(audit.events[0]?.actorUserId).toBe(ACTOR_USER_ID);
   });
 
   it('refuses a second COD collection on the same order', async () => {
-    await service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n);
+    await service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n, ACTOR_USER_ID);
     await expect(
-      service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n),
+      service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n, ACTOR_USER_ID),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
   it('refuses COD collection on a non-COD order', async () => {
     orders.orders.set(ORDER_ID, orderRow({ paymentMethod: 'ONLINE' }));
     await expect(
-      service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n),
+      service.recordCodCollection(BUSINESS_ID, PARTNER_ID, ORDER_ID, 10000n, ACTOR_USER_ID),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
   it('toggles duty status', async () => {
-    const updated = await service.setDutyStatus(BUSINESS_ID, PARTNER_ID, 'ON_DUTY');
+    const updated = await service.setDutyStatus(BUSINESS_ID, PARTNER_ID, 'ON_DUTY', ACTOR_USER_ID);
     expect(updated.dutyStatus).toBe('ON_DUTY');
     expect(audit.events.map((e) => e.action)).toContain('delivery_partner.duty_status_changed');
+    expect(audit.events[0]?.actorUserId).toBe(ACTOR_USER_ID);
   });
 
   it("computes dashboard counts from the partner's assigned orders", async () => {

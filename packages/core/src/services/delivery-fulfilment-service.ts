@@ -93,7 +93,12 @@ export class DeliveryFulfilmentService {
     };
   }
 
-  async setDutyStatus(scope: BusinessScope, partnerAdminUserId: string, dutyStatus: DutyStatus) {
+  async setDutyStatus(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    dutyStatus: DutyStatus,
+    actorUserId: string,
+  ) {
     const partner = await this.partners.findByAdminUserId(scope, partnerAdminUserId);
     if (!partner) throw new DomainError('PARTNER_NOT_FOUND', 'Delivery partner profile not found.');
 
@@ -103,7 +108,14 @@ export class DeliveryFulfilmentService {
     const updated = await this.partners.setDutyStatus(scope, partnerAdminUserId, dutyStatus);
 
     await this.audit.write(scope, {
-      actorUserId: partnerAdminUserId,
+      // `audit_logs.actor_user_id` has a real FK to `users.id` — unlike
+      // `order_status_history.actor_user_id` elsewhere in this codebase,
+      // which by convention actually holds an admin_users id, this column
+      // does not tolerate that substitution (a foreign-key violation, not a
+      // silent inconsistency). actorUserId here is deliberately the
+      // caller's real `users.id`, threaded in separately from
+      // partnerAdminUserId.
+      actorUserId,
       actorType: 'ADMIN',
       action: 'delivery_partner.duty_status_changed',
       resourceType: 'delivery_partner',
@@ -154,14 +166,30 @@ export class DeliveryFulfilmentService {
   }
 
   /** Accept the assignment / start the trip: READY_FOR_DISPATCH → OUT_FOR_DELIVERY. */
-  async acceptAndDispatch(scope: BusinessScope, partnerAdminUserId: string, orderId: string) {
+  async acceptAndDispatch(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    orderId: string,
+    actorUserId: string,
+  ) {
     const order = await this.getOwnedOrThrow(scope, partnerAdminUserId, orderId);
-    return this.applyTransition(scope, partnerAdminUserId, order, 'OUT_FOR_DELIVERY');
+    return this.applyTransition(scope, partnerAdminUserId, order, 'OUT_FOR_DELIVERY', actorUserId);
   }
 
-  async markDelivered(scope: BusinessScope, partnerAdminUserId: string, orderId: string) {
+  async markDelivered(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    orderId: string,
+    actorUserId: string,
+  ) {
     const order = await this.getOwnedOrThrow(scope, partnerAdminUserId, orderId);
-    const updated = await this.applyTransition(scope, partnerAdminUserId, order, 'DELIVERED');
+    const updated = await this.applyTransition(
+      scope,
+      partnerAdminUserId,
+      order,
+      'DELIVERED',
+      actorUserId,
+    );
     await this.assignments.closeActive(scope, orderId, 'COMPLETED');
     return updated;
   }
@@ -171,9 +199,10 @@ export class DeliveryFulfilmentService {
     partnerAdminUserId: string,
     orderId: string,
     reason: string,
+    actorUserId: string,
   ) {
     const order = await this.getOwnedOrThrow(scope, partnerAdminUserId, orderId);
-    return this.applyTransition(scope, partnerAdminUserId, order, 'FAILED', reason);
+    return this.applyTransition(scope, partnerAdminUserId, order, 'FAILED', actorUserId, reason);
   }
 
   async recordCodCollection(
@@ -181,6 +210,7 @@ export class DeliveryFulfilmentService {
     partnerAdminUserId: string,
     orderId: string,
     amountPaise: bigint,
+    actorUserId: string,
   ) {
     const order = await this.getOwnedOrThrow(scope, partnerAdminUserId, orderId);
 
@@ -202,7 +232,7 @@ export class DeliveryFulfilmentService {
     );
 
     await this.audit.write(scope, {
-      actorUserId: partnerAdminUserId,
+      actorUserId,
       actorType: 'ADMIN',
       action: 'delivery.cod_collected',
       resourceType: 'order',
@@ -228,6 +258,7 @@ export class DeliveryFulfilmentService {
     partnerAdminUserId: string,
     order: OrderRow,
     toStatus: OrderStatusValue,
+    actorUserId: string,
     reason?: string,
   ) {
     const check = canTransition(order.status, toStatus, 'DELIVERY_PARTNER');
@@ -245,12 +276,15 @@ export class DeliveryFulfilmentService {
     const updated = await this.orders.transition(scope, order.id, {
       toStatus,
       actor: 'DELIVERY_PARTNER',
+      // order_status_history.actor_user_id holds an admin_users id by this
+      // codebase's existing convention (OrderFulfilmentService does the
+      // same) — no FK constraint there, unlike the audit log below.
       actorUserId: partnerAdminUserId,
       reason,
     });
 
     await this.audit.write(scope, {
-      actorUserId: partnerAdminUserId,
+      actorUserId,
       actorType: 'ADMIN',
       action: `delivery.status_${toStatus.toLowerCase()}`,
       resourceType: 'order',

@@ -180,6 +180,7 @@ export function deliveryRoutes(): Hono<AppBindings> {
       businessScope(c.env.businessId),
       actor.adminUserId,
       body.duty_status,
+      actor.userId,
     );
     const dashboard = await c.env.services.deliveryFulfilment.getDashboard(
       businessScope(c.env.businessId),
@@ -224,6 +225,7 @@ export function deliveryRoutes(): Hono<AppBindings> {
       businessScope(c.env.businessId),
       actor.adminUserId,
       params.id,
+      actor.userId,
     );
     return c.json(order);
   });
@@ -236,6 +238,7 @@ export function deliveryRoutes(): Hono<AppBindings> {
       businessScope(c.env.businessId),
       actor.adminUserId,
       params.id,
+      actor.userId,
     );
     return c.json(order);
   });
@@ -250,6 +253,7 @@ export function deliveryRoutes(): Hono<AppBindings> {
       actor.adminUserId,
       params.id,
       body.reason,
+      actor.userId,
     );
     return c.json(order);
   });
@@ -264,6 +268,7 @@ export function deliveryRoutes(): Hono<AppBindings> {
       actor.adminUserId,
       params.id,
       BigInt(body.amount_paise),
+      actor.userId,
     );
     return c.json(order);
   });
