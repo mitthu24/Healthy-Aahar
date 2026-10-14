@@ -145,6 +145,20 @@ async function seedTestOrder(
     },
   });
 
+  // Every checkout-created order has a matching Payment row (one-to-one,
+  // orderId unique) — recordCodCollection does a nested `payment: { update }`
+  // that assumes one already exists. Bypassing checkout here means this
+  // fixture has to create it itself, same as checkout always does.
+  await prisma.payment.create({
+    data: {
+      id: testId(),
+      orderId: order.id,
+      method: 'COD',
+      status: 'DUE',
+      amountPaise: order.totalPaise,
+    },
+  });
+
   return order;
 }
 
