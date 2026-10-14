@@ -57,7 +57,8 @@ class FakeAdminRepository implements AdminRepository {
       id,
       businessId: BUSINESS_ID,
       userId: `user-${id}`,
-      email: input.email,
+      email: input.email ?? null,
+      loginId: input.loginId ?? null,
       fullName: input.fullName,
       designation: input.designation ?? null,
       department: input.department ?? null,
@@ -168,6 +169,7 @@ class FakeDeliveryPartnerRepository implements DeliveryPartnerRepository {
       adminUserId,
       fullName: admin.fullName,
       email: admin.email,
+      loginId: admin.loginId,
       // AdminUserRow (the core port type) doesn't carry employee_code — the
       // real Prisma repository reads it via its own dedicated include,
       // bypassing this port entirely; not worth replicating in a fake.

@@ -39,7 +39,12 @@ export class RbacService {
   async inviteAdmin(
     scope: BusinessScope,
     params: {
-      email: string;
+      email?: string;
+      /** STAGE C: email-free login identifier — format/normalization is
+       *  already enforced by `inviteAdminBodySchema`/`createDeliveryPartnerBodySchema`
+       *  before this is called; this layer only enforces the at-least-one-of
+       *  invariant below. */
+      loginId?: string;
       fullName: string;
       designation?: string;
       department?: string;
@@ -50,11 +55,19 @@ export class RbacService {
       passwordResetContinueUrl?: string;
     },
   ): Promise<{ admin: AdminUserRow; passwordResetLink: string }> {
+    if (!params.email && !params.loginId) {
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        'An email or a login ID is required to create an account.',
+      );
+    }
+
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.invitedByIsSuperAdmin);
 
     const result = await this.admins.invite(scope, {
       email: params.email,
+      loginId: params.loginId,
       fullName: params.fullName,
       designation: params.designation,
       department: params.department,
@@ -62,15 +75,17 @@ export class RbacService {
       invitedByUserId: params.invitedByUserId,
     });
 
-    // Fix #3: a duplicate (email, user_type) is a real, reachable user
-    // error (re-inviting someone, or inviting an email that is already an
-    // admin) — it must map to the established 409, never fall through to a
-    // raw, unhandled 500.
+    // Fix #3: a duplicate (email, user_type) / (login_id, user_type) is a
+    // real, reachable user error (re-inviting someone, or inviting an
+    // identifier that is already taken) — it must map to the established
+    // 409, never fall through to a raw, unhandled 500.
     if (!result.ok) {
-      throw new DomainError(
-        'ADMIN_ALREADY_INVITED',
-        'An admin account with this email already exists.',
-      );
+      throw result.reason === 'LOGIN_ID_TAKEN'
+        ? new DomainError('LOGIN_ID_TAKEN', 'This login ID is already taken.')
+        : new DomainError(
+            'ADMIN_ALREADY_INVITED',
+            'An admin account with this email already exists.',
+          );
     }
     const admin = result.admin;
 
@@ -86,7 +101,7 @@ export class RbacService {
       action: 'admin_user.invited',
       resourceType: 'admin_user',
       resourceId: admin.id,
-      metadata: { email: params.email, roles: roles.map((r) => r.key) },
+      metadata: { email: params.email, login_id: params.loginId, roles: roles.map((r) => r.key) },
     });
 
     return { admin, passwordResetLink };

@@ -18,6 +18,8 @@ export type UserRow = {
   passwordHash: string | null;
   userType: UserType;
   email: string | null;
+  /** STAGE C: email-free login identifier, see schema.prisma's `User.loginId` doc comment. */
+  loginId: string | null;
   phone: string | null;
   emailVerified: boolean;
   phoneVerified: boolean;
@@ -48,6 +50,12 @@ export type CreateCustomerWithPasswordResult =
 export interface UserRepository {
   findById(id: string): Promise<UserRow | null>;
   findByEmail(email: string, userType: UserType): Promise<UserRow | null>;
+  /** STAGE C: lookup by the email-free login identifier, case-insensitive
+   *  via the same citext mechanism as `findByEmail`. The two are disjoint
+   *  by construction — `loginId`'s allowed charset excludes `@` — so a
+   *  caller trying "email-or-login-id" by attempting both never risks an
+   *  ambiguous match. */
+  findByLoginId(loginId: string, userType: UserType): Promise<UserRow | null>;
   /** Legacy lookup for rows provisioned before PHASE 03 (Firebase-era). */
   findByFirebaseUid(firebaseUid: string, userType: UserType): Promise<UserRow | null>;
   touchLastLogin(userId: string): Promise<void>;

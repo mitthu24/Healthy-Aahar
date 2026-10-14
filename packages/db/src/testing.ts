@@ -254,6 +254,10 @@ export async function seedAdminUser(
   businessId: string,
   overrides: {
     email?: string;
+    /** STAGE C: when set without `email`, seeds an email-free account
+     *  identified only by this login ID (matches a founder creating a
+     *  staff account with no email address). */
+    loginId?: string;
     password?: string;
     fullName?: string;
     isSuperAdmin?: boolean;
@@ -281,10 +285,13 @@ export async function seedAdminUser(
      */
     lastPasswordChangeAt?: Date | null;
   } = {},
-): Promise<{ id: string; userId: string; email: string; password: string }> {
+): Promise<{ id: string; userId: string; email: string | null; loginId: string | null; password: string }> {
   const userId = uuidv7();
   const adminUserId = uuidv7();
-  const email = overrides.email ?? `test-admin-${uuidv7()}@example.test`;
+  // Only auto-generate an email when the caller didn't explicitly ask for
+  // a loginId-only (email-free) account.
+  const email = overrides.email ?? (overrides.loginId ? null : `test-admin-${uuidv7()}@example.test`);
+  const loginId = overrides.loginId ?? null;
   const password = overrides.password ?? TEST_PASSWORD;
 
   await prisma.user.create({
@@ -292,6 +299,7 @@ export async function seedAdminUser(
       id: userId,
       userType: 'ADMIN',
       email,
+      loginId,
       passwordHash: overrides.noPassword ? null : await hashPassword(password),
       status: overrides.status ?? 'ACTIVE',
     },
@@ -320,7 +328,7 @@ export async function seedAdminUser(
     });
   }
 
-  return { id: adminUserId, userId, email, password };
+  return { id: adminUserId, userId, email, loginId, password };
 }
 
 /** Seeds a full customer identity with a real password hash: users + customer_profiles. */
