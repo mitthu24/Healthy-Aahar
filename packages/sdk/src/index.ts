@@ -231,6 +231,8 @@ export class ApiClient {
 
   // ── Admin auth (PHASE 03 — email/password, DB-backed session cookie) ────
 
+  /** `email` also accepts a Stage C login ID — the field name is kept for
+   *  backward compatibility; see `adminLoginBodySchema`'s doc comment. */
   adminLogin(body: { email: string; password: string }): Promise<AdminMe> {
     return this.request('/v1/admin/auth/login', { method: 'POST', body: JSON.stringify(body) });
   }
@@ -472,7 +474,8 @@ export class ApiClient {
   }
 
   createDeliveryPartner(body: {
-    email: string;
+    email?: string;
+    login_id?: string;
     full_name: string;
     employee_code?: string;
     vehicle_type?: string;
@@ -800,7 +803,8 @@ export class ApiClient {
   }
 
   inviteAdminUser(body: {
-    email: string;
+    email?: string;
+    login_id?: string;
     full_name: string;
     designation?: string;
     department?: string;
