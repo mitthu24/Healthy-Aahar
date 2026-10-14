@@ -118,8 +118,9 @@ export default function MyDeliveryDetailPage() {
         <p className="text-body-sm text-sand-800 mt-1">
           {order.delivery_address.line1}
           {order.delivery_address.line2 ? `, ${order.delivery_address.line2}` : ''}
-          {order.delivery_address.landmark ? ` (near ${order.delivery_address.landmark})` : ''},{' '}
-          {order.delivery_address.city}, {order.delivery_address.state}{' '}
+          {order.delivery_address.landmark
+            ? ` (near ${order.delivery_address.landmark})`
+            : ''}, {order.delivery_address.city}, {order.delivery_address.state}{' '}
           {order.delivery_address.pincode}
         </p>
         <p className="text-caption text-sand-600 mt-1">
