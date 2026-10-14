@@ -4,6 +4,7 @@ import type {
   AdminAuthService,
   AdminCatalogueService,
   AdminDeliverySlotService,
+  AuditLogService,
   CartService,
   CatalogueService,
   CheckoutService,
@@ -54,6 +55,7 @@ export type AppServices = {
   orderFulfilment: OrderFulfilmentService;
   adminCatalogue: AdminCatalogueService;
   adminDeliverySlots: AdminDeliverySlotService;
+  auditLog: AuditLogService;
 };
 
 export type AppAuth = {

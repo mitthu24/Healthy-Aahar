@@ -531,6 +531,277 @@ describe('roles & permission catalogue', () => {
   });
 });
 
+describe('Phase 05 — employee details, reactivation, self-deactivation guard', () => {
+  it('GET a single admin and PATCH their name/designation/department, never touching roles', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'DETAILS_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, {
+      roleIds: [role.id],
+      fullName: 'Original Name',
+    });
+
+    const single = await app.request(`/v1/admin/admin-users/${target.id}`, {
+      headers: superAdminHeaders,
+    });
+    expect(single.status).toBe(200);
+    const singleBody = (await single.json()) as { full_name: string };
+    expect(singleBody.full_name).toBe('Original Name');
+
+    const patch = await app.request(`/v1/admin/admin-users/${target.id}`, {
+      method: 'PATCH',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        full_name: 'Updated Name',
+        designation: 'Ops Lead',
+        department: 'Operations',
+      }),
+    });
+    expect(patch.status).toBe(200);
+    const patched = (await patch.json()) as {
+      full_name: string;
+      designation: string;
+      department: string;
+      roles: string[];
+    };
+    expect(patched.full_name).toBe('Updated Name');
+    expect(patched.designation).toBe('Ops Lead');
+    expect(patched.department).toBe('Operations');
+    expect(patched.roles).toEqual(['DETAILS_ROLE']); // untouched by the details update
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'admin_user.updated', resourceId: target.id },
+    });
+    expect(audit).not.toBeNull();
+  });
+
+  it('404s GET/PATCH for an unknown admin id', async () => {
+    const unknownId = '00000000-0000-7000-8000-000000000000';
+    const getRes = await app.request(`/v1/admin/admin-users/${unknownId}`, {
+      headers: superAdminHeaders,
+    });
+    expect(getRes.status).toBe(404);
+
+    const patchRes = await app.request(`/v1/admin/admin-users/${unknownId}`, {
+      method: 'PATCH',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ full_name: 'X' }),
+    });
+    expect(patchRes.status).toBe(404);
+  });
+
+  it('a Super Admin cannot deactivate their own account', async () => {
+    // If superAdminId were the only active Super Admin, this would ALSO be
+    // blocked by BR-SEC6 (LAST_SUPER_ADMIN), which would prove nothing about
+    // the self-deactivation guard specifically. A second super admin is
+    // seeded first so the 403 below can only be CANNOT_DEACTIVATE_SELF.
+    await seedAdminUser(prisma, businessId, {
+      isSuperAdmin: true,
+      fullName: 'Second Super For Self-Deactivation Test',
+    });
+
+    const res = await app.request(`/v1/admin/admin-users/${superAdminId}/deactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('CANNOT_DEACTIVATE_SELF');
+  });
+
+  it("a role change revokes the target's existing sessions", async () => {
+    const roleA = await seedRole(prisma, businessId, {
+      key: 'ROLE_CHANGE_A',
+      permissionKeys: ['catalog:read'],
+    });
+    const roleB = await seedRole(prisma, businessId, {
+      key: 'ROLE_CHANGE_B',
+      permissionKeys: ['orders:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [roleA.id] });
+    const targetSession = await loginAsAdmin(app, target);
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/roles`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ role_ids: [roleB.id] }),
+    });
+    expect(res.status).toBe(200);
+
+    const after = await app.request('/v1/admin/auth/me', { headers: targetSession.headers });
+    expect(after.status).toBe(401);
+  });
+
+  it('reactivates a deactivated account, which can then log in again', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'REACTIVATE_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+
+    const deactivateRes = await app.request(`/v1/admin/admin-users/${target.id}/deactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(deactivateRes.status).toBe(200);
+
+    const loginWhileDeactivated = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: target.email, password: target.password }),
+    });
+    expect(loginWhileDeactivated.status).toBe(401);
+
+    const reactivateRes = await app.request(`/v1/admin/admin-users/${target.id}/reactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(reactivateRes.status).toBe(200);
+    const reactivated = (await reactivateRes.json()) as { deactivated: boolean };
+    expect(reactivated.deactivated).toBe(false);
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'admin_user.reactivated', resourceId: target.id },
+    });
+    expect(audit).not.toBeNull();
+
+    const session = await loginAsAdmin(app, target);
+    expect(session.headers.Cookie).toBeTruthy();
+  });
+
+  it('refuses to reactivate an account that is already active', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'ALREADY_ACTIVE_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/reactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('search by name/email filters the list', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'SEARCH_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    await seedAdminUser(prisma, businessId, {
+      roleIds: [role.id],
+      fullName: 'Findable Fiona',
+      email: 'fiona-search@example.test',
+    });
+    await seedAdminUser(prisma, businessId, { roleIds: [role.id], fullName: 'Someone Else' });
+
+    const res = await app.request('/v1/admin/admin-users?q=Fiona', { headers: superAdminHeaders });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ full_name: string }> };
+    expect(body.data.some((a) => a.full_name === 'Findable Fiona')).toBe(true);
+    expect(body.data.some((a) => a.full_name === 'Someone Else')).toBe(false);
+  });
+});
+
+describe('Phase 05 — audit log read path', () => {
+  it('requires audit:read — forbidden without it, even for an otherwise-privileged admin', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'NO_AUDIT_ROLE',
+      permissionKeys: ['admin_users:read', 'admin_users:update', 'roles:read'],
+    });
+    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const headers = (await loginAsAdmin(app, admin)).headers;
+
+    const res = await app.request('/v1/admin/audit-log', { headers });
+    expect(res.status).toBe(403);
+  });
+
+  it('lists recent events with audit:read, newest first, and filters by action', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'AUDIT_READER',
+      permissionKeys: ['catalog:read'],
+    });
+    const target = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+
+    // Generate a real audited event to search for.
+    await app.request(`/v1/admin/admin-users/${target.id}/deactivate`, {
+      method: 'POST',
+      headers: superAdminHeaders,
+    });
+
+    const auditRole = await seedRole(prisma, businessId, {
+      key: 'AUDIT_ONLY',
+      permissionKeys: ['audit:read'],
+    });
+    const auditAdmin = await seedAdminUser(prisma, businessId, { roleIds: [auditRole.id] });
+    const auditHeaders = (await loginAsAdmin(app, auditAdmin)).headers;
+
+    const res = await app.request('/v1/admin/audit-log?action=admin_user.deactivated', {
+      headers: auditHeaders,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: Array<{ action: string; resource_id: string | null }>;
+      pagination: { limit: number; has_more: boolean };
+    };
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.data.every((e) => e.action === 'admin_user.deactivated')).toBe(true);
+    expect(body.data.some((e) => e.resource_id === target.id)).toBe(true);
+  });
+
+  it("does not leak another business's audit entries", async () => {
+    const otherBusiness = await seedBusiness(prisma, {
+      slug: 'rbac-it-other',
+      name: 'Rival Foods',
+    });
+    await seedPermissions(prisma, PERMISSIONS);
+    const otherRole = await seedRole(prisma, otherBusiness.id, {
+      key: 'OTHER_BIZ_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+    const otherTarget = await seedAdminUser(prisma, otherBusiness.id, {
+      roleIds: [otherRole.id],
+    });
+    const otherSuperRole = await seedRole(prisma, otherBusiness.id, {
+      key: 'OTHER_BIZ_SUPER',
+      permissionKeys: [...PERMISSIONS.map((p) => p.key)],
+    });
+    const otherSuper = await seedAdminUser(prisma, otherBusiness.id, {
+      roleIds: [otherSuperRole.id],
+    });
+
+    // An event in the OTHER business — the session must be established
+    // against an app instance SCOPED to that business, or admin-auth
+    // resolves the actor against the wrong tenant entirely.
+    const otherApp = createApp({
+      env: testEnv(),
+      prisma,
+      logger: createLogger({ service: 'rbac-it', env: 'local', version: 'test', level: 'silent' }),
+      businessId: otherBusiness.id,
+    });
+    const otherSuperHeaders = (await loginAsAdmin(otherApp, otherSuper)).headers;
+    await otherApp.request(`/v1/admin/admin-users/${otherTarget.id}/deactivate`, {
+      method: 'POST',
+      headers: otherSuperHeaders,
+    });
+
+    // This business's audit:read admin must not see it.
+    const auditRole = await seedRole(prisma, businessId, {
+      key: 'ISOLATION_AUDIT_ROLE',
+      permissionKeys: ['audit:read'],
+    });
+    const auditAdmin = await seedAdminUser(prisma, businessId, { roleIds: [auditRole.id] });
+    const auditHeaders = (await loginAsAdmin(app, auditAdmin)).headers;
+
+    const res = await app.request('/v1/admin/audit-log?action=admin_user.deactivated', {
+      headers: auditHeaders,
+    });
+    const body = (await res.json()) as { data: Array<{ resource_id: string | null }> };
+    expect(body.data.some((e) => e.resource_id === otherTarget.id)).toBe(false);
+  });
+});
+
 describe('authorization matrix (docs/08 §5.1 — the only enforcement that is security)', () => {
   it('an admin holding an UNRELATED permission is forbidden — deny by default, not "any role passes"', async () => {
     const role = await seedRole(prisma, businessId, {

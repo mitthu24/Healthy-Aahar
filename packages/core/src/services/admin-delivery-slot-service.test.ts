@@ -105,6 +105,9 @@ class FakeAuditLog implements AuditLogRepository {
   async write(_scope: BusinessScope, event: AuditEvent): Promise<void> {
     this.events.push(event);
   }
+  async list(): Promise<never[]> {
+    return [];
+  }
 }
 
 function service(rows: AdminDeliverySlotRow[] = []) {

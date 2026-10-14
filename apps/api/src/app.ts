@@ -13,6 +13,7 @@ import {
   OrderFulfilmentService,
   PasswordResetService,
   RbacService,
+  AuditLogService,
   ServiceabilityAdminService,
   ServiceabilityService,
 } from '@healthy-aahar/core';
@@ -61,6 +62,7 @@ import { PrismaAdminDeliverySlotRepository } from './repositories/prisma-admin-d
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
+import { auditLogRoutes } from './routes/admin/audit-log.js';
 import { adminOrdersRoutes } from './routes/admin/orders.js';
 import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
 import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
@@ -161,6 +163,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       sha256SessionTokenHasher,
     ),
     rbac: new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo),
+    auditLog: new AuditLogService(auditRepo),
     passwordReset,
     catalogue: new CatalogueService({ catalogue: new PrismaCatalogueRepository(prisma) }),
     address: new AddressService({ addresses: new PrismaAddressRepository(prisma) }),
@@ -317,6 +320,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin', adminServiceabilityRoutes());
   app.route('/v1/admin/admin-users', adminUsersRoutes());
   app.route('/v1/admin', rolesRoutes());
+  app.route('/v1/admin/audit-log', auditLogRoutes());
   app.route('/v1/admin', adminOrdersRoutes());
   app.route('/v1/admin', adminCatalogueRoutes());
   app.route('/v1/admin', adminDeliverySlotsRoutes());

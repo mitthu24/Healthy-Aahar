@@ -510,6 +510,7 @@ model AdminUser {
   fullName             String    @map("full_name")
   employeeCode         String?   @map("employee_code")
   designation          String?
+  department           String?
   isSuperAdmin         Boolean   @default(false) @map("is_super_admin")
   mfaEnabled           Boolean   @default(false) @map("mfa_enabled")
   lastPasswordChangeAt DateTime? @map("last_password_change_at") @db.Timestamptz(6)

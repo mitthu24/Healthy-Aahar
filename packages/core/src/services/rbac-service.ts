@@ -42,6 +42,7 @@ export class RbacService {
       email: string;
       fullName: string;
       designation?: string;
+      department?: string;
       roleIds: string[];
       invitedByUserId: string;
       invitedByIsSuperAdmin: boolean;
@@ -56,6 +57,7 @@ export class RbacService {
       email: params.email,
       fullName: params.fullName,
       designation: params.designation,
+      department: params.department,
       roleIds: params.roleIds,
       invitedByUserId: params.invitedByUserId,
     });
@@ -167,6 +169,14 @@ export class RbacService {
       params.actorUserId,
     );
 
+    // A role change can both grant AND revoke permissions the target's
+    // current session already carries (permissions are loaded per-request
+    // from the DB today, but a session-level cache is exactly the kind of
+    // thing that gets added later without anyone remembering to revisit
+    // this call site) — revoking forces immediate reauthentication under
+    // the new role set rather than leaving that to chance.
+    await this.sessions.revokeAllForUser(target.userId);
+
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
       actorType: 'ADMIN',
@@ -179,14 +189,58 @@ export class RbacService {
     return updated;
   }
 
-  async deactivate(
+  /**
+   * Updates an admin's own-record fields (name, designation, department).
+   * Never roles or super-admin status — that remains exclusively
+   * `setRoles`'s job, with its own privilege-escalation and last-super-admin
+   * guards. No self-edit restriction: an admin editing their own displayed
+   * name is not a security boundary the way role changes are.
+   */
+  async updateDetails(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; actorUserId: string },
+    params: {
+      targetAdminUserId: string;
+      fullName?: string;
+      designation?: string;
+      department?: string;
+      actorUserId: string;
+    },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
 
-    // BR-SEC6, deactivation path.
+    const updated = await this.admins.update(scope, params.targetAdminUserId, {
+      fullName: params.fullName,
+      designation: params.designation,
+      department: params.department,
+    });
+
+    await this.audit.write(scope, {
+      actorUserId: params.actorUserId,
+      actorType: 'ADMIN',
+      action: 'admin_user.updated',
+      resourceType: 'admin_user',
+      resourceId: params.targetAdminUserId,
+      metadata: {
+        full_name: params.fullName,
+        designation: params.designation,
+        department: params.department,
+      },
+    });
+
+    return updated;
+  }
+
+  async deactivate(
+    scope: BusinessScope,
+    params: { targetAdminUserId: string; actorAdminUserId: string; actorUserId: string },
+  ): Promise<AdminUserRow> {
+    const target = await this.admins.findById(scope, params.targetAdminUserId);
+    if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+
+    // BR-SEC6, deactivation path. Checked before the self-deactivation guard
+    // below: the sole active Super Admin deactivating themselves must still
+    // surface as LAST_SUPER_ADMIN, matching the established contract.
     if (target.isSuperAdmin) {
       const activeCount = await this.admins.countActiveSuperAdmins(scope);
       if (activeCount <= 1) {
@@ -195,6 +249,15 @@ export class RbacService {
           'At least one active Super Admin must always exist.',
         );
       }
+    }
+
+    // An admin cannot deactivate their own account otherwise — the obvious
+    // way to defeat BR-SEC6's guard would be for a Super Admin (who isn't
+    // the last one) to simply deactivate someone else down to a count the
+    // guard still permits, but a self-lockout (or a non-super-admin cutting
+    // off their own access) is its own failure mode worth refusing outright.
+    if (params.targetAdminUserId === params.actorAdminUserId) {
+      throw new DomainError('CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own account.');
     }
 
     const updated = await this.admins.deactivate(scope, params.targetAdminUserId);
@@ -207,6 +270,34 @@ export class RbacService {
       actorUserId: params.actorUserId,
       actorType: 'ADMIN',
       action: 'admin_user.deactivated',
+      resourceType: 'admin_user',
+      resourceId: params.targetAdminUserId,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Reverses `deactivate`. Does not restore any session — the admin signs
+   * in fresh through the normal login flow, the same as any other account
+   * returning to ACTIVE status.
+   */
+  async reactivate(
+    scope: BusinessScope,
+    params: { targetAdminUserId: string; actorUserId: string },
+  ): Promise<AdminUserRow> {
+    const target = await this.admins.findById(scope, params.targetAdminUserId);
+    if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    if (!target.deletedAt) {
+      throw new DomainError('VALIDATION_FAILED', 'This account is already active.');
+    }
+
+    const updated = await this.admins.reactivate(scope, params.targetAdminUserId);
+
+    await this.audit.write(scope, {
+      actorUserId: params.actorUserId,
+      actorType: 'ADMIN',
+      action: 'admin_user.reactivated',
       resourceType: 'admin_user',
       resourceId: params.targetAdminUserId,
     });

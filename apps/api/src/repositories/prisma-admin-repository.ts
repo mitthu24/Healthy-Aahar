@@ -2,11 +2,13 @@ import {
   newId,
   now,
   type AdminRepository,
+  type AdminUserListFilter,
   type AdminUserRow,
   type BusinessScope,
   type EffectivePermissions,
   type InviteAdminInput,
   type InviteAdminResult,
+  type UpdateAdminDetailsInput,
 } from '@healthy-aahar/core';
 import type { UserRow } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
@@ -26,6 +28,7 @@ function toAdminUserRow(admin: {
   userId: string;
   fullName: string;
   designation: string | null;
+  department: string | null;
   isSuperAdmin: boolean;
   invitedBy: string | null;
   invitationAcceptedAt: Date | null;
@@ -42,6 +45,7 @@ function toAdminUserRow(admin: {
     email: admin.user.email,
     fullName: admin.fullName,
     designation: admin.designation,
+    department: admin.department,
     isSuperAdmin: admin.isSuperAdmin,
     invitedBy: admin.invitedBy,
     invitationAcceptedAt: admin.invitationAcceptedAt,
@@ -98,9 +102,20 @@ export class PrismaAdminRepository implements AdminRepository {
     return admin ? toAdminUserRow(admin) : null;
   }
 
-  async list(scope: BusinessScope): Promise<AdminUserRow[]> {
+  async list(scope: BusinessScope, filter?: AdminUserListFilter): Promise<AdminUserRow[]> {
+    const q = filter?.q?.trim();
     const admins = await this.prisma.adminUser.findMany({
-      where: { businessId: scope },
+      where: {
+        businessId: scope,
+        ...(q
+          ? {
+              OR: [
+                { fullName: { contains: q, mode: 'insensitive' } },
+                { user: { email: { contains: q, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      },
       include: ADMIN_INCLUDE,
       orderBy: { createdAt: 'asc' },
     });
@@ -167,6 +182,7 @@ export class PrismaAdminRepository implements AdminRepository {
             userId,
             fullName: input.fullName,
             designation: input.designation ?? null,
+            department: input.department ?? null,
             isSuperAdmin,
             invitedBy: input.invitedByUserId,
           },
@@ -255,6 +271,39 @@ export class PrismaAdminRepository implements AdminRepository {
     });
 
     void scope;
+    return toAdminUserRow(updated);
+  }
+
+  async reactivate(scope: BusinessScope, adminUserId: string): Promise<AdminUserRow> {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const admin = await tx.adminUser.update({
+        where: { id: adminUserId },
+        data: { deletedAt: null },
+        include: ADMIN_INCLUDE,
+      });
+      await tx.user.update({ where: { id: admin.userId }, data: { status: 'ACTIVE' } });
+      return admin;
+    });
+
+    void scope;
+    return toAdminUserRow(updated);
+  }
+
+  async update(
+    scope: BusinessScope,
+    adminUserId: string,
+    input: UpdateAdminDetailsInput,
+  ): Promise<AdminUserRow> {
+    void scope;
+    const updated = await this.prisma.adminUser.update({
+      where: { id: adminUserId },
+      data: {
+        ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+        ...(input.designation !== undefined ? { designation: input.designation } : {}),
+        ...(input.department !== undefined ? { department: input.department } : {}),
+      },
+      include: ADMIN_INCLUDE,
+    });
     return toAdminUserRow(updated);
   }
 
