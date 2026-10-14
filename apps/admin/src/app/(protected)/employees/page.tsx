@@ -56,7 +56,7 @@ export default function EmployeesPage() {
             {employee.deactivated ? <Badge tone="danger">Deactivated</Badge> : null}
           </div>
           <p className="text-caption text-sand-600 mt-0.5">
-            {employee.email ?? 'No email on file'}
+            {employee.email ?? (employee.login_id ? `Login ID: ${employee.login_id}` : 'No email on file')}
             {employee.designation ? ` · ${employee.designation}` : ''}
             {employee.department ? ` · ${employee.department}` : ''}
           </p>
@@ -97,7 +97,7 @@ export default function EmployeesPage() {
 
         <div className="mt-5 max-w-xs">
           <SearchInput
-            placeholder="Search by name or email"
+            placeholder="Search by name, email or login ID"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             label="Search employees"

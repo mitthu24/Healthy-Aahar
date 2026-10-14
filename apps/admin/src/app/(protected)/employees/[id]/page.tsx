@@ -209,7 +209,11 @@ export default function EmployeeDetailPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-heading-lg text-sand-900">{employee.full_name}</h1>
-          <p className="text-body-sm text-sand-600 mt-1">{employee.email}</p>
+          <p className="text-body-sm text-sand-600 mt-1">
+            {[employee.email, employee.login_id ? `Login ID: ${employee.login_id}` : null]
+              .filter(Boolean)
+              .join(' · ') || 'No email or login ID on file'}
+          </p>
         </div>
         <div className="flex gap-2">
           {employee.is_super_admin ? <Badge tone="success">Super Admin</Badge> : null}
