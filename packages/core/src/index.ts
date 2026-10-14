@@ -8,6 +8,7 @@ export * from './domain/pagination.js';
 export * from './domain/business-scope.js';
 export * from './domain/order-status.js';
 export * from './domain/permissions.js';
+export * from './domain/duty-status.js';
 
 // ── Ports: interfaces the application depends on ────────────────────────
 export type { ServiceabilityRepository } from './ports/serviceability-repository.js';
@@ -82,6 +83,18 @@ export type {
   TransitionInput,
   OrderRepository,
 } from './ports/order-repository.js';
+export type {
+  DeliveryPartnerRow,
+  DeliveryPartnerListFilter,
+  CreateDeliveryPartnerProfileInput,
+  DeliveryPartnerRepository,
+} from './ports/delivery-partner-repository.js';
+export type {
+  AssignmentStatusValue,
+  OrderAssignmentRow,
+  CreateAssignmentInput,
+  OrderAssignmentRepository,
+} from './ports/order-assignment-repository.js';
 export type {
   AdminCategoryRow,
   CategoryInput,
@@ -167,3 +180,16 @@ export {
   type AdminDeliverySlotServiceDeps,
 } from './services/admin-delivery-slot-service.js';
 export { toAdminDeliverySlotView } from './services/admin-delivery-slot-view.js';
+export {
+  DeliveryPartnerService,
+  type DeliveryPartnerServiceDeps,
+  type CreateDeliveryPartnerParams,
+} from './services/delivery-partner-service.js';
+export {
+  OrderAssignmentService,
+  type OrderAssignmentServiceDeps,
+} from './services/order-assignment-service.js';
+export {
+  DeliveryFulfilmentService,
+  type DeliveryFulfilmentServiceDeps,
+} from './services/delivery-fulfilment-service.js';

@@ -60,10 +60,17 @@ export type OrderRow = {
   placedAt: Date;
   confirmedAt: Date | null;
   updatedAt: Date;
+  assignedPartnerId: string | null;
+  assignedPartnerName: string | null;
+  assignedAt: Date | null;
 };
 
 export type OrderListFilter = {
   status?: OrderStatusValue | undefined;
+  /** Admin-list-only: orders currently assigned to this delivery partner. */
+  assignedPartnerId?: string | undefined;
+  /** Admin-list-only: orders with no current assignment at all. */
+  unassigned?: boolean | undefined;
   limit: number;
   cursor?: Cursor | undefined;
 };
@@ -88,6 +95,18 @@ export interface OrderRepository {
   ): Promise<OrderRow | null>;
   listForAdmin(scope: BusinessScope, filter: OrderListFilter): Promise<Page<OrderRow>>;
   getForAdmin(scope: BusinessScope, orderId: string): Promise<OrderRow | null>;
+  /** Orders currently assigned to this delivery partner (`assignedPartnerId` match) — the partner's own "my deliveries" list. */
+  listForPartner(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    filter: OrderListFilter,
+  ): Promise<Page<OrderRow>>;
+  /** Scoped to the partner's own assignment — returns null if this order isn't currently assigned to them (never leaks that the order exists). */
+  getForPartner(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    orderId: string,
+  ): Promise<OrderRow | null>;
   /**
    * Applies ONE transition. The caller (the service) has already checked
    * `canTransition` — this persists it, stamps the matching timestamp

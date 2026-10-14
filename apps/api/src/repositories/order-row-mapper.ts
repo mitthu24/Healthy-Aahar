@@ -10,6 +10,7 @@ import type { Prisma } from '@healthy-aahar/db';
 export const ORDER_INCLUDE = {
   items: true,
   statusHistory: { orderBy: { createdAt: 'asc' } },
+  assignedPartner: { select: { fullName: true } },
 } satisfies Prisma.OrderInclude;
 
 export type RawOrder = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -77,6 +78,9 @@ export function toOrderRow(raw: RawOrder): OrderRow {
     placedAt: raw.placedAt,
     confirmedAt: raw.confirmedAt,
     updatedAt: raw.updatedAt,
+    assignedPartnerId: raw.assignedPartnerId,
+    assignedPartnerName: raw.assignedPartner?.fullName ?? null,
+    assignedAt: raw.assignedAt,
   };
 }
 

@@ -67,6 +67,8 @@ export class PrismaOrderRepository implements OrderRepository {
       where: {
         businessId: scope,
         ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.assignedPartnerId ? { assignedPartnerId: filter.assignedPartnerId } : {}),
+        ...(filter.unassigned ? { assignedPartnerId: null } : {}),
         ...(filter.cursor ? { placedAt: { lt: new Date(filter.cursor.sortValue) } } : {}),
       },
       orderBy: { placedAt: 'desc' },
@@ -88,6 +90,41 @@ export class PrismaOrderRepository implements OrderRepository {
     return row ? toOrderRow(row) : null;
   }
 
+  async listForPartner(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    filter: OrderListFilter,
+  ): Promise<Page<OrderRow>> {
+    const rows = await this.prisma.order.findMany({
+      where: {
+        businessId: scope,
+        assignedPartnerId: partnerAdminUserId,
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.cursor ? { placedAt: { lt: new Date(filter.cursor.sortValue) } } : {}),
+      },
+      orderBy: { placedAt: 'desc' },
+      take: filter.limit,
+      include: ORDER_INCLUDE,
+    });
+
+    return {
+      data: rows.map(toOrderRow),
+      pagination: { limit: filter.limit, next_cursor: null, has_more: false },
+    };
+  }
+
+  async getForPartner(
+    scope: BusinessScope,
+    partnerAdminUserId: string,
+    orderId: string,
+  ): Promise<OrderRow | null> {
+    const row = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId: scope, assignedPartnerId: partnerAdminUserId },
+      include: ORDER_INCLUDE,
+    });
+    return row ? toOrderRow(row) : null;
+  }
+
   async transition(
     scope: BusinessScope,
     orderId: string,
@@ -104,6 +141,14 @@ export class PrismaOrderRepository implements OrderRepository {
       input.toStatus === 'FAILED' ||
       input.toStatus === 'RETURNED';
 
+    // `orders.cancelled_by_type` is the narrower, pre-existing CancelActor
+    // enum (CUSTOMER/ADMIN/SYSTEM) — a delivery partner marking a delivery
+    // FAILED is operationally an admin-side action (the real identity is
+    // still recorded via cancelledByUserId/actorUserId), and FAILED's
+    // customer-facing label doesn't branch on cancelled_by_type anyway
+    // (order-status.ts customerDisplayStatus), so no meaning is lost.
+    const cancelledByType = input.actor === 'DELIVERY_PARTNER' ? 'ADMIN' : input.actor;
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
@@ -112,7 +157,7 @@ export class PrismaOrderRepository implements OrderRepository {
         ...(isCancelLike
           ? {
               cancelledAt: now(),
-              cancelledByType: input.actor,
+              cancelledByType,
               cancelledByUserId: input.actorUserId ?? null,
               cancellationReason: input.reason ?? null,
             }

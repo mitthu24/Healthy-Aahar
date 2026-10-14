@@ -40,6 +40,9 @@ export const adminOrderSchema = z.object({
   cancellation_reason: z.string().nullable(),
   placed_at: z.string(),
   updated_at: z.string(),
+  assigned_partner_id: uuidSchema.nullable(),
+  assigned_partner_name: z.string().nullable(),
+  assigned_at: z.string().nullable(),
 });
 export type AdminOrderDto = z.infer<typeof adminOrderSchema>;
 
@@ -62,6 +65,8 @@ export const listAdminOrdersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   status: orderStatusValueSchema.optional(),
+  assigned_partner_id: uuidSchema.optional(),
+  unassigned: z.coerce.boolean().optional(),
 });
 
 export const updateOrderStatusBodySchema = z.object({

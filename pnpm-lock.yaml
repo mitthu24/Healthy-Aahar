@@ -207,6 +207,58 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.20.5)(jsdom@25.0.1)
 
+  apps/delivery:
+    dependencies:
+      '@healthy-aahar/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@healthy-aahar/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@healthy-aahar/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@healthy-aahar/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      next:
+        specifier: 15.5.27
+        version: 15.5.27(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react:
+        specifier: ^19.0.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.3.0(react@19.3.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.8.1
+        version: 22.20.5
+      '@types/react':
+        specifier: ^19.0.1
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.0.1
+        version: 19.3.0(@types/react@19.3.0)
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.6.1(postcss@8.5.23)
+      eslint:
+        specifier: ^9.13.0
+        version: 9.39.5(jiti@2.6.1)
+      postcss:
+        specifier: 8.5.23
+        version: 8.5.23
+      tailwindcss:
+        specifier: ^3.4.14
+        version: 3.4.19(tsx@4.23.15)(yaml@2.9.1)
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@22.20.5)(jsdom@25.0.1)
+
   apps/marketing:
     dependencies:
       '@healthy-aahar/config':

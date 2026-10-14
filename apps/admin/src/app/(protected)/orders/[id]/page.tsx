@@ -1,6 +1,6 @@
 'use client';
 
-import { ApiError, type AdminOrderDto } from '@healthy-aahar/sdk';
+import { ApiError, type AdminOrderDto, type DeliveryPartnerDto } from '@healthy-aahar/sdk';
 import { Badge, Button, Card, ErrorState, Skeleton } from '@healthy-aahar/ui';
 import { useParams } from 'next/navigation';
 import { useState, useEffect, type FormEvent } from 'react';
@@ -15,7 +15,9 @@ import {
   nextFulfilmentStatus,
 } from '@/lib/order-status';
 
-type Dialog = 'reject' | 'hold' | 'fail' | 'collect' | null;
+type Dialog = 'reject' | 'hold' | 'fail' | 'collect' | 'assign' | null;
+
+const ASSIGNABLE_STATUSES = new Set(['READY_FOR_DISPATCH', 'OUT_FOR_DELIVERY']);
 
 export default function AdminOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -25,6 +27,8 @@ export default function AdminOrderDetailPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [reasonText, setReasonText] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  const [eligiblePartners, setEligiblePartners] = useState<DeliveryPartnerDto[] | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState('');
 
   async function load() {
     setError(null);
@@ -67,6 +71,18 @@ export default function AdminOrderDetailPage() {
   }
 
   const next = nextFulfilmentStatus(order.status);
+  const isReassignment = order.assigned_partner_id !== null;
+
+  async function openAssignDialog() {
+    setDialog('assign');
+    setSelectedPartnerId('');
+    try {
+      const res = await apiClient.listDeliveryPartners({ duty_status: 'ON_DUTY' });
+      setEligiblePartners(res.data.filter((p) => !p.deactivated));
+    } catch {
+      setEligiblePartners([]);
+    }
+  }
 
   async function onDialogSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,6 +96,13 @@ export default function AdminOrderDetailPage() {
       );
     } else if (dialog === 'collect') {
       await runAction(() => apiClient.recordCodCollection(order!.id, order!.total.amount_paise));
+    } else if (dialog === 'assign') {
+      await runAction(() =>
+        apiClient.assignOrder(order!.id, {
+          partner_admin_user_id: selectedPartnerId,
+          reason: isReassignment ? reasonText : undefined,
+        }),
+      );
     }
   }
 
@@ -154,6 +177,29 @@ export default function AdminOrderDetailPage() {
         </Card>
       </section>
 
+      <section className="mt-4">
+        <Card className="flex items-center justify-between p-4">
+          <div>
+            <p className="text-body-sm text-sand-800 font-medium">Delivery partner</p>
+            {order.assigned_partner_name ? (
+              <p className="text-caption text-sand-600">
+                {order.assigned_partner_name}
+                {order.assigned_at
+                  ? ` · assigned ${new Date(order.assigned_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`
+                  : ''}
+              </p>
+            ) : (
+              <p className="text-caption text-sand-600">Not yet assigned.</p>
+            )}
+          </div>
+          {ASSIGNABLE_STATUSES.has(order.status) ? (
+            <Button size="sm" variant="secondary" onClick={() => void openAssignDialog()}>
+              {isReassignment ? 'Reassign' : 'Assign'}
+            </Button>
+          ) : null}
+        </Card>
+      </section>
+
       {order.cancellation_reason ? (
         <p className="text-body-sm text-danger-600 mt-4">
           Cancellation reason: {order.cancellation_reason}
@@ -220,6 +266,55 @@ export default function AdminOrderDetailPage() {
                 Confirm that <strong>{order.total.display}</strong> was collected in cash/UPI from
                 the customer on delivery.
               </p>
+            ) : dialog === 'assign' ? (
+              <>
+                <label htmlFor="assign-partner" className="text-body-sm text-sand-700 font-medium">
+                  On-duty delivery partner
+                </label>
+                {eligiblePartners === null ? (
+                  <p className="text-caption text-sand-600">Loading eligible partners…</p>
+                ) : eligiblePartners.length === 0 ? (
+                  <p className="text-caption text-danger-600">
+                    No on-duty, active delivery partners available right now.
+                  </p>
+                ) : (
+                  <select
+                    id="assign-partner"
+                    required
+                    value={selectedPartnerId}
+                    onChange={(e) => setSelectedPartnerId(e.target.value)}
+                    className="border-sand-200 bg-sand-0 text-body-sm h-10 w-full rounded-md border px-3"
+                  >
+                    <option value="" disabled>
+                      Select a partner
+                    </option>
+                    {eligiblePartners.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                        {p.active_delivery_count > 0 ? ` (${p.active_delivery_count} active)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isReassignment ? (
+                  <>
+                    <label
+                      htmlFor="assign-reason"
+                      className="text-body-sm text-sand-700 mt-2 block font-medium"
+                    >
+                      Reason for reassigning
+                    </label>
+                    <textarea
+                      id="assign-reason"
+                      required
+                      value={reasonText}
+                      onChange={(e) => setReasonText(e.target.value)}
+                      maxLength={500}
+                      className="border-sand-200 bg-sand-0 text-body-sm h-20 w-full rounded-md border px-3 py-2"
+                    />
+                  </>
+                ) : null}
+              </>
             ) : (
               <>
                 <label htmlFor="dialog-reason" className="text-body-sm text-sand-700 font-medium">
@@ -244,6 +339,7 @@ export default function AdminOrderDetailPage() {
                 type="submit"
                 variant={dialog === 'reject' ? 'danger' : 'primary'}
                 isLoading={isBusy}
+                disabled={dialog === 'assign' && !selectedPartnerId}
               >
                 Confirm
               </Button>

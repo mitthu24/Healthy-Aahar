@@ -13,6 +13,11 @@ const LINKS = [
   { href: '/categories', label: 'Categories' },
   { href: '/delivery-slots', label: 'Slots' },
   { href: '/employees', label: 'Employees', permission: 'admin_users:read' },
+  {
+    href: '/delivery-partners',
+    label: 'Delivery Partners',
+    permission: 'delivery_partners:read',
+  },
   { href: '/roles', label: 'Roles', permission: 'roles:read' },
   { href: '/audit-log', label: 'Audit', permission: 'audit:read' },
 ] as const;

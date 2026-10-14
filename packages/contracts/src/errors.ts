@@ -109,6 +109,11 @@ export const ERROR_CODES = {
   INVALID_START_DATE: 422,
   INVALID_DELIVERY_DAYS: 422,
   SLOT_NOT_ALLOWED_BY_PLAN: 422,
+
+  // ── Delivery partners & order assignment (PHASE 06) ─────────────────────
+  PARTNER_NOT_FOUND: 404,
+  PARTNER_OFF_DUTY: 409,
+  ORDER_NOT_ASSIGNABLE: 409,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;
