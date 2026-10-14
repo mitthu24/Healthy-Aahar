@@ -214,6 +214,27 @@ export function adminAuthRoutes(): Hono<AppBindings> {
   app.get('/me', adminAuth, async (c) => {
     const actor = c.get('actor');
     if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    // Re-echoes the CSRF cookie's own value as the response header — NOT a
+    // freshly generated token (that would desync it from the cookie this
+    // request already carried, breaking the double-submit check for no
+    // reason). Fixes a real bug: `ApiClient` only ever holds this token
+    // in memory (see its `csrfToken` field doc), so a hard reload while
+    // logged in silently drops it and every mutating request 403s until
+    // the admin logs out and back in — even though the session itself is
+    // still perfectly valid. `AuthGate` calls this endpoint on every
+    // mount and route change, BEFORE rendering any protected page, so
+    // re-emitting the header here closes that gap using the exact
+    // mechanism already in place for login, not a new one. If the CSRF
+    // cookie happens to be absent (cleared independently of the session
+    // cookie — not expected in normal operation since both are set
+    // together at login with the same lifetime), this simply omits the
+    // header; the client then has no token to send, and the existing
+    // CSRF middleware correctly 403s the next mutating request rather
+    // than ever inventing or trusting an unverified one.
+    const csrfToken = getCookie(c, CSRF_COOKIE);
+    if (csrfToken) c.header(CSRF_HEADER, csrfToken);
+
     return c.json(await toMeResponse(c, actor));
   });
 
