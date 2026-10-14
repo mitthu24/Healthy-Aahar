@@ -949,6 +949,7 @@ export type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  DashboardSummary,
   DeliveryDashboardDto,
   DeliveryOrderDto,
   DeliveryOrderListResponse,
@@ -957,6 +958,7 @@ export type {
   DeliverySlotDto,
   DeliverySlotListResponse,
   AssignmentHistoryEntryDto,
+  InventoryAlertsResponse,
   OrderDto,
   OrderItemDto,
   OrderListResponse,
@@ -967,5 +969,7 @@ export type {
   ProductSummaryDto,
   ProductVariantDto,
   Role,
+  SalesTrendResponse,
   ServiceabilityResponse,
+  TopProductsResponse,
 } from '@healthy-aahar/contracts';
