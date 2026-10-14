@@ -82,14 +82,14 @@ registerRoute({
   permission: 'admin_users:create',
   summary: 'Invite a staff member (creates the user row + assigns roles; no password until setup)',
   phase: '03',
-  errors: ['FORBIDDEN', 'VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED'],
+  errors: ['FORBIDDEN', 'VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED', 'LOGIN_ID_TAKEN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { body: inviteAdminBodySchema },
     responses: {
       201: { description: 'Invited', schema: inviteAdminResponseSchema },
       403: jsonError('Only a Super Admin may grant role management or Super Admin access'),
-      409: jsonError('An admin account with this email already exists'),
+      409: jsonError('An admin account with this email or login ID already exists'),
       422: jsonError('Validation failed'),
     },
   },
@@ -177,6 +177,7 @@ function toResponse(row: AdminUserRow) {
     id: row.id,
     user_id: row.userId,
     email: row.email,
+    login_id: row.loginId,
     full_name: row.fullName,
     designation: row.designation,
     department: row.department,
@@ -212,6 +213,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     const scope = businessScope(c.env.businessId);
     const { admin, passwordResetLink } = await c.env.services.rbac.inviteAdmin(scope, {
       email: body.email,
+      loginId: body.login_id,
       fullName: body.full_name,
       designation: body.designation,
       department: body.department,

@@ -14,12 +14,21 @@ import type { AppBindings } from '../types.js';
  */
 export async function loginAsAdmin(
   app: Hono<AppBindings>,
-  credentials: { email: string; password: string },
+  /** STAGE C: either `email` or `loginId` identifies the account — exactly
+   *  one is expected, matching the real login route's single `identifier`
+   *  field. */
+  credentials: { email?: string | null; loginId?: string | null; password: string },
 ): Promise<{ cookieHeader: string; csrfHeader: string; headers: Record<string, string> }> {
+  const identifier = credentials.email ?? credentials.loginId;
+  if (!identifier) throw new Error('loginAsAdmin requires an email or a loginId');
+
+  // The wire field is still named `email` (see adminLoginBodySchema's doc
+  // comment) — it accepts a login ID too, so this helper just forwards
+  // whichever identifier the caller supplied under that same key.
   const res = await app.request('/v1/admin/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials),
+    body: JSON.stringify({ email: identifier, password: credentials.password }),
   });
 
   if (res.status !== 200) {

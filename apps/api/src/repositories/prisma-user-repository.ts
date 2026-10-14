@@ -31,6 +31,7 @@ const USER_SELECT = {
   passwordHash: true,
   userType: true,
   email: true,
+  loginId: true,
   phone: true,
   emailVerified: true,
   phoneVerified: true,
@@ -47,6 +48,7 @@ function toUserRow(raw: RawUser): UserRow {
     passwordHash: raw.passwordHash,
     userType: raw.userType as UserType,
     email: raw.email,
+    loginId: raw.loginId,
     phone: raw.phone,
     emailVerified: raw.emailVerified,
     phoneVerified: raw.phoneVerified,
@@ -66,6 +68,14 @@ export class PrismaUserRepository implements UserRepository {
   async findByEmail(email: string, userType: UserType): Promise<UserRow | null> {
     const raw = await this.prisma.user.findUnique({
       where: { email_userType: { email, userType } },
+      select: USER_SELECT,
+    });
+    return raw ? toUserRow(raw) : null;
+  }
+
+  async findByLoginId(loginId: string, userType: UserType): Promise<UserRow | null> {
+    const raw = await this.prisma.user.findUnique({
+      where: { loginId_userType: { loginId, userType } },
       select: USER_SELECT,
     });
     return raw ? toUserRow(raw) : null;

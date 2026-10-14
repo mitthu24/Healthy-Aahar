@@ -16,7 +16,7 @@ const PROFILE_INCLUDE = {
       fullName: true,
       employeeCode: true,
       deletedAt: true,
-      user: { select: { email: true } },
+      user: { select: { email: true, loginId: true } },
     },
   },
 } satisfies Prisma.DeliveryPartnerProfileInclude;
@@ -28,6 +28,7 @@ function toRow(raw: RawProfile, activeDeliveryCount: number): DeliveryPartnerRow
     adminUserId: raw.adminUserId,
     fullName: raw.adminUser.fullName,
     email: raw.adminUser.user.email,
+    loginId: raw.adminUser.user.loginId,
     employeeCode: raw.adminUser.employeeCode,
     dutyStatus: raw.dutyStatus,
     dutyChangedAt: raw.dutyChangedAt,
@@ -57,6 +58,7 @@ export class PrismaDeliveryPartnerRepository implements DeliveryPartnerRepositor
                 OR: [
                   { fullName: { contains: q, mode: 'insensitive' } },
                   { user: { email: { contains: q, mode: 'insensitive' } } },
+                  { user: { loginId: { contains: q, mode: 'insensitive' } } },
                 ],
               },
             }

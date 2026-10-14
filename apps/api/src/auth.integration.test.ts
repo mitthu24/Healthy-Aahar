@@ -460,6 +460,58 @@ describe('admin session lifecycle (docs/07 §5)', () => {
   });
 });
 
+describe('admin login by Stage C login ID (email-free accounts)', () => {
+  it('logs in with a login ID and no email at all', async () => {
+    const partner = await seedAdminUser(prisma, businessId, { loginId: 'rider.raj' });
+
+    const res = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'rider.raj', password: partner.password }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { login_id: string | null; email: string | null };
+    expect(body.login_id).toBe('rider.raj');
+    expect(body.email).toBeNull();
+  });
+
+  it('matches a login ID case-insensitively, same as email', async () => {
+    const partner = await seedAdminUser(prisma, businessId, { loginId: 'rider.raj' });
+
+    const res = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'RIDER.RAJ', password: partner.password }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects an unknown login ID with the same generic error as a wrong password', async () => {
+    const res = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'no-such-rider', password: 'whatever-1234' }),
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('INVALID_CREDENTIALS');
+  });
+
+  it('a suspended login-ID account cannot log in', async () => {
+    const partner = await seedAdminUser(prisma, businessId, {
+      loginId: 'rider.raj',
+      status: 'SUSPENDED',
+    });
+
+    const res = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'rider.raj', password: partner.password }),
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
 describe('login rate limiting (Step 6)', () => {
   it('rate-limits repeated failed login attempts from the same account', async () => {
     const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, LOGIN_RATE_LIMIT_PER_MIN: 3 }));

@@ -98,6 +98,7 @@ async function toMeResponse(
   user_id: string;
   full_name: string;
   email: string | null;
+  login_id: string | null;
   designation: string | null;
   is_super_admin: boolean;
   permissions: string[];
@@ -112,6 +113,7 @@ async function toMeResponse(
     user_id: actor.userId,
     full_name: profile?.fullName ?? '',
     email: profile?.email ?? null,
+    login_id: profile?.loginId ?? null,
     designation: profile?.designation ?? null,
     is_super_admin: actor.isSuperAdmin,
     permissions: [...actor.permissions],
@@ -158,6 +160,8 @@ export function adminAuthRoutes(): Hono<AppBindings> {
       limit: c.env.env.LOGIN_RATE_LIMIT_PER_MIN,
       bucket: 'admin-login',
       ip,
+      // STAGE C: the bucketing key is an opaque per-account string, equally
+      // valid whether the caller typed an email or a login ID.
       email: body.email,
     });
 
@@ -165,7 +169,7 @@ export function adminAuthRoutes(): Hono<AppBindings> {
     const maxAgeSeconds = c.env.env.ADMIN_SESSION_MAX_AGE_SECONDS;
 
     const { token, actor } = await c.env.services.adminAuth.login(scope, {
-      email: body.email,
+      identifier: body.email,
       password: body.password,
       sessionTtlMs: maxAgeSeconds * 1000,
       ipAddress: ip,

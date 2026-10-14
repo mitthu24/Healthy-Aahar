@@ -266,6 +266,45 @@ describe('delivery partner accounts (admin-managed)', () => {
     const afterRes = await app.request('/v1/admin/delivery/me', { headers: partnerHeaders });
     expect(afterRes.status).toBe(401);
   });
+
+  it('creates an email-free delivery partner from login_id alone, who can then log in', async () => {
+    const res = await app.request('/v1/admin/delivery-partners', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ login_id: 'rider.raj', full_name: 'Rider Raj' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: string;
+      email: string | null;
+      login_id: string | null;
+      password_setup_link: string;
+    };
+    expect(body.email).toBeNull();
+    expect(body.login_id).toBe('rider.raj');
+
+    const setup = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: body.password_setup_link, password: 'rider-password-1' }),
+    });
+    expect(setup.status).toBe(200);
+
+    const session = await loginAsAdmin(app, { loginId: 'rider.raj', password: 'rider-password-1' });
+    expect(session.headers.Cookie).toBeTruthy();
+
+    const me = await app.request('/v1/admin/delivery/me', { headers: session.headers });
+    expect(me.status).toBe(200);
+  });
+
+  it('rejects neither email nor login_id with 422', async () => {
+    const res = await app.request('/v1/admin/delivery-partners', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ full_name: 'No Identifier' }),
+    });
+    expect(res.status).toBe(422);
+  });
 });
 
 describe('order assignment (admin side)', () => {
