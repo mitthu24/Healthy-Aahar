@@ -25,10 +25,35 @@ const passwordSchema = z.string().min(10).max(256);
 // REJECTS an oversized value with 422 — it never silently truncates.
 const loginPasswordSchema = z.string().min(1).max(256);
 
+// ── Stage C: email-free login identifier ────────────────────────────────
+// Normalized to lowercase before storage/comparison — citext makes the
+// uniqueness constraint itself case-insensitive too, but normalizing here
+// keeps every stored value in one canonical form rather than relying on
+// citext alone. The charset deliberately excludes `@`, so a login ID can
+// never collide in SHAPE with an email — `AdminAuthService.login` relies on
+// this to try "is it an email" then "is it a login ID" without ambiguity.
+export const loginIdSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(32)
+  .regex(
+    /^[a-z0-9][a-z0-9._-]*[a-z0-9]$/,
+    'Login ID must be 3-32 characters (letters, numbers, dots, underscores or hyphens), starting and ending with a letter or number.',
+  );
+
 // ── Admin: login ─────────────────────────────────────────────────────────
+// `email` is kept as the wire field name for backward compatibility (every
+// existing admin/delivery login call already sends it), but as of Stage C
+// it accepts either a registered email OR a login ID — deliberately NOT
+// validated with `.email()` any more, since a login ID is never
+// email-shaped. The login service tries both lookups and returns the SAME
+// generic error either way, so this looser shape cannot be used to
+// enumerate accounts.
 
 export const adminLoginBodySchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim().min(1).max(254),
   password: loginPasswordSchema,
 });
 
@@ -37,6 +62,7 @@ export const adminMeSchema = z.object({
   user_id: uuidSchema,
   full_name: z.string(),
   email: z.string().nullable(),
+  login_id: z.string().nullable(),
   designation: z.string().nullable(),
   is_super_admin: z.boolean(),
   permissions: z.array(z.string()),
@@ -112,6 +138,7 @@ export const adminUserSchema = z.object({
   id: uuidSchema,
   user_id: uuidSchema,
   email: z.string().nullable(),
+  login_id: z.string().nullable(),
   full_name: z.string(),
   designation: z.string().nullable(),
   department: z.string().nullable(),
@@ -120,15 +147,24 @@ export const adminUserSchema = z.object({
   deactivated: z.boolean(),
 });
 
-export const inviteAdminBodySchema = z.object({
-  email: z.string().trim().email(),
-  full_name: z.string().trim().min(1).max(120),
-  designation: z.string().trim().max(120).optional(),
-  department: z.string().trim().max(120).optional(),
-  role_ids: z.array(uuidSchema).min(1),
-  /** Base URL the API appends `?token=<raw>` to — the admin app's "set your password" page. */
-  password_setup_continue_url: z.string().url().optional(),
-});
+export const inviteAdminBodySchema = z
+  .object({
+    email: z.string().trim().email().optional(),
+    /** STAGE C: alternative to `email` — a founder creating a staff
+     *  account with no email address supplies this instead. At least one
+     *  of the two is required (enforced by `.refine` below). */
+    login_id: loginIdSchema.optional(),
+    full_name: z.string().trim().min(1).max(120),
+    designation: z.string().trim().max(120).optional(),
+    department: z.string().trim().max(120).optional(),
+    role_ids: z.array(uuidSchema).min(1),
+    /** Base URL the API appends `?token=<raw>` to — the admin app's "set your password" page. */
+    password_setup_continue_url: z.string().url().optional(),
+  })
+  .refine((body) => Boolean(body.email) || Boolean(body.login_id), {
+    message: 'An email or a login ID is required.',
+    path: ['login_id'],
+  });
 
 export const updateAdminDetailsBodySchema = z.object({
   full_name: z.string().trim().min(1).max(120).optional(),
