@@ -3,10 +3,24 @@ import { DomainError } from '../domain/errors.js';
 import { money } from '../domain/money.js';
 import { buildPage, decodeCursor } from '../domain/pagination.js';
 import { canTransition, type OrderStatusValue } from '../domain/order-status.js';
-import type { OrderRepository } from '../ports/order-repository.js';
+import type { OrderRepository, OrderRow } from '../ports/order-repository.js';
 import { toAdminOrderView } from './order-view.js';
 
 export type OrderFulfilmentServiceDeps = { orders: OrderRepository };
+
+function toOrderSummaryView(row: OrderRow) {
+  return {
+    id: row.id,
+    order_number: row.orderNumber,
+    status: row.status,
+    payment_method: row.paymentMethod,
+    payment_status: row.paymentStatus,
+    customer_name: row.customerNameSnapshot,
+    total: money(Number(row.totalPaise)),
+    service_date: row.serviceDate.toISOString().slice(0, 10),
+    placed_at: row.placedAt.toISOString(),
+  };
+}
 
 /**
  * Admin order fulfilment (docs/15 §4.1; Phase 04 requirement change).
@@ -49,23 +63,28 @@ export class OrderFulfilmentService {
     }));
 
     return {
-      data: built.data.map((row) => ({
-        id: row.id,
-        order_number: row.orderNumber,
-        status: row.status,
-        payment_method: row.paymentMethod,
-        payment_status: row.paymentStatus,
-        customer_name: row.customerNameSnapshot,
-        total: money(Number(row.totalPaise)),
-        service_date: row.serviceDate.toISOString().slice(0, 10),
-        placed_at: row.placedAt.toISOString(),
-      })),
+      data: built.data.map(toOrderSummaryView),
       pagination: built.pagination,
     };
   }
 
   async get(scope: BusinessScope, orderId: string) {
     return toAdminOrderView(await this.getOrThrow(scope, orderId));
+  }
+
+  /**
+   * A single customer's order history (Stage E customer directory) — reuses
+   * `OrderRepository.listForCustomer` exactly as the customer's own
+   * self-service order list does; the only difference is the CALLER
+   * (an admin route gated on `customers:read`, not `customerAuth`), not a
+   * second query path. `listForCustomer`'s pagination is simpler than the
+   * admin list's (no real cursor, just `take: limit`) — acceptable for a
+   * bounded "recent orders" sub-list on a detail page, not a replacement
+   * for the full admin order list.
+   */
+  async listForCustomer(scope: BusinessScope, customerProfileId: string, limit: number) {
+    const page = await this.orders.listForCustomer(scope, customerProfileId, { limit });
+    return page.data.map(toOrderSummaryView);
   }
 
   /** Move the order forward (preparing / ready / out-for-delivery / delivered / failed-retry). */

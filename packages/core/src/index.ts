@@ -9,6 +9,7 @@ export * from './domain/business-scope.js';
 export * from './domain/order-status.js';
 export * from './domain/permissions.js';
 export * from './domain/duty-status.js';
+export * from './domain/pii-masking.js';
 
 // ── Ports: interfaces the application depends on ────────────────────────
 export type { ServiceabilityRepository } from './ports/serviceability-repository.js';
@@ -129,6 +130,12 @@ export type {
   InventoryAlertRow,
   DashboardRepository,
 } from './ports/dashboard-repository.js';
+export type {
+  AdminCustomerRow,
+  AdminCustomerListFilter,
+  AdminCustomerListPage,
+  CustomerAdminRepository,
+} from './ports/customer-admin-repository.js';
 
 // ── Application services ────────────────────────────────────────────────
 export {
@@ -211,3 +218,7 @@ export {
   type TopProductView,
   type InventoryAlertView,
 } from './services/dashboard-service.js';
+export {
+  CustomerAdminService,
+  type CustomerAdminServiceDeps,
+} from './services/customer-admin-service.js';

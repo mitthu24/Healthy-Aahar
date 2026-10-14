@@ -8,6 +8,8 @@ import type {
   AdminMe,
   AdminOrderDto,
   AdminOrderListResponse,
+  AdminCustomerDetail,
+  AdminCustomerListResponse,
   AdminProductDto,
   AdminProductListResponse,
   AdminVariantDto,
@@ -32,6 +34,7 @@ import type {
   PincodeListResponse,
   ProductDetailDto,
   ProductListResponse,
+  RevealCustomerPiiResponse,
   Role,
   Permission,
   SalesTrendResponse,
@@ -544,6 +547,30 @@ export class ApiClient {
     return this.request(`/v1/admin/dashboard/inventory-alerts${this.query(params)}`);
   }
 
+  // ── Admin: founder customer directory (Stage E) ──────────────────────────
+
+  listAdminCustomers(
+    params: { q?: string; status?: string; limit?: number; cursor?: string } = {},
+  ): Promise<AdminCustomerListResponse> {
+    return this.request(`/v1/admin/customers${this.query(params)}`);
+  }
+
+  getAdminCustomer(id: string): Promise<AdminCustomerDetail> {
+    return this.request(`/v1/admin/customers/${id}`);
+  }
+
+  revealCustomerPii(id: string): Promise<RevealCustomerPiiResponse> {
+    return this.request(`/v1/admin/customers/${id}/reveal-pii`, { method: 'POST' });
+  }
+
+  /** Returns the export's absolute URL — the caller navigates/opens it
+   *  directly (a `fetch`+blob round trip would just re-download the same
+   *  bytes this browser-native download already gets for free, with
+   *  cookies attached the same way). */
+  adminCustomersExportCsvUrl(params: { q?: string; status?: string } = {}): string {
+    return `${this.baseUrl}/v1/admin/customers/export.csv${this.query(params)}`;
+  }
+
   // ── Delivery partner self-service (Phase 06) — same admin session, gated
   // by the `deliveries:fulfil` permission rather than a separate audience.
 
@@ -938,6 +965,9 @@ export type {
   AdminMe,
   AdminOrderDto,
   AdminOrderListResponse,
+  AdminCustomer,
+  AdminCustomerDetail,
+  AdminCustomerListResponse,
   AdminProductDto,
   AdminProductListResponse,
   AdminVariantDto,
@@ -968,6 +998,7 @@ export type {
   ProductListResponse,
   ProductSummaryDto,
   ProductVariantDto,
+  RevealCustomerPiiResponse,
   Role,
   SalesTrendResponse,
   ServiceabilityResponse,

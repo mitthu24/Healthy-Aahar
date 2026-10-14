@@ -8,6 +8,7 @@ import type {
   CartService,
   CatalogueService,
   CheckoutService,
+  CustomerAdminService,
   CustomerAuthService,
   CustomerOrderService,
   DashboardService,
@@ -64,6 +65,7 @@ export type AppServices = {
   orderAssignment: OrderAssignmentService;
   deliveryFulfilment: DeliveryFulfilmentService;
   dashboard: DashboardService;
+  customers: CustomerAdminService;
 };
 
 export type AppAuth = {

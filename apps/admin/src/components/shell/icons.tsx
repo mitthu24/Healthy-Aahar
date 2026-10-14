@@ -81,6 +81,15 @@ export function CategoriesIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function CustomersIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="10" cy="6.5" r="3.5" />
+      <path d="M3.5 17v-1a6.5 6.5 0 0 1 13 0v1" />
+    </Icon>
+  );
+}
+
 export function EmployeesIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

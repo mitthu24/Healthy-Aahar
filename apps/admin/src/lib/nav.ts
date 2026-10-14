@@ -1,6 +1,7 @@
 import {
   AuditIcon,
   CategoriesIcon,
+  CustomersIcon,
   DashboardIcon,
   DeliveryIcon,
   EmployeesIcon,
@@ -22,10 +23,9 @@ export type NavGroup = { label: string; items: NavItem[] };
 
 /**
  * Single source of truth for the sidebar, mobile drawer and bottom nav.
- * Every href here is a route that actually exists today — per Stage B scope,
- * modules not yet built (dashboard analytics, customers, inventory UI,
- * subscriptions, finance, reports, settings) are left out entirely rather
- * than linked as "coming soon" placeholders.
+ * Every href here is a route that actually exists today — modules not yet
+ * built (inventory UI, subscriptions, finance, reports, settings) are left
+ * out entirely rather than linked as "coming soon" placeholders.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -43,6 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
         permission: 'delivery_partners:read',
       },
       { href: '/delivery-slots', label: 'Delivery Slots', icon: SlotsIcon },
+      { href: '/customers', label: 'Customers', icon: CustomersIcon, permission: 'customers:read' },
     ],
   },
   {
@@ -73,4 +74,25 @@ export const BOTTOM_NAV_HREFS = ['/', '/orders', '/delivery-partners', '/employe
 export function isNavItemActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * Matches the API's own `requirePermission` middleware exactly: a Super
+ * Admin bypasses every permission check (`actor.isSuperAdmin ||
+ * actor.permissions.has(required)`), never just the keys their role
+ * happens to list explicitly. The seeded SUPER_ADMIN role deliberately
+ * grants only a minimal permission set rather than the full catalogue
+ * (packages/core/src/domain/permissions.ts's own doc comment: so an
+ * accidentally-unset `is_super_admin` flag fails closed instead of
+ * silently keeping broad access via a stale explicit grant) — so nav
+ * visibility has to check the bypass itself, not just the permission set,
+ * or a genuine founder's own account would see fewer modules than their
+ * account can actually use.
+ */
+export function isNavItemVisible(
+  item: NavItem,
+  permissions: Set<string> | null,
+  isSuperAdmin: boolean,
+): boolean {
+  return !item.permission || isSuperAdmin || permissions?.has(item.permission) === true;
 }

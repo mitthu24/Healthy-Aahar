@@ -8,6 +8,7 @@ import {
   CartService,
   CatalogueService,
   CheckoutService,
+  CustomerAdminService,
   CustomerAuthService,
   CustomerOrderService,
   DashboardService,
@@ -60,6 +61,7 @@ import { PrismaOrderRepository } from './repositories/prisma-order-repository.js
 import { PrismaDeliveryPartnerRepository } from './repositories/prisma-delivery-partner-repository.js';
 import { PrismaOrderAssignmentRepository } from './repositories/prisma-order-assignment-repository.js';
 import { PrismaDashboardRepository } from './repositories/prisma-dashboard-repository.js';
+import { PrismaCustomerAdminRepository } from './repositories/prisma-customer-admin-repository.js';
 import {
   PrismaAdminCategoryRepository,
   PrismaAdminProductRepository,
@@ -77,6 +79,7 @@ import { adminDeliveryPartnersRoutes } from './routes/admin/delivery-partners.js
 import { adminOrderAssignmentRoutes } from './routes/admin/order-assignment.js';
 import { deliveryRoutes } from './routes/admin/delivery.js';
 import { dashboardRoutes } from './routes/admin/dashboard.js';
+import { adminCustomersRoutes } from './routes/admin/customers.js';
 import { rolesRoutes } from './routes/admin/roles.js';
 import { customerAuthRoutes } from './routes/auth/customer-session.js';
 import { passwordSetupRoutes } from './routes/auth/password-setup.js';
@@ -152,6 +155,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   );
 
   const rbacService = new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo);
+  const orderFulfilmentService = new OrderFulfilmentService({ orders: new PrismaOrderRepository(prisma) });
 
   const services = {
     serviceability: new ServiceabilityService({
@@ -183,7 +187,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     cart: new CartService({ carts: new PrismaCartRepository(prisma) }),
     checkout: new CheckoutService({ checkout: new PrismaCheckoutRepository(prisma) }),
     customerOrders: new CustomerOrderService({ orders: new PrismaOrderRepository(prisma) }),
-    orderFulfilment: new OrderFulfilmentService({ orders: new PrismaOrderRepository(prisma) }),
+    orderFulfilment: orderFulfilmentService,
     adminCatalogue: new AdminCatalogueService({
       categories: new PrismaAdminCategoryRepository(prisma),
       products: new PrismaAdminProductRepository(prisma),
@@ -215,6 +219,11 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       audit: auditRepo,
     }),
     dashboard: new DashboardService({ dashboard: new PrismaDashboardRepository(prisma) }),
+    customers: new CustomerAdminService({
+      customers: new PrismaCustomerAdminRepository(prisma),
+      orders: orderFulfilmentService,
+      audit: auditRepo,
+    }),
   };
 
   const app = new Hono<AppBindings>();
@@ -360,6 +369,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin/delivery-partners', adminDeliveryPartnersRoutes());
   app.route('/v1/admin/delivery', deliveryRoutes());
   app.route('/v1/admin/dashboard', dashboardRoutes());
+  app.route('/v1/admin/customers', adminCustomersRoutes());
 
   /**
    * OpenAPI 3.1, generated from the same Zod schemas the API validates with.
