@@ -512,6 +512,147 @@ describe('admin login by Stage C login ID (email-free accounts)', () => {
   });
 });
 
+describe('CSRF token recovery after a hard reload (Stage D Task A)', () => {
+  /**
+   * Root cause (confirmed by reproduction, not assumed): `ApiClient` only
+   * ever holds the admin CSRF token in an in-memory field, captured from
+   * the `X-CSRF-Token` response header — the cookie carrying the same
+   * value is genuinely unreadable by `document.cookie` cross-origin in
+   * the real deployed topology (admin on Vercel, API on Railway, two
+   * different domains — a hard browser restriction, not a SameSite
+   * misconfiguration). A hard page reload resets that in-memory field to
+   * `undefined` while the session cookie itself stays perfectly valid, so
+   * every mutating admin request 403s with CSRF_TOKEN_INVALID until the
+   * admin explicitly logs out and back in. The fix: `GET /v1/admin/auth/
+   * me` — which `AuthGate` already calls on every mount/route change,
+   * before rendering any protected page — now re-echoes the EXISTING
+   * CSRF cookie's value as the same response header login sends, so the
+   * client recaptures it without a new login. No new CSRF exemption, no
+   * token regeneration, no client-side change (the capture-from-any-
+   * response logic already existed).
+   */
+
+  it('an authenticated write succeeds right after login (baseline, unchanged)', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'CSRF_BASELINE_ROLE',
+      permissionKeys: ['admin_users:read'],
+    });
+    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const session = await loginAsAdmin(app, admin);
+
+    const res = await app.request('/v1/admin/admin-users', { headers: session.headers });
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /me does not carry an X-CSRF-Token header when unauthenticated', async () => {
+    const res = await app.request('/v1/admin/auth/me');
+    expect(res.status).toBe(401);
+    expect(res.headers.get('X-CSRF-Token')).toBeNull();
+  });
+
+  it(
+    "reproduces the bug without the fix's codepath, then proves the fix: a request carrying " +
+      'only the Cookie header (simulating a hard reload — no in-memory token survives) can ' +
+      'recover a usable CSRF token from GET /me and successfully complete a mutating write, ' +
+      'with no second login',
+    async () => {
+      const role = await seedRole(prisma, businessId, {
+        key: 'CSRF_RELOAD_ROLE',
+        permissionKeys: ['admin_users:read', 'admin_users:update'],
+      });
+      const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+      const session = await loginAsAdmin(app, admin);
+
+      // Simulates the post-reload state: the browser still has the cookies,
+      // but nothing in JS memory remembers the CSRF token — so this request
+      // carries ONLY the Cookie header, no X-CSRF-Token at all.
+      const meAfterReload = await app.request('/v1/admin/auth/me', {
+        headers: { Cookie: session.cookieHeader },
+      });
+      expect(meAfterReload.status).toBe(200);
+      const recoveredToken = meAfterReload.headers.get('X-CSRF-Token');
+      expect(recoveredToken).toBeTruthy();
+
+      // Without the fix, a mutating request at this point has no token to
+      // send at all and 403s — this is the exact failure mode from the
+      // live reproduction. With the fix, the token recovered from /me above
+      // is used, and the write succeeds without any second login.
+      const write = await app.request(`/v1/admin/admin-users/${admin.id}`, {
+        method: 'PATCH',
+        headers: {
+          Cookie: session.cookieHeader,
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': recoveredToken!,
+        },
+        body: JSON.stringify({ full_name: 'Renamed After Reload' }),
+      });
+      expect(write.status).toBe(200);
+
+      const updated = await prisma.adminUser.findUniqueOrThrow({ where: { id: admin.id } });
+      expect(updated.fullName).toBe('Renamed After Reload');
+    },
+  );
+
+  it('the token recovered from /me is the SAME value the cookie carries, not a freshly minted one', async () => {
+    const admin = await seedAdminUser(prisma, businessId, {});
+    const session = await loginAsAdmin(app, admin);
+
+    const cookieCsrfValue = session.cookieHeader
+      .split('; ')
+      .find((c) => c.startsWith('admin_csrf='))
+      ?.slice('admin_csrf='.length);
+    expect(cookieCsrfValue).toBeTruthy();
+
+    const me = await app.request('/v1/admin/auth/me', {
+      headers: { Cookie: session.cookieHeader },
+    });
+    expect(me.headers.get('X-CSRF-Token')).toBe(cookieCsrfValue);
+  });
+
+  it('an invalid (tampered) CSRF token is rejected even with a valid session cookie', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'CSRF_INVALID_ROLE',
+      permissionKeys: ['admin_users:update'],
+    });
+    const admin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const session = await loginAsAdmin(app, admin);
+
+    const res = await app.request(`/v1/admin/admin-users/${admin.id}`, {
+      method: 'PATCH',
+      headers: {
+        Cookie: session.cookieHeader,
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'tampered.notarealtoken',
+      },
+      body: JSON.stringify({ full_name: 'Should Not Apply' }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('CSRF_TOKEN_INVALID');
+  });
+
+  it('logging out clears both cookies, so a post-logout reload recovers no token at all', async () => {
+    const admin = await seedAdminUser(prisma, businessId, {});
+    const session = await loginAsAdmin(app, admin);
+
+    const logout = await app.request('/v1/admin/auth/logout', {
+      method: 'POST',
+      headers: session.headers,
+    });
+    expect(logout.status).toBe(200);
+    const clearedCookies = (logout.headers.getSetCookie?.() ?? []).join('; ');
+    expect(clearedCookies).toMatch(/__Host-admin_session=;/);
+    expect(clearedCookies).toMatch(/admin_csrf=;/);
+
+    // A "reload" after logout — no session, no CSRF cookie left to recover.
+    const meAfterLogout = await app.request('/v1/admin/auth/me', {
+      headers: { Cookie: session.cookieHeader },
+    });
+    expect(meAfterLogout.status).toBe(401);
+    expect(meAfterLogout.headers.get('X-CSRF-Token')).toBeNull();
+  });
+});
+
 describe('login rate limiting (Step 6)', () => {
   it('rate-limits repeated failed login attempts from the same account', async () => {
     const limited = buildApp(testEnv({ RATE_LIMIT_ENABLED: true, LOGIN_RATE_LIMIT_PER_MIN: 3 }));

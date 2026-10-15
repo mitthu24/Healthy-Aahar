@@ -10,6 +10,7 @@ import type {
   CheckoutService,
   CustomerAuthService,
   CustomerOrderService,
+  DashboardService,
   DeliveryFulfilmentService,
   DeliveryPartnerService,
   OrderAssignmentService,
@@ -62,6 +63,7 @@ export type AppServices = {
   deliveryPartners: DeliveryPartnerService;
   orderAssignment: OrderAssignmentService;
   deliveryFulfilment: DeliveryFulfilmentService;
+  dashboard: DashboardService;
 };
 
 export type AppAuth = {

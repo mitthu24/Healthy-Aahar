@@ -18,3 +18,4 @@ export { Pagination, type PaginationMeta } from './pagination.js';
 export { FilterBar } from './filter-bar.js';
 export { ResponsiveContainer } from './responsive-container.js';
 export { ChartContainer, ChartPlaceholder } from './chart-container.js';
+export { TrendChart, type TrendChartPoint } from './trend-chart.js';

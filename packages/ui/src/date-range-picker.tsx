@@ -43,7 +43,7 @@ export function DateRangePicker({
         onChange={(e) => onPresetChange(e.target.value as DateRangePreset)}
       />
       {preset === 'custom' ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
             aria-label="From date"
