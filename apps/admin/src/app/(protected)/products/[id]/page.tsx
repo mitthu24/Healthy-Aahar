@@ -1,19 +1,26 @@
 'use client';
 
-import { ApiError, type AdminProductDto, type AdminVariantDto } from '@healthy-aahar/sdk';
+import {
+  ApiError,
+  type AdminCategoryDto,
+  type AdminProductDto,
+  type AdminVariantDto,
+} from '@healthy-aahar/sdk';
 import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   ErrorState,
   FieldError,
   FieldLabel,
   Input,
+  Select,
   Skeleton,
   type BadgeTone,
 } from '@healthy-aahar/ui';
 import Image from 'next/image';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 
 import { apiClient } from '@/lib/api-client';
@@ -167,10 +174,125 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
   );
 }
 
+function EditVariantForm({
+  variant,
+  onSaved,
+  onCancel,
+}: {
+  variant: AdminVariantDto;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(variant.name);
+  const [unit, setUnit] = useState(variant.unit);
+  const [unitValue, setUnitValue] = useState(String(variant.unit_value));
+  const [price, setPrice] = useState(String(variant.price.amount_paise / 100));
+  const [mrp, setMrp] = useState(variant.mrp ? String(variant.mrp.amount_paise / 100) : '');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await apiClient.updateVariant(variant.id, {
+        name,
+        unit,
+        unit_value: Number(unitValue),
+        price_paise: Math.round(Number(price) * 100),
+        mrp_paise: mrp ? Math.round(Number(mrp) * 100) : null,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save this variant.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div>
+        <FieldLabel htmlFor={`edit-v-name-${variant.id}`}>Display name</FieldLabel>
+        <Input
+          id={`edit-v-name-${variant.id}`}
+          required
+          className="mt-1"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <FieldLabel htmlFor={`edit-v-unit-value-${variant.id}`}>Unit value</FieldLabel>
+          <Input
+            id={`edit-v-unit-value-${variant.id}`}
+            required
+            type="number"
+            min="0"
+            step="0.01"
+            className="mt-1"
+            value={unitValue}
+            onChange={(e) => setUnitValue(e.target.value)}
+          />
+        </div>
+        <div className="flex-1">
+          <FieldLabel htmlFor={`edit-v-unit-${variant.id}`}>Unit</FieldLabel>
+          <Input
+            id={`edit-v-unit-${variant.id}`}
+            required
+            className="mt-1"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+          />
+        </div>
+      </div>
+      <div>
+        <FieldLabel htmlFor={`edit-v-price-${variant.id}`}>Price (₹)</FieldLabel>
+        <Input
+          id={`edit-v-price-${variant.id}`}
+          required
+          type="number"
+          min="0"
+          step="0.01"
+          className="mt-1"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor={`edit-v-mrp-${variant.id}`}>MRP (₹, optional)</FieldLabel>
+        <Input
+          id={`edit-v-mrp-${variant.id}`}
+          type="number"
+          min="0"
+          step="0.01"
+          className="mt-1"
+          value={mrp}
+          onChange={(e) => setMrp(e.target.value)}
+        />
+      </div>
+      <div className="col-span-full flex items-center gap-2">
+        <FieldError>{error}</FieldError>
+        <Button type="submit" size="sm" isLoading={isSubmitting}>
+          Save
+        </Button>
+        <Button type="button" size="sm" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChanged: () => void }) {
   const [editingStock, setEditingStock] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [stockValue, setStockValue] = useState(String(variant.inventory?.quantity_on_hand ?? 0));
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   async function saveStock() {
@@ -185,6 +307,39 @@ function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChange
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function confirmDelete() {
+    setDeleteError(null);
+    try {
+      await apiClient.deleteVariant(variant.id);
+      setConfirmingDelete(false);
+      onChanged();
+    } catch (err) {
+      setConfirmingDelete(false);
+      setDeleteError(
+        err instanceof ApiError && err.code === 'VARIANT_REFERENCED_BY_ORDERS'
+          ? 'This variant has order or inventory history and cannot be deleted — mark it Discontinued instead.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Could not delete this variant.',
+      );
+    }
+  }
+
+  if (editingDetails) {
+    return (
+      <Card className="p-4">
+        <EditVariantForm
+          variant={variant}
+          onSaved={() => {
+            setEditingDetails(false);
+            onChanged();
+          }}
+          onCancel={() => setEditingDetails(false)}
+        />
+      </Card>
+    );
   }
 
   return (
@@ -205,9 +360,17 @@ function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChange
             ) : null}
           </p>
         </div>
-        <Badge tone={variant.availability === 'AVAILABLE' ? 'success' : 'danger'}>
-          {variant.availability}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge tone={variant.availability === 'AVAILABLE' ? 'success' : 'danger'}>
+            {variant.availability}
+          </Badge>
+          <Button size="sm" variant="ghost" onClick={() => setEditingDetails(true)}>
+            Edit
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(true)}>
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="border-sand-100 mt-3 border-t pt-3">
@@ -251,7 +414,18 @@ function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChange
           </div>
         )}
         {error ? <p className="text-caption text-danger-600 mt-2">{error}</p> : null}
+        {deleteError ? <p className="text-caption text-danger-600 mt-2">{deleteError}</p> : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        onConfirm={confirmDelete}
+        title="Delete this variant?"
+        description={`"${variant.name}" will be permanently removed. This cannot be undone. If it has ever been ordered or had stock adjusted, deletion will be refused — discontinue it instead.`}
+        confirmLabel="Delete"
+        destructive
+      />
     </Card>
   );
 }
@@ -462,12 +636,100 @@ function UploadImageForm({ productId, onAdded }: { productId: string; onAdded: (
   );
 }
 
+function EditProductForm({
+  product,
+  categories,
+  onSaved,
+  onCancel,
+}: {
+  product: AdminProductDto;
+  categories: AdminCategoryDto[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(product.name);
+  const [description, setDescription] = useState(product.description ?? '');
+  const [categoryId, setCategoryId] = useState(product.category.id);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await apiClient.updateProduct(product.id, {
+        name,
+        description: description || null,
+        category_id: categoryId,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save this product.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="mt-4 p-4">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div>
+          <FieldLabel htmlFor="edit-p-name">Name</FieldLabel>
+          <Input
+            id="edit-p-name"
+            required
+            className="mt-1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div>
+          <FieldLabel htmlFor="edit-p-category">Category</FieldLabel>
+          <Select
+            id="edit-p-category"
+            className="mt-1"
+            value={categoryId}
+            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            onChange={(e) => setCategoryId(e.target.value)}
+          />
+        </div>
+        <div>
+          <FieldLabel htmlFor="edit-p-description">Description</FieldLabel>
+          <textarea
+            id="edit-p-description"
+            className="border-sand-200 bg-sand-0 text-body-sm mt-1 w-full rounded-md border p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
+            rows={4}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <FieldError>{error}</FieldError>
+          <Button type="submit" size="sm" isLoading={isSubmitting}>
+            Save
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 export default function ProductDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<AdminProductDto | null>(null);
+  const [categories, setCategories] = useState<AdminCategoryDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -484,6 +746,10 @@ export default function ProductDetailPage() {
 
   useEffect(() => {
     void load();
+    void apiClient
+      .listAdminCategories({ limit: 100 })
+      .then((r) => setCategories(r.data))
+      .catch(() => setCategories([]));
   }, [params.id]);
 
   async function changeStatus(status: 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED') {
@@ -495,6 +761,25 @@ export default function ProductDetailPage() {
       setStatusError(err instanceof ApiError ? err.message : 'Could not change status.');
     } finally {
       setIsChangingStatus(false);
+      setConfirmingArchive(false);
+    }
+  }
+
+  async function confirmDelete() {
+    setDeleteError(null);
+    try {
+      await apiClient.deleteProduct(params.id);
+      setConfirmingDelete(false);
+      router.push('/products');
+    } catch (err) {
+      setConfirmingDelete(false);
+      setDeleteError(
+        err instanceof ApiError && err.code === 'PRODUCT_REFERENCED_BY_ORDERS'
+          ? 'This product has order or inventory history and cannot be deleted — archive it instead.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Could not delete this product.',
+      );
     }
   }
 
@@ -520,6 +805,7 @@ export default function ProductDetailPage() {
       </div>
 
       {statusError ? <p className="text-body-sm text-danger-600 mt-3">{statusError}</p> : null}
+      {deleteError ? <p className="text-body-sm text-danger-600 mt-3">{deleteError}</p> : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {product.status !== 'ACTIVE' ? (
@@ -540,17 +826,55 @@ export default function ProductDetailPage() {
             Unpublish
           </Button>
         )}
+        <Button size="sm" variant="secondary" onClick={() => setIsEditingProduct((v) => !v)}>
+          {isEditingProduct ? 'Cancel edit' : 'Edit'}
+        </Button>
         {product.status !== 'ARCHIVED' ? (
           <Button
             size="sm"
             variant="danger"
             isLoading={isChangingStatus}
-            onClick={() => void changeStatus('ARCHIVED')}
+            onClick={() => setConfirmingArchive(true)}
           >
             Archive
           </Button>
         ) : null}
+        <Button size="sm" variant="danger" onClick={() => setConfirmingDelete(true)}>
+          Delete
+        </Button>
       </div>
+
+      {isEditingProduct ? (
+        <EditProductForm
+          product={product}
+          categories={categories}
+          onSaved={() => {
+            setIsEditingProduct(false);
+            void load();
+          }}
+          onCancel={() => setIsEditingProduct(false)}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmingArchive}
+        onClose={() => setConfirmingArchive(false)}
+        onConfirm={() => changeStatus('ARCHIVED')}
+        title="Archive this product?"
+        description={`"${product.name}" will be hidden from the customer catalogue. You can unpublish or re-publish it later — archiving never deletes it.`}
+        confirmLabel="Archive"
+        destructive
+      />
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        onConfirm={confirmDelete}
+        title="Delete this product?"
+        description={`"${product.name}" and its variants will be permanently removed. This cannot be undone. If it has ever been ordered, deletion will be refused — archive it instead.`}
+        confirmLabel="Delete"
+        destructive
+      />
 
       <section className="mt-8">
         <h2 className="text-heading-sm text-sand-900">Images</h2>

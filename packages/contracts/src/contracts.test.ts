@@ -60,7 +60,11 @@ describe('loginIdSchema (Stage C)', () => {
 });
 
 describe('inviteAdminBodySchema (Stage C)', () => {
-  const base = { full_name: 'New Hire', role_ids: ['0193aaaa-0000-7000-8000-00000000000a'] };
+  const base = {
+    full_name: 'New Hire',
+    employee_code: 'EMP-001',
+    role_ids: ['0193aaaa-0000-7000-8000-00000000000a'],
+  };
 
   it('accepts email only', () => {
     expect(inviteAdminBodySchema.safeParse({ ...base, email: 'a@b.test' }).success).toBe(true);

@@ -696,6 +696,11 @@ export class ApiClient {
     });
   }
 
+  /** Refused with 409 (PRODUCT_REFERENCED_BY_ORDERS) if any variant has order or inventory history — archive via `setProductStatus` instead. */
+  deleteProduct(id: string): Promise<void> {
+    return this.request(`/v1/admin/products/${id}`, { method: 'DELETE' });
+  }
+
   addProductImage(
     id: string,
     body: { url: string; alt_text?: string; display_order?: number },
@@ -770,6 +775,11 @@ export class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+  }
+
+  /** Refused with 409 (VARIANT_REFERENCED_BY_ORDERS) if it has order or inventory history — set it DISCONTINUED via `updateVariant` instead. */
+  deleteVariant(id: string): Promise<void> {
+    return this.request(`/v1/admin/variants/${id}`, { method: 'DELETE' });
   }
 
   setVariantStock(

@@ -419,6 +419,33 @@ export class PrismaAdminProductRepository implements AdminProductRepository {
     return toProductRow(updated);
   }
 
+  async countOrderReferences(scope: BusinessScope, productId: string): Promise<number> {
+    void scope;
+    const variantIds = (
+      await this.prisma.productVariant.findMany({
+        where: { productId },
+        select: { id: true },
+      })
+    ).map((v) => v.id);
+    if (variantIds.length === 0) return 0;
+
+    const [orderItems, comboItems, movements] = await Promise.all([
+      this.prisma.orderItem.count({ where: { variantId: { in: variantIds } } }),
+      this.prisma.comboItem.count({ where: { variantId: { in: variantIds } } }),
+      this.prisma.inventoryMovement.count({ where: { variantId: { in: variantIds } } }),
+    ]);
+    return orderItems + comboItems + movements;
+  }
+
+  async delete(scope: BusinessScope, productId: string): Promise<void> {
+    void scope;
+    const deletedAt = now();
+    await this.prisma.$transaction([
+      this.prisma.productVariant.updateMany({ where: { productId }, data: { deletedAt } }),
+      this.prisma.product.update({ where: { id: productId }, data: { deletedAt } }),
+    ]);
+  }
+
   async createPendingImage(
     scope: BusinessScope,
     productId: string,
@@ -558,6 +585,24 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
       select: VARIANT_SELECT,
     });
     return row ? toVariantRow(row) : null;
+  }
+
+  async countOrderReferences(scope: BusinessScope, variantId: string): Promise<number> {
+    void scope;
+    const [orderItems, comboItems, movements] = await Promise.all([
+      this.prisma.orderItem.count({ where: { variantId } }),
+      this.prisma.comboItem.count({ where: { variantId } }),
+      this.prisma.inventoryMovement.count({ where: { variantId } }),
+    ]);
+    return orderItems + comboItems + movements;
+  }
+
+  async delete(scope: BusinessScope, variantId: string): Promise<void> {
+    void scope;
+    await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data: { deletedAt: now() },
+    });
   }
 
   async setStock(

@@ -190,6 +190,27 @@ registerRoute({
 });
 
 registerRoute({
+  method: 'DELETE',
+  path: '/v1/admin/products/{id}',
+  audience: 'admin',
+  permission: 'catalog:delete',
+  summary: 'Delete a product with no order history (prefer archiving otherwise)',
+  phase: 'stage-e',
+  errors: ['PRODUCT_NOT_FOUND', 'PRODUCT_REFERENCED_BY_ORDERS'],
+  openapi: {
+    description:
+      'Soft-deletes the product and its variants. Refused with 409 if any variant has ' +
+      'ever appeared in an order, a combo, or an inventory movement — archive ' +
+      '(POST .../status with ARCHIVED) instead, which never touches order history.',
+    tags: ['Admin: Catalogue'],
+    responses: {
+      204: { description: 'Deleted' },
+      409: jsonError('This product has order or inventory history — archive it instead'),
+    },
+  },
+});
+
+registerRoute({
   method: 'POST',
   path: '/v1/admin/products/{id}/status',
   audience: 'admin',
@@ -310,6 +331,27 @@ registerRoute({
     tags: ['Admin: Catalogue'],
     request: { body: updateVariantBodySchema },
     responses: { 200: { description: 'Variant updated', schema: adminVariantSchema } },
+  },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/v1/admin/variants/{id}',
+  audience: 'admin',
+  permission: 'catalog:delete',
+  summary: 'Delete a variant with no order history (prefer discontinuing otherwise)',
+  phase: 'stage-e',
+  errors: ['VARIANT_NOT_FOUND', 'VARIANT_REFERENCED_BY_ORDERS'],
+  openapi: {
+    description:
+      'Soft-deletes the variant. Refused with 409 if it has ever appeared in an order, ' +
+      'a combo, or an inventory movement — set it DISCONTINUED instead (PATCH with ' +
+      'availability), which never touches order history.',
+    tags: ['Admin: Catalogue'],
+    responses: {
+      204: { description: 'Deleted' },
+      409: jsonError('This variant has order or inventory history — discontinue it instead'),
+    },
   },
 });
 
@@ -490,6 +532,17 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
     return c.json(toAdminProductView(product));
   });
 
+  app.delete('/products/:id', async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+    await c.env.services.adminCatalogue.deleteProduct(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      actor.userId,
+    );
+    return c.body(null, 204);
+  });
+
   app.post('/products/:id/status', async (c) => {
     const body = setProductStatusBodySchema.parse(await c.req.json());
     const actor = c.get('actor');
@@ -610,6 +663,17 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
       actor.userId,
     );
     return c.json(toAdminVariantView(variant));
+  });
+
+  app.delete('/variants/:id', async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+    await c.env.services.adminCatalogue.deleteVariant(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      actor.userId,
+    );
+    return c.body(null, 204);
   });
 
   app.post('/variants/:id/stock', async (c) => {

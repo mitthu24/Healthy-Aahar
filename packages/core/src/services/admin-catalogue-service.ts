@@ -262,6 +262,36 @@ export class AdminCatalogueService {
     return updated;
   }
 
+  /**
+   * Delete vs. archive (Stage E): refused when any variant of this product
+   * is referenced by an order item, combo component or inventory movement —
+   * directing the admin to archive (`setProductStatus(..., 'ARCHIVED')`)
+   * instead, which never touches order history or financial records. Only
+   * a product with zero real-world order activity is actually removable.
+   */
+  async deleteProduct(scope: BusinessScope, id: string, actorUserId: string) {
+    const product = await this.getProduct(scope, id);
+
+    const referenceCount = await this.products.countOrderReferences(scope, id);
+    if (referenceCount > 0) {
+      throw new DomainError(
+        'PRODUCT_REFERENCED_BY_ORDERS',
+        'This product has order or inventory history and cannot be deleted. Archive it instead.',
+      );
+    }
+
+    await this.products.delete(scope, id);
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'product.deleted',
+      resourceType: 'product',
+      resourceId: id,
+      metadata: { name: product.name, slug: product.slug },
+    });
+  }
+
   async addProductImage(
     scope: BusinessScope,
     productId: string,
@@ -489,6 +519,35 @@ export class AdminCatalogueService {
     });
 
     return updated;
+  }
+
+  /**
+   * Delete vs. archive (Stage E): refused when this variant is referenced
+   * by an order item, combo component or inventory movement — directing
+   * the admin to set it `DISCONTINUED` (via `updateVariant`'s
+   * `availability`) instead, which never touches order history.
+   */
+  async deleteVariant(scope: BusinessScope, variantId: string, actorUserId: string) {
+    const existing = await this.getVariant(scope, variantId);
+
+    const referenceCount = await this.variants.countOrderReferences(scope, variantId);
+    if (referenceCount > 0) {
+      throw new DomainError(
+        'VARIANT_REFERENCED_BY_ORDERS',
+        'This variant has order or inventory history and cannot be deleted. Mark it discontinued instead.',
+      );
+    }
+
+    await this.variants.delete(scope, variantId);
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'variant.deleted',
+      resourceType: 'product_variant',
+      resourceId: variantId,
+      metadata: { sku: existing.sku },
+    });
   }
 
   async setVariantStock(

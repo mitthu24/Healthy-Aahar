@@ -123,6 +123,14 @@ export interface AdminVariantRepository {
   ): Promise<AdminVariantRow>;
   findById(scope: BusinessScope, variantId: string): Promise<AdminVariantRow | null>;
 
+  /** Count of order items, combo components and inventory movements that
+   *  reference this variant — the caller (the service) refuses a hard
+   *  delete when this is nonzero, directing the admin to archive instead. */
+  countOrderReferences(scope: BusinessScope, variantId: string): Promise<number>;
+  /** Soft-deletes (`deleted_at`). Caller must already have verified
+   *  `countOrderReferences === 0`. */
+  delete(scope: BusinessScope, variantId: string): Promise<void>;
+
   /**
    * Sets on-hand stock to an ABSOLUTE value via a conditional UPDATE
    * (`quantity_on_hand = quantity_on_hand + $delta`), recording one
@@ -242,6 +250,15 @@ export interface AdminProductRepository {
     input: { url: string; altText?: string | undefined; displayOrder: number },
   ): Promise<AdminProductRow>;
   removeImage(scope: BusinessScope, productId: string, imageId: string): Promise<AdminProductRow>;
+
+  /** Count of order items, combo components and inventory movements
+   *  referencing ANY of this product's variants — same convention as
+   *  `AdminVariantRepository.countOrderReferences`, rolled up to the
+   *  product level (deleting a product implies deleting its variants). */
+  countOrderReferences(scope: BusinessScope, productId: string): Promise<number>;
+  /** Soft-deletes the product and all its variants (`deleted_at`). Caller
+   *  must already have verified `countOrderReferences === 0`. */
+  delete(scope: BusinessScope, productId: string): Promise<void>;
 
   /**
    * Device-upload counterpart to `addImage` (PHASE 05). `addImage` is for
