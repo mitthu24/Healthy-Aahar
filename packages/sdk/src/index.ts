@@ -618,6 +618,8 @@ export class ApiClient {
     slug: string;
     description?: string;
     image_url?: string;
+    /** Set to make this a subcategory — the parent must not itself already have a parent. */
+    parent_id?: string;
     display_order?: number;
   }): Promise<AdminCategoryDto> {
     return this.request('/v1/admin/categories', { method: 'POST', body: JSON.stringify(body) });
@@ -629,6 +631,7 @@ export class ApiClient {
       name: string;
       description: string | null;
       image_url: string | null;
+      parent_id: string | null;
       display_order: number;
       is_active: boolean;
     }>,
@@ -747,6 +750,8 @@ export class ApiClient {
       unit_value: number;
       mrp_paise?: number;
       price_paise: number;
+      /** Basis points (1/100%), e.g. 500 = 5%. Omitted = 0 (no tax configured). */
+      tax_rate_bps?: number;
       is_default?: boolean;
       max_order_quantity?: number;
       initial_quantity_on_hand?: number;
@@ -766,6 +771,7 @@ export class ApiClient {
       unit_value: number;
       mrp_paise: number | null;
       price_paise: number;
+      tax_rate_bps: number;
       availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
       is_default: boolean;
       max_order_quantity: number | null;

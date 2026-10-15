@@ -6,12 +6,15 @@ import {
   Badge,
   Button,
   Card,
-  EmptyState,
-  ErrorState,
+  ConfirmDialog,
+  DataTable,
   FieldError,
   FieldLabel,
   Input,
-  Skeleton,
+  PageHeader,
+  ResponsiveContainer,
+  Select,
+  type DataTableColumn,
 } from '@healthy-aahar/ui';
 import { useEffect, useState, type FormEvent } from 'react';
 
@@ -27,10 +30,14 @@ function slugify(value: string): string {
 
 function CategoryForm({
   initial,
+  /** Only top-level categories (no parent of their own) are valid parents
+   *  — BR-C1, exactly two levels. Excludes `initial` itself when editing. */
+  parentCandidates,
   onSaved,
   onCancel,
 }: {
   initial?: AdminCategoryDto;
+  parentCandidates: AdminCategoryDto[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -39,6 +46,7 @@ function CategoryForm({
   const [slugEdited, setSlugEdited] = useState(Boolean(initial));
   const [description, setDescription] = useState(initial?.description ?? '');
   const [imageUrl, setImageUrl] = useState(initial?.image_url ?? '');
+  const [parentId, setParentId] = useState(initial?.parent_id ?? '');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,6 +61,7 @@ function CategoryForm({
           name,
           description: description || null,
           image_url: imageUrl || null,
+          parent_id: parentId || null,
         });
       } else {
         await apiClient.createCategory({
@@ -60,6 +69,7 @@ function CategoryForm({
           slug,
           description: description || undefined,
           image_url: imageUrl || undefined,
+          parent_id: parentId || undefined,
         });
       }
       onSaved();
@@ -103,6 +113,21 @@ function CategoryForm({
         ) : null}
       </div>
       <div>
+        <FieldLabel htmlFor="cat-parent">Parent category (optional)</FieldLabel>
+        <Select
+          id="cat-parent"
+          className="mt-1"
+          value={parentId}
+          placeholder="None — top-level category"
+          options={parentCandidates.map((c) => ({ value: c.id, label: c.name }))}
+          onChange={(e) => setParentId(e.target.value)}
+        />
+        <p className="text-caption text-sand-500 mt-1">
+          Makes this a subcategory. Categories are at most two levels deep, so a subcategory
+          cannot itself be chosen as a parent.
+        </p>
+      </div>
+      <div>
         <FieldLabel htmlFor="cat-description">Description (optional)</FieldLabel>
         <Input
           id="cat-description"
@@ -141,7 +166,7 @@ export default function CategoriesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<AdminCategoryDto | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<AdminCategoryDto | null>(null);
 
   async function load() {
     setError(null);
@@ -157,125 +182,170 @@ export default function CategoriesPage() {
     void load();
   }, []);
 
-  async function confirmDelete(id: string) {
+  async function confirmDelete() {
+    if (!confirmingDelete) return;
     setDeleteError(null);
     try {
-      await apiClient.deleteCategory(id);
-      setConfirmingDeleteId(null);
+      await apiClient.deleteCategory(confirmingDelete.id);
+      setConfirmingDelete(null);
       void load();
     } catch (err) {
+      setConfirmingDelete(null);
       setDeleteError(err instanceof ApiError ? err.message : 'Could not delete this category.');
     }
   }
 
-  if (error) return <ErrorState message={error} onRetry={() => void load()} />;
+  // Rows ordered so each subcategory follows its parent, indented — a
+  // simple, predictable two-level tree display without a separate
+  // collapsible-tree component.
+  const orderedRows: Array<{ category: AdminCategoryDto; indented: boolean }> = [];
+  if (categories) {
+    const byParent = new Map<string | null, AdminCategoryDto[]>();
+    for (const category of categories) {
+      const key = category.parent_id;
+      byParent.set(key, [...(byParent.get(key) ?? []), category]);
+    }
+    for (const top of byParent.get(null) ?? []) {
+      orderedRows.push({ category: top, indented: false });
+      for (const child of byParent.get(top.id) ?? []) {
+        orderedRows.push({ category: child, indented: true });
+      }
+    }
+  }
 
-  return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <div className="flex items-baseline justify-between">
-        <h1 className="font-display text-heading-lg text-sand-900">Categories</h1>
-        {!showCreate ? (
+  const columns: DataTableColumn<{ category: AdminCategoryDto; indented: boolean }>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: ({ category, indented }) => (
+        <div className={indented ? 'pl-5' : undefined}>
+          <div className="flex items-center gap-2">
+            {indented ? <span className="text-sand-400">↳</span> : null}
+            <p className="text-sand-900 font-semibold">{category.name}</p>
+            {!category.is_active ? <Badge tone="neutral">Inactive</Badge> : null}
+          </div>
+          <p className="text-caption text-sand-600 mt-0.5">
+            /{category.slug} · {category.product_count} product
+            {category.product_count === 1 ? '' : 's'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: ({ category }) => (
+        <div className="flex items-center justify-end gap-2">
           <Button
             size="sm"
-            onClick={() => {
-              setEditing(null);
+            variant="secondary"
+            onClick={async (e) => {
+              e.stopPropagation();
+              await apiClient.updateCategory(category.id, { is_active: !category.is_active });
+              void load();
+            }}
+          >
+            {category.is_active ? 'Deactivate' : 'Activate'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(category);
               setShowCreate(true);
             }}
           >
-            New category
+            Edit
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmingDelete(category);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  // Valid parent candidates: top-level categories only, excluding the
+  // category currently being edited (it can't be its own parent).
+  const parentCandidates = (categories ?? []).filter(
+    (c) => c.parent_id === null && c.id !== editing?.id,
+  );
+
+  return (
+    <main className="py-8">
+      <ResponsiveContainer wide>
+        <PageHeader
+          title="Categories"
+          description="Organize the catalogue into categories and subcategories."
+          action={
+            !showCreate ? (
+              <Button
+                onClick={() => {
+                  setEditing(null);
+                  setShowCreate(true);
+                }}
+              >
+                New category
+              </Button>
+            ) : undefined
+          }
+        />
+
+        {showCreate ? (
+          <Card className="mt-5 p-5">
+            <h2 className="text-heading-sm text-sand-900">
+              {editing ? 'Edit category' : 'New category'}
+            </h2>
+            <div className="mt-4">
+              <CategoryForm
+                initial={editing ?? undefined}
+                parentCandidates={parentCandidates}
+                onCancel={() => setShowCreate(false)}
+                onSaved={() => {
+                  setShowCreate(false);
+                  void load();
+                }}
+              />
+            </div>
+          </Card>
         ) : null}
-      </div>
 
-      {showCreate ? (
-        <Card className="mt-5 p-5">
-          <h2 className="text-heading-sm text-sand-900">
-            {editing ? 'Edit category' : 'New category'}
-          </h2>
-          <div className="mt-4">
-            <CategoryForm
-              initial={editing ?? undefined}
-              onCancel={() => setShowCreate(false)}
-              onSaved={() => {
-                setShowCreate(false);
-                void load();
-              }}
-            />
-          </div>
-        </Card>
-      ) : null}
+        {deleteError ? <p className="text-body-sm text-danger-600 mt-4">{deleteError}</p> : null}
 
-      {deleteError ? <p className="text-body-sm text-danger-600 mt-4">{deleteError}</p> : null}
-
-      <div className="mt-6 space-y-3">
-        {categories === null ? (
-          Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)
-        ) : categories.length === 0 && !showCreate ? (
-          <EmptyState
-            title="No categories yet"
-            description="Create one to start adding products."
+        <div className="mt-6">
+          <DataTable
+            columns={columns}
+            data={categories === null ? null : orderedRows}
+            rowKey={(row) => row.category.id}
+            error={error}
+            onRetry={() => void load()}
+            emptyTitle="No categories yet"
+            emptyDescription="Create one to start adding products."
           />
-        ) : (
-          categories.map((category) => (
-            <Card key={category.id} className="flex items-center justify-between p-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-body-sm text-sand-900 font-semibold">{category.name}</p>
-                  {!category.is_active ? <Badge tone="neutral">Inactive</Badge> : null}
-                </div>
-                <p className="text-caption text-sand-600 mt-0.5">
-                  /{category.slug} · {category.product_count} product
-                  {category.product_count === 1 ? '' : 's'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={async () => {
-                    await apiClient.updateCategory(category.id, { is_active: !category.is_active });
-                    void load();
-                  }}
-                >
-                  {category.is_active ? 'Deactivate' : 'Activate'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setEditing(category);
-                    setShowCreate(true);
-                  }}
-                >
-                  Edit
-                </Button>
-                {confirmingDeleteId === category.id ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => void confirmDelete(category.id)}
-                    >
-                      Confirm delete
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmingDeleteId(null)}>
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConfirmingDeleteId(category.id)}
-                  >
-                    Delete
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
+        </div>
+      </ResponsiveContainer>
+
+      <ConfirmDialog
+        open={confirmingDelete !== null}
+        onClose={() => setConfirmingDelete(null)}
+        onConfirm={confirmDelete}
+        title="Delete this category?"
+        description={
+          confirmingDelete
+            ? `"${confirmingDelete.name}" will be permanently removed. Refused if it still has products — reassign or archive them first.`
+            : ''
+        }
+        confirmLabel="Delete"
+        destructive
+      />
     </main>
   );
 }

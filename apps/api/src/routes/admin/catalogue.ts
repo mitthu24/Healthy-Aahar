@@ -66,13 +66,14 @@ registerRoute({
   permission: 'catalog:create',
   summary: 'Create a category',
   phase: '04b',
-  errors: ['SLUG_ALREADY_IN_USE', 'VALIDATION_FAILED'],
+  errors: ['SLUG_ALREADY_IN_USE', 'VALIDATION_FAILED', 'CATEGORY_NOT_FOUND', 'INVALID_CATEGORY_PARENT'],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: createCategoryBodySchema },
     responses: {
       201: { description: 'Created', schema: adminCategorySchema },
       409: jsonError('Slug in use'),
+      422: jsonError('parent_id names a category that is itself a subcategory'),
     },
   },
 });
@@ -101,13 +102,14 @@ registerRoute({
   permission: 'catalog:update',
   summary: 'Update a category',
   phase: '04b',
-  errors: ['CATEGORY_NOT_FOUND'],
+  errors: ['CATEGORY_NOT_FOUND', 'INVALID_CATEGORY_PARENT'],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: updateCategoryBodySchema },
     responses: {
       200: { description: 'Updated', schema: adminCategorySchema },
       404: jsonError('Not found'),
+      422: jsonError('Invalid parent_id — self-reference, 3rd level, or has its own subcategories'),
     },
   },
 });
@@ -311,11 +313,14 @@ registerRoute({
   permission: 'catalog:create',
   summary: 'Add a variant to a product',
   phase: '04b',
-  errors: ['PRODUCT_NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['PRODUCT_NOT_FOUND', 'VALIDATION_FAILED', 'SKU_TAKEN'],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: createVariantBodySchema },
-    responses: { 201: { description: 'Variant created', schema: adminVariantSchema } },
+    responses: {
+      201: { description: 'Variant created', schema: adminVariantSchema },
+      409: jsonError('SKU already in use'),
+    },
   },
 });
 
@@ -412,6 +417,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         slug: body.slug,
         description: body.description,
         imageUrl: body.image_url,
+        parentId: body.parent_id,
         displayOrder: body.display_order,
       },
       actor.userId,
@@ -439,6 +445,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.description !== undefined ? { description: body.description } : {}),
         ...(body.image_url !== undefined ? { imageUrl: body.image_url } : {}),
+        ...(body.parent_id !== undefined ? { parentId: body.parent_id } : {}),
         ...(body.display_order !== undefined ? { displayOrder: body.display_order } : {}),
         ...(body.is_active !== undefined ? { isActive: body.is_active } : {}),
       },
@@ -631,6 +638,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         unitValue: body.unit_value,
         mrpPaise: body.mrp_paise,
         pricePaise: body.price_paise,
+        taxRateBps: body.tax_rate_bps,
         isDefault: body.is_default,
         maxOrderQuantity: body.max_order_quantity,
         initialQuantityOnHand: body.initial_quantity_on_hand,
@@ -654,6 +662,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         ...(body.unit_value !== undefined ? { unitValue: body.unit_value } : {}),
         ...(body.mrp_paise !== undefined ? { mrpPaise: body.mrp_paise } : {}),
         ...(body.price_paise !== undefined ? { pricePaise: body.price_paise } : {}),
+        ...(body.tax_rate_bps !== undefined ? { taxRateBps: body.tax_rate_bps } : {}),
         ...(body.availability !== undefined ? { availability: body.availability } : {}),
         ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}),
         ...(body.max_order_quantity !== undefined

@@ -11,5 +11,6 @@ export * from './admin-order.js';
 export * from './delivery-slot.js';
 export * from './delivery.js';
 export * from './admin-catalogue.js';
+export * from './units.js';
 export * from './dashboard.js';
 export * from './openapi.js';

@@ -1,5 +1,6 @@
 'use client';
 
+import { UNIT_CATALOG } from '@healthy-aahar/contracts';
 import {
   ApiError,
   type AdminCategoryDto,
@@ -41,6 +42,8 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
+const UNIT_OPTIONS = UNIT_CATALOG.map((u) => ({ value: u.code, label: u.label }));
+
 function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: () => void }) {
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
@@ -48,6 +51,7 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
   const [unitValue, setUnitValue] = useState('500');
   const [price, setPrice] = useState('');
   const [mrp, setMrp] = useState('');
+  const [taxRate, setTaxRate] = useState('');
   const [stock, setStock] = useState('0');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,12 +68,14 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
         unit_value: Number(unitValue),
         price_paise: Math.round(Number(price) * 100),
         mrp_paise: mrp ? Math.round(Number(mrp) * 100) : undefined,
+        tax_rate_bps: taxRate ? Math.round(Number(taxRate) * 100) : undefined,
         initial_quantity_on_hand: Number(stock) || 0,
       });
       setSku('');
       setName('');
       setPrice('');
       setMrp('');
+      setTaxRate('');
       setStock('0');
       onAdded();
     } catch (err) {
@@ -118,11 +124,11 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
         </div>
         <div className="flex-1">
           <FieldLabel htmlFor="v-unit">Unit</FieldLabel>
-          <Input
+          <Select
             id="v-unit"
-            required
             className="mt-1"
             value={unit}
+            options={UNIT_OPTIONS}
             onChange={(e) => setUnit(e.target.value)}
           />
         </div>
@@ -150,6 +156,19 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
           className="mt-1"
           value={mrp}
           onChange={(e) => setMrp(e.target.value)}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor="v-tax-rate">Tax rate (%, optional)</FieldLabel>
+        <Input
+          id="v-tax-rate"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          className="mt-1"
+          value={taxRate}
+          onChange={(e) => setTaxRate(e.target.value)}
         />
       </div>
       <div>
@@ -188,6 +207,7 @@ function EditVariantForm({
   const [unitValue, setUnitValue] = useState(String(variant.unit_value));
   const [price, setPrice] = useState(String(variant.price.amount_paise / 100));
   const [mrp, setMrp] = useState(variant.mrp ? String(variant.mrp.amount_paise / 100) : '');
+  const [taxRate, setTaxRate] = useState(String(variant.tax_rate_bps / 100));
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -202,6 +222,7 @@ function EditVariantForm({
         unit_value: Number(unitValue),
         price_paise: Math.round(Number(price) * 100),
         mrp_paise: mrp ? Math.round(Number(mrp) * 100) : null,
+        tax_rate_bps: taxRate ? Math.round(Number(taxRate) * 100) : 0,
       });
       onSaved();
     } catch (err) {
@@ -239,11 +260,11 @@ function EditVariantForm({
         </div>
         <div className="flex-1">
           <FieldLabel htmlFor={`edit-v-unit-${variant.id}`}>Unit</FieldLabel>
-          <Input
+          <Select
             id={`edit-v-unit-${variant.id}`}
-            required
             className="mt-1"
             value={unit}
+            options={UNIT_OPTIONS}
             onChange={(e) => setUnit(e.target.value)}
           />
         </div>
@@ -271,6 +292,19 @@ function EditVariantForm({
           className="mt-1"
           value={mrp}
           onChange={(e) => setMrp(e.target.value)}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor={`edit-v-tax-rate-${variant.id}`}>Tax rate (%)</FieldLabel>
+        <Input
+          id={`edit-v-tax-rate-${variant.id}`}
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          className="mt-1"
+          value={taxRate}
+          onChange={(e) => setTaxRate(e.target.value)}
         />
       </div>
       <div className="col-span-full flex items-center gap-2">

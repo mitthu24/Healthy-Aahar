@@ -18,6 +18,7 @@ export type AdminCategoryRow = {
   slug: string;
   description: string | null;
   imageUrl: string | null;
+  parentId: string | null;
   displayOrder: number;
   isActive: boolean;
   productCount: number;
@@ -30,6 +31,7 @@ export type CategoryInput = {
   slug: string;
   description?: string | undefined;
   imageUrl?: string | undefined;
+  parentId?: string | undefined;
   displayOrder: number;
 };
 
@@ -44,6 +46,7 @@ export type CategoryUpdateInput = Partial<{
   name: string;
   description: string | null;
   imageUrl: string | null;
+  parentId: string | null;
   displayOrder: number;
   isActive: boolean;
 }>;
@@ -52,6 +55,8 @@ export interface AdminCategoryRepository {
   list(scope: BusinessScope, filter: CategoryListFilter): Promise<AdminCategoryRow[]>;
   findById(scope: BusinessScope, id: string): Promise<AdminCategoryRow | null>;
   findBySlug(scope: BusinessScope, slug: string): Promise<AdminCategoryRow | null>;
+  /** Whether any non-deleted category currently has `categoryId` as its parent. */
+  hasChildren(scope: BusinessScope, categoryId: string): Promise<boolean>;
   create(
     scope: BusinessScope,
     input: CategoryInput,
@@ -84,6 +89,7 @@ export type AdminVariantRow = {
   unitValue: string;
   mrpPaise: bigint | null;
   pricePaise: bigint;
+  taxRateBps: number;
   availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
   isDefault: boolean;
   displayOrder: number;
@@ -98,6 +104,7 @@ export type VariantInput = {
   unitValue: number;
   mrpPaise?: number | undefined;
   pricePaise: number;
+  taxRateBps?: number | undefined;
   isDefault?: boolean | undefined;
   maxOrderQuantity?: number | undefined;
   initialQuantityOnHand?: number | undefined;
@@ -109,6 +116,7 @@ export type VariantUpdateInput = Partial<{
   unitValue: number;
   mrpPaise: number | null;
   pricePaise: number;
+  taxRateBps: number;
   availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
   isDefault: boolean;
   maxOrderQuantity: number | null;

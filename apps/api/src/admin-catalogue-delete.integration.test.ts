@@ -1,5 +1,5 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
-import { PERMISSIONS } from '@healthy-aahar/core';
+import { now, PERMISSIONS } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 import {
   createTestClient,
@@ -160,7 +160,7 @@ async function seedOrderReferencing(variantId: string) {
       customerProfileId,
       status: 'DELIVERED',
       deliverySlotId: slot.id,
-      serviceDate: new Date(),
+      serviceDate: now(),
       slotStartTime: slot.startTime,
       slotEndTime: slot.endTime,
       slotNameSnapshot: slot.name,
@@ -181,7 +181,7 @@ async function seedOrderReferencing(variantId: string) {
       totalPaise: 15_000n,
       paymentMethod: 'COD',
       paymentStatus: 'DUE',
-      placedAt: new Date(),
+      placedAt: now(),
     },
   });
   await prisma.orderItem.create({

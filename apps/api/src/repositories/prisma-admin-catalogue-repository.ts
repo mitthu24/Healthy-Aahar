@@ -32,6 +32,7 @@ const VARIANT_SELECT = {
   unitValue: true,
   mrpPaise: true,
   pricePaise: true,
+  taxRateBps: true,
   availability: true,
   isDefault: true,
   displayOrder: true,
@@ -62,6 +63,7 @@ function toVariantRow(raw: RawVariant): AdminVariantRow {
     unitValue: raw.unitValue.toString(),
     mrpPaise: raw.mrpPaise,
     pricePaise: raw.pricePaise,
+    taxRateBps: raw.taxRateBps,
     availability: raw.availability,
     isDefault: raw.isDefault,
     displayOrder: raw.displayOrder,
@@ -156,6 +158,13 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
     return row ? this.toRow(row) : null;
   }
 
+  async hasChildren(scope: BusinessScope, categoryId: string): Promise<boolean> {
+    const count = await this.prisma.category.count({
+      where: { parentId: categoryId, businessId: scope, deletedAt: null },
+    });
+    return count > 0;
+  }
+
   async create(
     scope: BusinessScope,
     input: CategoryInput,
@@ -170,6 +179,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
           slug: input.slug,
           description: input.description ?? null,
           imageUrl: input.imageUrl ?? null,
+          parentId: input.parentId ?? null,
           displayOrder: input.displayOrder,
           createdBy: actorUserId,
         },
@@ -196,6 +206,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
         ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         updatedBy: actorUserId,
@@ -217,6 +228,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
     slug: string;
     description: string | null;
     imageUrl: string | null;
+    parentId: string | null;
     displayOrder: number;
     isActive: boolean;
     createdAt: Date;
@@ -233,6 +245,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
       slug: row.slug,
       description: row.description,
       imageUrl: row.imageUrl,
+      parentId: row.parentId,
       displayOrder: row.displayOrder,
       isActive: row.isActive,
       productCount,
@@ -512,43 +525,51 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
     productId: string,
     input: VariantInput,
   ): Promise<AdminVariantRow> {
-    const created = await this.prisma.$transaction(async (tx) => {
-      const variant = await tx.productVariant.create({
-        data: {
-          id: newId(),
-          businessId: scope,
-          productId,
-          sku: input.sku,
-          name: input.name,
-          unit: input.unit,
-          unitValue: input.unitValue,
-          mrpPaise: input.mrpPaise !== undefined ? BigInt(input.mrpPaise) : null,
-          pricePaise: BigInt(input.pricePaise),
-          isDefault: input.isDefault ?? false,
-          maxOrderQuantity: input.maxOrderQuantity ?? null,
-        },
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const variant = await tx.productVariant.create({
+          data: {
+            id: newId(),
+            businessId: scope,
+            productId,
+            sku: input.sku,
+            name: input.name,
+            unit: input.unit,
+            unitValue: input.unitValue,
+            mrpPaise: input.mrpPaise !== undefined ? BigInt(input.mrpPaise) : null,
+            pricePaise: BigInt(input.pricePaise),
+            taxRateBps: input.taxRateBps ?? 0,
+            isDefault: input.isDefault ?? false,
+            maxOrderQuantity: input.maxOrderQuantity ?? null,
+          },
+        });
+
+        await tx.inventory.create({
+          data: {
+            id: newId(),
+            businessId: scope,
+            variantId: variant.id,
+            locationCode: 'MAIN',
+            quantityOnHand: input.initialQuantityOnHand ?? 0,
+            quantityReserved: 0,
+            trackInventory: true,
+            allowBackorder: false,
+          },
+        });
+
+        return tx.productVariant.findUniqueOrThrow({
+          where: { id: variant.id },
+          select: VARIANT_SELECT,
+        });
       });
 
-      await tx.inventory.create({
-        data: {
-          id: newId(),
-          businessId: scope,
-          variantId: variant.id,
-          locationCode: 'MAIN',
-          quantityOnHand: input.initialQuantityOnHand ?? 0,
-          quantityReserved: 0,
-          trackInventory: true,
-          allowBackorder: false,
-        },
-      });
-
-      return tx.productVariant.findUniqueOrThrow({
-        where: { id: variant.id },
-        select: VARIANT_SELECT,
-      });
-    });
-
-    return toVariantRow(created);
+      return toVariantRow(created);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error, 'sku')) {
+        throw new DomainError('SKU_TAKEN', 'A variant with this SKU already exists.');
+      }
+      throw error;
+    }
   }
 
   async update(
@@ -567,6 +588,7 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
           ? { mrpPaise: input.mrpPaise !== null ? BigInt(input.mrpPaise) : null }
           : {}),
         ...(input.pricePaise !== undefined ? { pricePaise: BigInt(input.pricePaise) } : {}),
+        ...(input.taxRateBps !== undefined ? { taxRateBps: input.taxRateBps } : {}),
         ...(input.availability !== undefined ? { availability: input.availability } : {}),
         ...(input.isDefault !== undefined ? { isDefault: input.isDefault } : {}),
         ...(input.maxOrderQuantity !== undefined
