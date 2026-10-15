@@ -1,4 +1,5 @@
 import {
+  DomainError,
   newId,
   now,
   type AdminRepository,
@@ -27,6 +28,7 @@ function toAdminUserRow(admin: {
   businessId: string;
   userId: string;
   fullName: string;
+  employeeCode: string | null;
   designation: string | null;
   department: string | null;
   isSuperAdmin: boolean;
@@ -44,6 +46,7 @@ function toAdminUserRow(admin: {
     userId: admin.userId,
     email: admin.user.email,
     loginId: admin.user.loginId,
+    employeeCode: admin.employeeCode,
     fullName: admin.fullName,
     designation: admin.designation,
     department: admin.department,
@@ -185,6 +188,7 @@ export class PrismaAdminRepository implements AdminRepository {
             businessId: scope,
             userId,
             fullName: input.fullName,
+            employeeCode: input.employeeCode,
             designation: input.designation ?? null,
             department: input.department ?? null,
             isSuperAdmin,
@@ -224,6 +228,9 @@ export class PrismaAdminRepository implements AdminRepository {
       }
       if (isUniqueConstraintViolation(error, 'login_id')) {
         return { ok: false, reason: 'LOGIN_ID_TAKEN' };
+      }
+      if (isUniqueConstraintViolation(error, 'employee_code')) {
+        return { ok: false, reason: 'EMPLOYEE_CODE_TAKEN' };
       }
       throw error;
     }
@@ -303,16 +310,24 @@ export class PrismaAdminRepository implements AdminRepository {
     input: UpdateAdminDetailsInput,
   ): Promise<AdminUserRow> {
     void scope;
-    const updated = await this.prisma.adminUser.update({
-      where: { id: adminUserId },
-      data: {
-        ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
-        ...(input.designation !== undefined ? { designation: input.designation } : {}),
-        ...(input.department !== undefined ? { department: input.department } : {}),
-      },
-      include: ADMIN_INCLUDE,
-    });
-    return toAdminUserRow(updated);
+    try {
+      const updated = await this.prisma.adminUser.update({
+        where: { id: adminUserId },
+        data: {
+          ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
+          ...(input.designation !== undefined ? { designation: input.designation } : {}),
+          ...(input.department !== undefined ? { department: input.department } : {}),
+          ...(input.employeeCode !== undefined ? { employeeCode: input.employeeCode } : {}),
+        },
+        include: ADMIN_INCLUDE,
+      });
+      return toAdminUserRow(updated);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error, 'employee_code')) {
+        throw new DomainError('EMPLOYEE_CODE_TAKEN', 'An employee with this ID already exists.');
+      }
+      throw error;
+    }
   }
 
   async markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void> {

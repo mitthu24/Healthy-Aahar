@@ -570,6 +570,7 @@ model AdminUser {
   assignedOrders   Order[]                 @relation("OrderAssignedPartner")
   orderAssignments OrderAssignment[]       @relation("OrderAssignmentPartner")
 
+  @@unique([businessId, employeeCode])
   @@index([businessId])
   @@map("admin_users")
 }

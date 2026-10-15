@@ -6,6 +6,7 @@ import type {
   AdminDeliverySlotDto,
   AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderCountsResponse,
   AdminOrderDto,
   AdminOrderListResponse,
   AdminProductDto,
@@ -432,11 +433,18 @@ export class ApiClient {
       status?: string;
       assigned_partner_id?: string;
       unassigned?: boolean;
+      from?: string;
+      to?: string;
     } = {},
   ): Promise<AdminOrderListResponse> {
     return this.request(
       `/v1/admin/orders${this.query({ ...params, unassigned: params.unassigned === undefined ? undefined : String(params.unassigned) })}`,
     );
+  }
+
+  /** Per-status order counts for the Orders dashboard's tabs — same `from`/`to` business-date pair as `listAdminOrders`. */
+  getAdminOrderCounts(params: { from: string; to: string }): Promise<AdminOrderCountsResponse> {
+    return this.request(`/v1/admin/orders/counts${this.query(params)}`);
   }
 
   getAdminOrder(id: string): Promise<AdminOrderDto> {
@@ -840,6 +848,7 @@ export class ApiClient {
   inviteAdminUser(body: {
     email?: string;
     login_id?: string;
+    employee_code: string;
     full_name: string;
     designation?: string;
     department?: string;
@@ -851,7 +860,12 @@ export class ApiClient {
 
   updateAdminUser(
     id: string,
-    body: { full_name?: string; designation?: string; department?: string },
+    body: {
+      full_name?: string;
+      designation?: string;
+      department?: string;
+      employee_code?: string;
+    },
   ): Promise<AdminUser> {
     return this.request(`/v1/admin/admin-users/${id}`, {
       method: 'PATCH',
@@ -936,6 +950,7 @@ export type {
   AdminDeliverySlotDto,
   AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderCountsResponse,
   AdminOrderDto,
   AdminOrderListResponse,
   AdminProductDto,

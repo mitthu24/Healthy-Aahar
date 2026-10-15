@@ -71,9 +71,16 @@ export type OrderListFilter = {
   assignedPartnerId?: string | undefined;
   /** Admin-list-only: orders with no current assignment at all. */
   unassigned?: boolean | undefined;
+  /** Admin-list-only: restricts to `placedAt` within `[from, to)` — already
+   *  resolved to absolute UTC instants by the service layer (see
+   *  `resolveBusinessDateRange`); this port never sees a bare date string or
+   *  does timezone math of its own. */
+  placedRange?: { from: Date; to: Date } | undefined;
   limit: number;
   cursor?: Cursor | undefined;
 };
+
+export type OrderStatusCountRow = { status: OrderStatusValue; count: number };
 
 export type TransitionInput = {
   toStatus: OrderStatusValue;
@@ -95,6 +102,15 @@ export interface OrderRepository {
   ): Promise<OrderRow | null>;
   listForAdmin(scope: BusinessScope, filter: OrderListFilter): Promise<Page<OrderRow>>;
   getForAdmin(scope: BusinessScope, orderId: string): Promise<OrderRow | null>;
+  /**
+   * Per-status order counts within `placedRange`, one row per status that has
+   * at least one matching order. A single aggregated query — never derived
+   * by counting `listForAdmin` pages (ADR: avoid N+1 / unbounded retrieval).
+   */
+  getStatusCounts(
+    scope: BusinessScope,
+    placedRange: { from: Date; to: Date },
+  ): Promise<OrderStatusCountRow[]>;
   /** Orders currently assigned to this delivery partner (`assignedPartnerId` match) — the partner's own "my deliveries" list. */
   listForPartner(
     scope: BusinessScope,

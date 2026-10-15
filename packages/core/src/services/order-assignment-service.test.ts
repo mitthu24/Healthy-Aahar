@@ -99,6 +99,9 @@ class FakeOrderRepository implements OrderRepository {
   async getForAdmin(_scope: BusinessScope, orderId: string): Promise<OrderRow | null> {
     return this.orders.get(orderId) ?? null;
   }
+  async getStatusCounts(): Promise<never> {
+    throw new Error('not used in these tests');
+  }
   async listForPartner(): Promise<never> {
     throw new Error('not used in these tests');
   }

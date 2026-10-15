@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { moneySchema, paginatedSchema, uuidSchema } from './common.js';
+import { dashboardDateRangeQuerySchema, orderStatusCountSchema } from './dashboard.js';
 import { orderAddressSnapshotSchema, orderItemSchema, orderStatusValueSchema } from './order.js';
 
 /**
@@ -61,13 +62,35 @@ export const adminOrderListResponseSchema = paginatedSchema(
 );
 export type AdminOrderListResponse = z.infer<typeof adminOrderListResponseSchema>;
 
-export const listAdminOrdersQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().optional(),
-  status: orderStatusValueSchema.optional(),
-  assigned_partner_id: uuidSchema.optional(),
-  unassigned: z.coerce.boolean().optional(),
+export const listAdminOrdersQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+    status: orderStatusValueSchema.optional(),
+    assigned_partner_id: uuidSchema.optional(),
+    unassigned: z.coerce.boolean().optional(),
+    // Business dates (Asia/Kolkata, YYYY-MM-DD) — both required together or
+    // omitted together, same convention as the dashboard's date range.
+    from: dashboardDateRangeQuerySchema.shape.from.optional(),
+    to: dashboardDateRangeQuerySchema.shape.to.optional(),
+  })
+  .refine((v) => (v.from === undefined) === (v.to === undefined), {
+    message: 'from and to must be given together.',
+    path: ['from'],
+  });
+
+/**
+ * Per-status order counts for the Orders dashboard's tabs — same date-range
+ * convention as `listAdminOrdersQuerySchema`'s `from`/`to`, so the list and
+ * the counts always agree on which orders are "in range."
+ */
+export const adminOrderCountsQuerySchema = dashboardDateRangeQuerySchema;
+
+export const adminOrderCountsResponseSchema = z.object({
+  total: z.number().int(),
+  by_status: z.array(orderStatusCountSchema),
 });
+export type AdminOrderCountsResponse = z.infer<typeof adminOrderCountsResponseSchema>;
 
 export const updateOrderStatusBodySchema = z.object({
   to_status: orderStatusValueSchema,

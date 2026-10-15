@@ -10,6 +10,7 @@ import {
   EmptyState,
   ErrorState,
   PageHeader,
+  rangeForPreset,
   ResponsiveContainer,
   Skeleton,
   StatCard,
@@ -62,37 +63,13 @@ const QUICK_ACTIONS = [
   },
 ] as const;
 
-/** `YYYY-MM-DD` for a UTC instant — a reasonable client-side default only;
- *  the server is the sole source of truth for business-date boundaries
- *  (`businessDateTimeToUtc`, Asia/Kolkata) and re-validates every request. */
-function toDateString(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function rangeForPreset(preset: DateRangePreset): DateRange {
-  // `new Date(Date.now())`, not the banned bare `new Date()` (ADR-007's
-  // lint rule targets zero-arg Date reads in packages/core/apps/api,
-  // where it matters for testability) — this is a client-side default for
-  // the picker only, and the server independently re-validates/clamps the
-  // actual date-range boundaries on every request.
-  const current = new Date(Date.now());
-  const today = toDateString(current);
-  if (preset === 'today') return { from: today, to: today };
-  if (preset === '7d') {
-    const from = new Date(current);
-    from.setUTCDate(from.getUTCDate() - 6);
-    return { from: toDateString(from), to: today };
-  }
-  if (preset === '30d') {
-    const from = new Date(current);
-    from.setUTCDate(from.getUTCDate() - 29);
-    return { from: toDateString(from), to: today };
-  }
-  if (preset === 'this_month') {
-    const from = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), 1));
-    return { from: toDateString(from), to: today };
-  }
-  return { from: today, to: today };
+// `new Date(Date.now())`, not the banned bare `new Date()` (ADR-007's lint
+// rule targets zero-arg Date reads in packages/core/apps/api, where it
+// matters for testability) — this is a client-side default for the picker
+// only, and the server independently re-validates/clamps the actual
+// date-range boundaries on every request.
+function defaultRangeForPreset(preset: DateRangePreset): DateRange {
+  return rangeForPreset(preset, new Date(Date.now()));
 }
 
 /**
@@ -105,11 +82,11 @@ function rangeForPreset(preset: DateRangePreset): DateRange {
  */
 export default function HomePage() {
   const [preset, setPreset] = useState<DateRangePreset>('7d');
-  const [range, setRange] = useState<DateRange>(() => rangeForPreset('7d'));
+  const [range, setRange] = useState<DateRange>(() => defaultRangeForPreset('7d'));
 
   function onPresetChange(next: DateRangePreset) {
     setPreset(next);
-    if (next !== 'custom') setRange(rangeForPreset(next));
+    if (next !== 'custom') setRange(defaultRangeForPreset(next));
   }
 
   return (

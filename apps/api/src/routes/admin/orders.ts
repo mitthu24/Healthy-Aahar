@@ -1,4 +1,6 @@
 import {
+  adminOrderCountsQuerySchema,
+  adminOrderCountsResponseSchema,
   adminOrderListResponseSchema,
   adminOrderSchema,
   errorResponseSchema,
@@ -37,6 +39,21 @@ registerRoute({
     tags: ['Admin: Orders'],
     request: { query: listAdminOrdersQuerySchema },
     responses: { 200: { description: 'Orders', schema: adminOrderListResponseSchema } },
+  },
+});
+
+registerRoute({
+  method: 'GET',
+  path: '/v1/admin/orders/counts',
+  audience: 'admin',
+  permission: 'orders:read',
+  summary: 'Per-status order counts for a date range',
+  phase: 'stage-e',
+  errors: ['VALIDATION_FAILED'],
+  openapi: {
+    tags: ['Admin: Orders'],
+    request: { query: adminOrderCountsQuerySchema },
+    responses: { 200: { description: 'Order counts', schema: adminOrderCountsResponseSchema } },
   },
 });
 
@@ -132,6 +149,8 @@ export function adminOrdersRoutes(): Hono<AppBindings> {
       status: c.req.query('status'),
       assigned_partner_id: c.req.query('assigned_partner_id'),
       unassigned: c.req.query('unassigned'),
+      from: c.req.query('from'),
+      to: c.req.query('to'),
     });
 
     const page = await c.env.services.orderFulfilment.list(businessScope(c.env.businessId), {
@@ -140,8 +159,25 @@ export function adminOrdersRoutes(): Hono<AppBindings> {
       status: query.status,
       assignedPartnerId: query.assigned_partner_id,
       unassigned: query.unassigned,
+      from: query.from,
+      to: query.to,
     });
     return c.json(page);
+  });
+
+  // Registered before `/orders/:id` — a literal `/orders/counts` would
+  // otherwise be swallowed by the `:id` param route (Hono matches in
+  // registration order).
+  app.get('/orders/counts', async (c) => {
+    const query = adminOrderCountsQuerySchema.parse({
+      from: c.req.query('from'),
+      to: c.req.query('to'),
+    });
+    const counts = await c.env.services.orderFulfilment.getCounts(
+      businessScope(c.env.businessId),
+      query,
+    );
+    return c.json(counts);
   });
 
   app.get('/orders/:id', async (c) => {

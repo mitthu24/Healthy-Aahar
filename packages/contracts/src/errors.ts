@@ -115,6 +115,14 @@ export const ERROR_CODES = {
   PARTNER_NOT_FOUND: 404,
   PARTNER_OFF_DUTY: 409,
   ORDER_NOT_ASSIGNABLE: 409,
+
+  // ── Admin panel finalization (Stage E) ───────────────────────────────────
+  EMPLOYEE_CODE_TAKEN: 409,
+  CANNOT_MANAGE_SUPER_ADMIN: 403,
+  PRODUCT_REFERENCED_BY_ORDERS: 409,
+  VARIANT_REFERENCED_BY_ORDERS: 409,
+  SKU_TAKEN: 409,
+  INVALID_CATEGORY_PARENT: 422,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;

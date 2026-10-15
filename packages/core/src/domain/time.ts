@@ -194,6 +194,50 @@ export function businessDateTimeToUtc(
   return new Date(naive - offsetMs);
 }
 
+/**
+ * Validated [from, to) UTC instant range resolved from a business-date pair.
+ * `to` is exclusive — one day past the last included business date.
+ */
+export type ResolvedBusinessDateRange = { from: Date; to: Date };
+
+/**
+ * Validate and resolve a `{from, to}` business-date pair into an absolute,
+ * half-open UTC instant range: `[from 00:00 business-local, (to+1) 00:00
+ * business-local)`. Shared by every service that reports over a business-date
+ * range (dashboard summary/trend, order counts, ...) so the validation rules
+ * and timezone conversion live in exactly one place.
+ *
+ * Throws a `VALIDATION_FAILED`-shaped error via the `onInvalid` callback —
+ * callers pass their own `DomainError` constructor so this stays framework-
+ * agnostic (packages/core has no dependency direction issue either way, but
+ * keeping the throw itself in the caller keeps error messages addressable at
+ * the call site if they ever need to diverge).
+ */
+export function resolveBusinessDateRange(
+  input: { from: BusinessDate; to: BusinessDate },
+  options: {
+    maxRangeDays: number;
+    onInvalid: (message: string) => never;
+    timeZone?: string;
+  },
+): ResolvedBusinessDateRange {
+  const timeZone = options.timeZone ?? DEFAULT_BUSINESS_TIMEZONE;
+  if (!isValidBusinessDate(input.from) || !isValidBusinessDate(input.to)) {
+    options.onInvalid('from and to must be valid YYYY-MM-DD dates.');
+  }
+  if (input.from > input.to) {
+    options.onInvalid('from must not be after to.');
+  }
+  const spanDays = daysBetween(input.from, input.to);
+  if (spanDays > options.maxRangeDays) {
+    options.onInvalid(`Range must not exceed ${options.maxRangeDays} days.`);
+  }
+  return {
+    from: businessDateTimeToUtc(input.from, '00:00', timeZone),
+    to: businessDateTimeToUtc(addDays(input.to, 1), '00:00', timeZone),
+  };
+}
+
 /** Human label in the business timezone, e.g. "Sun, 20 Sep 2026, 10:00 PM". */
 export function formatBusinessDateTime(
   instant: Date,

@@ -6,6 +6,7 @@ import {
   type OrderListFilter,
   type OrderRepository,
   type OrderRow,
+  type OrderStatusCountRow,
   type Page,
   type TransitionInput,
 } from '@healthy-aahar/core';
@@ -63,13 +64,25 @@ export class PrismaOrderRepository implements OrderRepository {
   }
 
   async listForAdmin(scope: BusinessScope, filter: OrderListFilter): Promise<Page<OrderRow>> {
+    // Cursor and date-range both constrain `placedAt` — merged into one
+    // comparison object rather than two spreads, which would otherwise let
+    // whichever came last silently clobber the other's bound.
+    const cursorBound = filter.cursor ? new Date(filter.cursor.sortValue) : undefined;
+    const placedAtWhere =
+      filter.placedRange || cursorBound
+        ? {
+            ...(filter.placedRange ? { gte: filter.placedRange.from } : {}),
+            lt: cursorBound ?? filter.placedRange?.to,
+          }
+        : undefined;
+
     const rows = await this.prisma.order.findMany({
       where: {
         businessId: scope,
         ...(filter.status ? { status: filter.status } : {}),
         ...(filter.assignedPartnerId ? { assignedPartnerId: filter.assignedPartnerId } : {}),
         ...(filter.unassigned ? { assignedPartnerId: null } : {}),
-        ...(filter.cursor ? { placedAt: { lt: new Date(filter.cursor.sortValue) } } : {}),
+        ...(placedAtWhere ? { placedAt: placedAtWhere } : {}),
       },
       orderBy: { placedAt: 'desc' },
       take: filter.limit,
@@ -88,6 +101,18 @@ export class PrismaOrderRepository implements OrderRepository {
       include: ORDER_INCLUDE,
     });
     return row ? toOrderRow(row) : null;
+  }
+
+  async getStatusCounts(
+    scope: BusinessScope,
+    placedRange: { from: Date; to: Date },
+  ): Promise<OrderStatusCountRow[]> {
+    const rows = await this.prisma.order.groupBy({
+      by: ['status'],
+      where: { businessId: scope, placedAt: { gte: placedRange.from, lt: placedRange.to } },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({ status: row.status, count: row._count._all }));
   }
 
   async listForPartner(

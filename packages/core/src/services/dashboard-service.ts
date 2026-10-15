@@ -1,12 +1,7 @@
 import type { BusinessScope } from '../domain/business-scope.js';
 import { DomainError } from '../domain/errors.js';
 import { money, type Money } from '../domain/money.js';
-import {
-  addDays,
-  businessDateTimeToUtc,
-  isValidBusinessDate,
-  type BusinessDate,
-} from '../domain/time.js';
+import { resolveBusinessDateRange, type BusinessDate } from '../domain/time.js';
 import type {
   DashboardRepository,
   OrderStatusCount,
@@ -93,27 +88,12 @@ export class DashboardService {
   }
 
   private resolveRange(input: DashboardDateRangeInput): { from: Date; to: Date } {
-    if (!isValidBusinessDate(input.from) || !isValidBusinessDate(input.to)) {
-      throw new DomainError('VALIDATION_FAILED', 'from/to must be valid YYYY-MM-DD dates.');
-    }
-    if (input.from > input.to) {
-      throw new DomainError('VALIDATION_FAILED', 'from must not be after to.');
-    }
-    const spanDays =
-      (new Date(`${input.to}T00:00:00Z`).getTime() -
-        new Date(`${input.from}T00:00:00Z`).getTime()) /
-      86_400_000;
-    if (spanDays > MAX_RANGE_DAYS) {
-      throw new DomainError(
-        'VALIDATION_FAILED',
-        `Date range cannot exceed ${MAX_RANGE_DAYS} days.`,
-      );
-    }
-    // Half-open [from 00:00 IST, (to+1) 00:00 IST) — includes the whole of `to`.
-    return {
-      from: businessDateTimeToUtc(input.from, '00:00'),
-      to: businessDateTimeToUtc(addDays(input.to, 1), '00:00'),
-    };
+    return resolveBusinessDateRange(input, {
+      maxRangeDays: MAX_RANGE_DAYS,
+      onInvalid: (message) => {
+        throw new DomainError('VALIDATION_FAILED', message);
+      },
+    });
   }
 
   async getSummary(

@@ -45,6 +45,12 @@ export class RbacService {
        *  before this is called; this layer only enforces the at-least-one-of
        *  invariant below. */
       loginId?: string;
+      /** STAGE E: unique within the business when given — enforced here (not
+       *  just by the DB) so a collision maps to a clear 409 rather than an
+       *  unhandled constraint error. The staff-invite contract requires this;
+       *  the delivery-partner creation flow (also routed through here) does
+       *  not. */
+      employeeCode?: string;
       fullName: string;
       designation?: string;
       department?: string;
@@ -68,6 +74,7 @@ export class RbacService {
     const result = await this.admins.invite(scope, {
       email: params.email,
       loginId: params.loginId,
+      employeeCode: params.employeeCode,
       fullName: params.fullName,
       designation: params.designation,
       department: params.department,
@@ -75,17 +82,22 @@ export class RbacService {
       invitedByUserId: params.invitedByUserId,
     });
 
-    // Fix #3: a duplicate (email, user_type) / (login_id, user_type) is a
-    // real, reachable user error (re-inviting someone, or inviting an
-    // identifier that is already taken) — it must map to the established
-    // 409, never fall through to a raw, unhandled 500.
+    // Fix #3: a duplicate (email, user_type) / (login_id, user_type) /
+    // (business_id, employee_code) is a real, reachable user error
+    // (re-inviting someone, or an identifier that is already taken) — it
+    // must map to the established 409, never fall through to a raw,
+    // unhandled 500.
     if (!result.ok) {
-      throw result.reason === 'LOGIN_ID_TAKEN'
-        ? new DomainError('LOGIN_ID_TAKEN', 'This login ID is already taken.')
-        : new DomainError(
-            'ADMIN_ALREADY_INVITED',
-            'An admin account with this email already exists.',
-          );
+      if (result.reason === 'LOGIN_ID_TAKEN') {
+        throw new DomainError('LOGIN_ID_TAKEN', 'This login ID is already taken.');
+      }
+      if (result.reason === 'EMPLOYEE_CODE_TAKEN') {
+        throw new DomainError('EMPLOYEE_CODE_TAKEN', 'This employee ID is already taken.');
+      }
+      throw new DomainError(
+        'ADMIN_ALREADY_INVITED',
+        'An admin account with this email already exists.',
+      );
     }
     const admin = result.admin;
 
@@ -101,7 +113,12 @@ export class RbacService {
       action: 'admin_user.invited',
       resourceType: 'admin_user',
       resourceId: admin.id,
-      metadata: { email: params.email, login_id: params.loginId, roles: roles.map((r) => r.key) },
+      metadata: {
+        email: params.email,
+        login_id: params.loginId,
+        employee_code: params.employeeCode,
+        roles: roles.map((r) => r.key),
+      },
     });
 
     return { admin, passwordResetLink };
@@ -118,12 +135,18 @@ export class RbacService {
    */
   async resetAdminPassword(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; actorUserId: string; passwordResetContinueUrl?: string },
+    params: {
+      targetAdminUserId: string;
+      actorUserId: string;
+      actorIsSuperAdmin: boolean;
+      passwordResetContinueUrl?: string;
+    },
   ): Promise<{ passwordResetLink: string }> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target || target.deletedAt) {
       throw new DomainError('NOT_FOUND', 'Admin user not found.');
     }
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
 
     const passwordResetLink = await this.passwordReset.issueToken({
       userId: target.userId,
@@ -160,6 +183,7 @@ export class RbacService {
 
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
 
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.actorIsSuperAdmin);
@@ -218,16 +242,20 @@ export class RbacService {
       fullName?: string;
       designation?: string;
       department?: string;
+      employeeCode?: string;
       actorUserId: string;
+      actorIsSuperAdmin: boolean;
     },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
 
     const updated = await this.admins.update(scope, params.targetAdminUserId, {
       fullName: params.fullName,
       designation: params.designation,
       department: params.department,
+      employeeCode: params.employeeCode,
     });
 
     await this.audit.write(scope, {
@@ -248,10 +276,16 @@ export class RbacService {
 
   async deactivate(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; actorAdminUserId: string; actorUserId: string },
+    params: {
+      targetAdminUserId: string;
+      actorAdminUserId: string;
+      actorUserId: string;
+      actorIsSuperAdmin: boolean;
+    },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
 
     // BR-SEC6, deactivation path. Checked before the self-deactivation guard
     // below: the sole active Super Admin deactivating themselves must still
@@ -299,10 +333,11 @@ export class RbacService {
    */
   async reactivate(
     scope: BusinessScope,
-    params: { targetAdminUserId: string; actorUserId: string },
+    params: { targetAdminUserId: string; actorUserId: string; actorIsSuperAdmin: boolean },
   ): Promise<AdminUserRow> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target) throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
     if (!target.deletedAt) {
       throw new DomainError('VALIDATION_FAILED', 'This account is already active.');
     }
@@ -372,6 +407,23 @@ export class RbacService {
     });
 
     return updated;
+  }
+
+  /**
+   * STAGE E: a non-Super-Admin holding `admin_users:update` could otherwise
+   * reset, edit, deactivate or reactivate ANY other admin — including
+   * another Super Admin, whose access is meant to be the harder boundary.
+   * Mirrors `assertMayGrant`'s shape: only a Super Admin may act on a
+   * target that is itself a Super Admin; any admin may still act on a
+   * non-Super-Admin target (unchanged from before this guard existed).
+   */
+  private assertMayManageTarget(target: AdminUserRow, actorIsSuperAdmin: boolean): void {
+    if (target.isSuperAdmin && !actorIsSuperAdmin) {
+      throw new DomainError(
+        'CANNOT_MANAGE_SUPER_ADMIN',
+        'Only a Super Admin may manage another Super Admin’s account.',
+      );
+    }
   }
 
   private assertMayGrant(roles: RoleRow[], actorIsSuperAdmin: boolean): void {
