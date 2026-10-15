@@ -123,8 +123,8 @@ function CategoryForm({
           onChange={(e) => setParentId(e.target.value)}
         />
         <p className="text-caption text-sand-500 mt-1">
-          Makes this a subcategory. Categories are at most two levels deep, so a subcategory
-          cannot itself be chosen as a parent.
+          Makes this a subcategory. Categories are at most two levels deep, so a subcategory cannot
+          itself be chosen as a parent.
         </p>
       </div>
       <div>

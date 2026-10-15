@@ -100,7 +100,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
-  const business = await seedBusiness(prisma, { slug: 'catalogue-fields-it', name: 'Healthy Aahar' });
+  const business = await seedBusiness(prisma, {
+    slug: 'catalogue-fields-it',
+    name: 'Healthy Aahar',
+  });
   businessId = business.id;
   await seedPermissions(prisma, PERMISSIONS);
   app = buildApp();

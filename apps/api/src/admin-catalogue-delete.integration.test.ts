@@ -209,7 +209,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAll(prisma);
-  const business = await seedBusiness(prisma, { slug: 'catalogue-delete-it', name: 'Healthy Aahar' });
+  const business = await seedBusiness(prisma, {
+    slug: 'catalogue-delete-it',
+    name: 'Healthy Aahar',
+  });
   businessId = business.id;
   await seedPermissions(prisma, PERMISSIONS);
   app = buildApp();
@@ -334,10 +337,10 @@ describe('DELETE /v1/admin/products/:id', () => {
   });
 
   it('a 404 for an unknown product id does not leak whether a different business owns it', async () => {
-    const res = await app.request(
-      '/v1/admin/products/00000000-0000-7000-8000-000000000000',
-      { method: 'DELETE', headers: adminHeaders },
-    );
+    const res = await app.request('/v1/admin/products/00000000-0000-7000-8000-000000000000', {
+      method: 'DELETE',
+      headers: adminHeaders,
+    });
     expect(res.status).toBe(404);
   });
 });

@@ -66,7 +66,12 @@ registerRoute({
   permission: 'catalog:create',
   summary: 'Create a category',
   phase: '04b',
-  errors: ['SLUG_ALREADY_IN_USE', 'VALIDATION_FAILED', 'CATEGORY_NOT_FOUND', 'INVALID_CATEGORY_PARENT'],
+  errors: [
+    'SLUG_ALREADY_IN_USE',
+    'VALIDATION_FAILED',
+    'CATEGORY_NOT_FOUND',
+    'INVALID_CATEGORY_PARENT',
+  ],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: createCategoryBodySchema },

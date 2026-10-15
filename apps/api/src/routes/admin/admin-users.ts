@@ -153,12 +153,7 @@ registerRoute({
   permission: 'admin_users:deactivate',
   summary: 'Deactivate a staff account (revokes every active session immediately)',
   phase: '03',
-  errors: [
-    'NOT_FOUND',
-    'LAST_SUPER_ADMIN',
-    'CANNOT_DEACTIVATE_SELF',
-    'CANNOT_MANAGE_SUPER_ADMIN',
-  ],
+  errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN', 'CANNOT_DEACTIVATE_SELF', 'CANNOT_MANAGE_SUPER_ADMIN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema },

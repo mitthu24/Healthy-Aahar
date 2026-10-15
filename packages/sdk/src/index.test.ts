@@ -67,7 +67,10 @@ describe('ApiClient', () => {
     }
 
     it('resolves (not throws) for a 204 No Content response', async () => {
-      const client = new ApiClient({ baseUrl: 'https://api.example.test', fetchImpl: emptyBodyFetch() });
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: emptyBodyFetch(),
+      });
       await expect(client.deleteCategory('cat-1')).resolves.toBeUndefined();
     });
   });
