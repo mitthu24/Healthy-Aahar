@@ -196,7 +196,13 @@ export class ApiClient {
       );
     }
 
-    return (await res.json()) as T;
+    // A 204 (or any genuinely empty body) has nothing for `res.json()` to
+    // parse — it throws on empty input otherwise. Every `Promise<void>`
+    // caller (deleteCategory, deleteProduct, deleteVariant, ...) relies on
+    // this returning cleanly rather than rejecting a successful request.
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   // ── Health ──────────────────────────────────────────────────────────────
