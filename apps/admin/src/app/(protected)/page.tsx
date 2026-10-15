@@ -193,12 +193,12 @@ function SummarySection({ range }: { range: DateRange }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Orders" value={summary?.order_count.toLocaleString()} isLoading={!summary} />
         <StatCard
-          label="Gross sales"
-          value={summary?.gross_sales.display}
+          label="Orders"
+          value={summary?.order_count.toLocaleString()}
           isLoading={!summary}
         />
+        <StatCard label="Gross sales" value={summary?.gross_sales.display} isLoading={!summary} />
         <StatCard label="Net sales" value={summary?.net_sales.display} isLoading={!summary} />
         <StatCard
           label="Avg. order value"
@@ -272,9 +272,11 @@ function SummarySection({ range }: { range: DateRange }) {
 }
 
 function TrendSection({ range }: { range: DateRange }) {
-  const [points, setPoints] = useState<
-    Array<{ label: string; value: number; valueLabel: string }> | null
-  >(null);
+  const [points, setPoints] = useState<Array<{
+    label: string;
+    value: number;
+    valueLabel: string;
+  }> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -312,9 +314,11 @@ function TrendSection({ range }: { range: DateRange }) {
 }
 
 function InventoryAlertsSection() {
-  const [alerts, setAlerts] = useState<
-    Array<{ variant_id: string; product_name: string; quantity_available: number }> | null
-  >(null);
+  const [alerts, setAlerts] = useState<Array<{
+    variant_id: string;
+    product_name: string;
+    quantity_available: number;
+  }> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -344,7 +348,10 @@ function InventoryAlertsSection() {
             <Skeleton className="h-9 w-full" />
           </>
         ) : alerts.length === 0 ? (
-          <EmptyState title="No low-stock variants" description="Every tracked variant is above its threshold." />
+          <EmptyState
+            title="No low-stock variants"
+            description="Every tracked variant is above its threshold."
+          />
         ) : (
           alerts.map((a) => (
             <div key={a.variant_id} className="flex items-center justify-between gap-2">
@@ -361,9 +368,12 @@ function InventoryAlertsSection() {
 }
 
 function TopProductsSection({ range }: { range: DateRange }) {
-  const [products, setProducts] = useState<
-    Array<{ variant_id: string; product_name: string; quantity: number; revenue: { display: string } }> | null
-  >(null);
+  const [products, setProducts] = useState<Array<{
+    variant_id: string;
+    product_name: string;
+    quantity: number;
+    revenue: { display: string };
+  }> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -453,7 +463,7 @@ function RecentOrdersSection() {
             <Link
               key={o.id}
               href={`/orders/${o.id}`}
-              className="flex items-center justify-between gap-2 rounded-md px-1 py-1 hover:bg-sand-50"
+              className="hover:bg-sand-50 flex items-center justify-between gap-2 rounded-md px-1 py-1"
             >
               <span className="text-body-sm text-sand-800 truncate">
                 {o.order_number} <span className="text-sand-500">· {o.customer_name}</span>

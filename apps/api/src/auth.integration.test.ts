@@ -551,7 +551,7 @@ describe('CSRF token recovery after a hard reload (Stage D Task A)', () => {
   });
 
   it(
-    'reproduces the bug without the fix\'s codepath, then proves the fix: a request carrying ' +
+    "reproduces the bug without the fix's codepath, then proves the fix: a request carrying " +
       'only the Cookie header (simulating a hard reload — no in-memory token survives) can ' +
       'recover a usable CSRF token from GET /me and successfully complete a mutating write, ' +
       'with no second login',

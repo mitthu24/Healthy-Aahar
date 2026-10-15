@@ -107,10 +107,7 @@ export class PrismaDashboardRepository implements DashboardRepository {
     };
   }
 
-  async getSalesTrend(
-    scope: BusinessScope,
-    range: DashboardDateRange,
-  ): Promise<SalesTrendPoint[]> {
+  async getSalesTrend(scope: BusinessScope, range: DashboardDateRange): Promise<SalesTrendPoint[]> {
     const rows = await this.prisma.$queryRaw<
       Array<{ day: Date; order_count: number; gross_sales_paise: bigint }>
     >(Prisma.sql`

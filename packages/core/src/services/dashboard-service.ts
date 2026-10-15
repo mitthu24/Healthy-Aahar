@@ -46,7 +46,12 @@ export type DashboardSummaryView = {
 };
 
 export type SalesTrendPointView = { date: string; order_count: number; gross_sales: Money };
-export type TopProductView = { variant_id: string; product_name: string; quantity: number; revenue: Money };
+export type TopProductView = {
+  variant_id: string;
+  product_name: string;
+  quantity: number;
+  revenue: Money;
+};
 export type InventoryAlertView = {
   variant_id: string;
   product_name: string;
@@ -95,7 +100,8 @@ export class DashboardService {
       throw new DomainError('VALIDATION_FAILED', 'from must not be after to.');
     }
     const spanDays =
-      (new Date(`${input.to}T00:00:00Z`).getTime() - new Date(`${input.from}T00:00:00Z`).getTime()) /
+      (new Date(`${input.to}T00:00:00Z`).getTime() -
+        new Date(`${input.from}T00:00:00Z`).getTime()) /
       86_400_000;
     if (spanDays > MAX_RANGE_DAYS) {
       throw new DomainError(

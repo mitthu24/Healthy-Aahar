@@ -81,7 +81,12 @@ function buildApp(scopedBusinessId = businessId) {
   return createApp({
     env: testEnv(),
     prisma,
-    logger: createLogger({ service: 'dashboard-it', env: 'local', version: 'test', level: 'silent' }),
+    logger: createLogger({
+      service: 'dashboard-it',
+      env: 'local',
+      version: 'test',
+      level: 'silent',
+    }),
     businessId: scopedBusinessId,
   });
 }
@@ -99,7 +104,9 @@ function asSqlDate(businessDate: string): Date {
   return new Date(`${businessDate}T00:00:00Z`);
 }
 
-async function seedVariant(overrides: { quantityOnHand?: number; lowStockThreshold?: number } = {}) {
+async function seedVariant(
+  overrides: { quantityOnHand?: number; lowStockThreshold?: number } = {},
+) {
   const category = await prisma.category.create({
     data: { id: testId(), businessId, name: 'Meals', slug: `meals-${testId()}`, displayOrder: 0 },
   });
@@ -169,8 +176,7 @@ async function seedOrder(overrides: {
 }) {
   const scopedBusinessId = overrides.scopedBusinessId ?? businessId;
   const customerProfileId =
-    overrides.customerProfileId ??
-    (await seedCustomerUser(prisma, scopedBusinessId)).profileId;
+    overrides.customerProfileId ?? (await seedCustomerUser(prisma, scopedBusinessId)).profileId;
 
   const slot = await prisma.deliverySlot.create({
     data: {
@@ -297,10 +303,9 @@ beforeEach(async () => {
 
 describe('GET /v1/admin/dashboard/summary', () => {
   it('returns real zeros and nulls for an empty range — never a fabricated number', async () => {
-    const res = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       order_count: number;
@@ -369,10 +374,9 @@ describe('GET /v1/admin/dashboard/summary', () => {
       amountPaidPaise: 999_999n,
     });
 
-    const res = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       order_count: number;
@@ -430,10 +434,9 @@ describe('GET /v1/admin/dashboard/summary', () => {
       totalPaise: 10_000n,
     });
 
-    const res = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     const body = (await res.json()) as { delivery: { on_time_rate: number } };
     expect(body.delivery.on_time_rate).toBe(0);
   });
@@ -450,19 +453,18 @@ describe('GET /v1/admin/dashboard/summary', () => {
       customerProfileId: profileId,
     });
 
-    const inRange = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const inRange = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(((await inRange.json()) as { new_customers_count: number }).new_customers_count).toBe(1);
 
     const outOfRange = await app.request(
       `/v1/admin/dashboard/summary?from=${YESTERDAY}&to=${YESTERDAY}`,
       { headers: founderHeaders },
     );
-    expect(
-      ((await outOfRange.json()) as { new_customers_count: number }).new_customers_count,
-    ).toBe(0);
+    expect(((await outOfRange.json()) as { new_customers_count: number }).new_customers_count).toBe(
+      0,
+    );
   });
 
   it('rejects from after to, an invalid date, and a span wider than the bound, with 422', async () => {
@@ -472,16 +474,14 @@ describe('GET /v1/admin/dashboard/summary', () => {
     );
     expect(outOfOrder.status).toBe(422);
 
-    const invalid = await app.request(
-      `/v1/admin/dashboard/summary?from=not-a-date&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const invalid = await app.request(`/v1/admin/dashboard/summary?from=not-a-date&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(invalid.status).toBe(422);
 
-    const tooWide = await app.request(
-      `/v1/admin/dashboard/summary?from=2020-01-01&to=2026-12-31`,
-      { headers: founderHeaders },
-    );
+    const tooWide = await app.request(`/v1/admin/dashboard/summary?from=2020-01-01&to=2026-12-31`, {
+      headers: founderHeaders,
+    });
     expect(tooWide.status).toBe(422);
   });
 
@@ -493,14 +493,13 @@ describe('GET /v1/admin/dashboard/summary', () => {
     const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [plainRole.id] });
     const plainHeaders = (await loginAsAdmin(app, plainAdmin)).headers;
 
-    const res = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: plainHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: plainHeaders,
+    });
     expect(res.status).toBe(403);
   });
 
-  it('never leaks another business\'s orders into the totals (tenant isolation)', async () => {
+  it("never leaks another business's orders into the totals (tenant isolation)", async () => {
     const otherBusiness = await seedBusiness(prisma, { slug: 'dashboard-it-other' });
     await seedOrder({
       scopedBusinessId: otherBusiness.id,
@@ -516,11 +515,13 @@ describe('GET /v1/admin/dashboard/summary', () => {
       amountPaidPaise: 1_000n,
     });
 
-    const res = await app.request(
-      `/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
-    const body = (await res.json()) as { order_count: number; gross_sales: { amount_paise: number } };
+    const res = await app.request(`/v1/admin/dashboard/summary?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
+    const body = (await res.json()) as {
+      order_count: number;
+      gross_sales: { amount_paise: number };
+    };
     expect(body.order_count).toBe(1);
     expect(body.gross_sales.amount_paise).toBe(1_000);
   });
@@ -532,10 +533,9 @@ describe('GET /v1/admin/dashboard/sales-trend', () => {
     await seedOrder({ placedAt: new Date(`${TODAY}T15:00:00Z`), totalPaise: 20_000n }); // 20:30 IST, same day
     await seedOrder({ placedAt: new Date(`${YESTERDAY}T03:00:00Z`), totalPaise: 5_000n });
 
-    const res = await app.request(
-      `/v1/admin/dashboard/sales-trend?from=${YESTERDAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/sales-trend?from=${YESTERDAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: Array<{ date: string; order_count: number; gross_sales: { amount_paise: number } }>;
@@ -559,16 +559,32 @@ describe('GET /v1/admin/dashboard/top-products', () => {
       placedAt: new Date(`${TODAY}T05:00:00Z`),
       totalPaise: 60_000n,
       items: [
-        { variantId: popular.id, productName: 'Popular Item', quantity: 4, lineTotalPaise: 60_000n },
+        {
+          variantId: popular.id,
+          productName: 'Popular Item',
+          quantity: 4,
+          lineTotalPaise: 60_000n,
+        },
         // A combo-component row for the SAME order — must not count twice.
-        { variantId: popular.id, productName: 'Popular Item', quantity: 4, lineTotalPaise: 0n, isComponent: true },
+        {
+          variantId: popular.id,
+          productName: 'Popular Item',
+          quantity: 4,
+          lineTotalPaise: 0n,
+          isComponent: true,
+        },
       ],
     });
     await seedOrder({
       placedAt: new Date(`${TODAY}T06:00:00Z`),
       totalPaise: 20_000n,
       items: [
-        { variantId: lessPopular.id, productName: 'Less Popular', quantity: 1, lineTotalPaise: 20_000n },
+        {
+          variantId: lessPopular.id,
+          productName: 'Less Popular',
+          quantity: 1,
+          lineTotalPaise: 20_000n,
+        },
       ],
     });
     // A CANCELLED order's items must not count toward top products at all.
@@ -577,14 +593,18 @@ describe('GET /v1/admin/dashboard/top-products', () => {
       placedAt: new Date(`${TODAY}T07:00:00Z`),
       totalPaise: 999_000n,
       items: [
-        { variantId: lessPopular.id, productName: 'Less Popular', quantity: 99, lineTotalPaise: 999_000n },
+        {
+          variantId: lessPopular.id,
+          productName: 'Less Popular',
+          quantity: 99,
+          lineTotalPaise: 999_000n,
+        },
       ],
     });
 
-    const res = await app.request(
-      `/v1/admin/dashboard/top-products?from=${TODAY}&to=${TODAY}`,
-      { headers: founderHeaders },
-    );
+    const res = await app.request(`/v1/admin/dashboard/top-products?from=${TODAY}&to=${TODAY}`, {
+      headers: founderHeaders,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: Array<{ variant_id: string; quantity: number; revenue: { amount_paise: number } }>;
@@ -616,7 +636,7 @@ describe('GET /v1/admin/dashboard/inventory-alerts', () => {
     expect(body.data.find((r) => r.variant_id === low.id)?.quantity_available).toBe(2);
   });
 
-  it('never leaks another business\'s inventory (tenant isolation)', async () => {
+  it("never leaks another business's inventory (tenant isolation)", async () => {
     const otherBusiness = await seedBusiness(prisma, { slug: 'dashboard-it-inv-other' });
     const otherCategory = await prisma.category.create({
       data: {
@@ -670,4 +690,3 @@ describe('GET /v1/admin/dashboard/inventory-alerts', () => {
     expect(body.data.map((r) => r.variant_id)).not.toContain(otherVariant.id);
   });
 });
-

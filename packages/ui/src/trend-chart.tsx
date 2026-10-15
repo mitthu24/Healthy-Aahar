@@ -66,7 +66,7 @@ export function TrendChart({
         <div
           id={titleId}
           role="status"
-          className="text-caption text-sand-700 absolute right-0 top-0 rounded-md bg-sand-900/5 px-2 py-1 font-medium"
+          className="text-caption text-sand-700 bg-sand-900/5 absolute right-0 top-0 rounded-md px-2 py-1 font-medium"
         >
           {active.label}: {active.valueLabel}
         </div>
