@@ -67,9 +67,7 @@ describe('inviteAdminBodySchema (Stage C)', () => {
   });
 
   it('accepts login_id only (email-free account)', () => {
-    expect(inviteAdminBodySchema.safeParse({ ...base, login_id: 'rider.raj' }).success).toBe(
-      true,
-    );
+    expect(inviteAdminBodySchema.safeParse({ ...base, login_id: 'rider.raj' }).success).toBe(true);
   });
 
   it('rejects neither email nor login_id', () => {

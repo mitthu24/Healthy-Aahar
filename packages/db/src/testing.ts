@@ -285,12 +285,19 @@ export async function seedAdminUser(
      */
     lastPasswordChangeAt?: Date | null;
   } = {},
-): Promise<{ id: string; userId: string; email: string | null; loginId: string | null; password: string }> {
+): Promise<{
+  id: string;
+  userId: string;
+  email: string | null;
+  loginId: string | null;
+  password: string;
+}> {
   const userId = uuidv7();
   const adminUserId = uuidv7();
   // Only auto-generate an email when the caller didn't explicitly ask for
   // a loginId-only (email-free) account.
-  const email = overrides.email ?? (overrides.loginId ? null : `test-admin-${uuidv7()}@example.test`);
+  const email =
+    overrides.email ?? (overrides.loginId ? null : `test-admin-${uuidv7()}@example.test`);
   const loginId = overrides.loginId ?? null;
   const password = overrides.password ?? TEST_PASSWORD;
 

@@ -56,7 +56,8 @@ export default function EmployeesPage() {
             {employee.deactivated ? <Badge tone="danger">Deactivated</Badge> : null}
           </div>
           <p className="text-caption text-sand-600 mt-0.5">
-            {employee.email ?? (employee.login_id ? `Login ID: ${employee.login_id}` : 'No email on file')}
+            {employee.email ??
+              (employee.login_id ? `Login ID: ${employee.login_id}` : 'No email on file')}
             {employee.designation ? ` · ${employee.designation}` : ''}
             {employee.department ? ` · ${employee.department}` : ''}
           </p>
