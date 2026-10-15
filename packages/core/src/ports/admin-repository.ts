@@ -65,8 +65,7 @@ export type AdminUserListFilter = {
  * `ADMIN_ALREADY_INVITED` code instead of an unhandled 500.
  */
 export type InviteAdminResult =
-  | { ok: true; admin: AdminUserRow }
-  | { ok: false; reason: 'EMAIL_TAKEN' | 'LOGIN_ID_TAKEN' };
+  { ok: true; admin: AdminUserRow } | { ok: false; reason: 'EMAIL_TAKEN' | 'LOGIN_ID_TAKEN' };
 
 export interface AdminRepository {
   findByUserId(

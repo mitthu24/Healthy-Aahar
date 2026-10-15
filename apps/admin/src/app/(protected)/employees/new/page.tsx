@@ -99,7 +99,12 @@ export default function InviteEmployeePage() {
             This link will not be shown again — copy it now. It is never stored or logged.
           </p>
           <div className="mt-5 flex gap-3">
-            <Button type="button" size="sm" variant="secondary" onClick={() => void copySetupLink()}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void copySetupLink()}
+            >
               {copied ? 'Copied' : 'Copy setup link'}
             </Button>
             <a
