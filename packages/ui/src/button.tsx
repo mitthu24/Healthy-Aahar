@@ -2,7 +2,9 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react';
 
 import { cn } from './cn.js';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+// 'danger' is this button's destructive variant — kept as-is rather than
+// renamed to avoid touching every existing call site; 'outline' is new.
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -14,6 +16,7 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 const variantClasses: Record<ButtonVariant, string> = {
   primary: 'bg-green-600 text-sand-0 hover:bg-green-700 active:bg-green-800',
   secondary: 'bg-sand-0 text-sand-800 border border-sand-200 hover:bg-sand-50',
+  outline: 'bg-transparent text-sand-800 border border-sand-300 hover:bg-sand-50',
   ghost: 'bg-transparent text-green-600 hover:bg-green-50',
   danger: 'bg-danger-600 text-sand-0 hover:opacity-90',
 };
