@@ -27,7 +27,10 @@ export type AdminActor = {
 };
 
 export type AdminLoginParams = {
-  email: string;
+  /** STAGE C: an email or a login ID — this service tries both lookups
+   *  (disjoint by construction, see `UserRepository.findByLoginId`'s doc
+   *  comment) rather than guessing which one from the string's shape. */
+  identifier: string;
   password: string;
   sessionTtlMs: number;
   ipAddress?: string | undefined;
@@ -55,16 +58,18 @@ export class AdminAuthService {
   ) {}
 
   /**
-   * Login failure is ALWAYS the same generic error — unknown email, no
-   * password set yet (invited but never completed setup), wrong password,
-   * and a suspended account are indistinguishable to the caller. This is
-   * what prevents account enumeration (Step 5).
+   * Login failure is ALWAYS the same generic error — unknown email/login
+   * ID, no password set yet (invited but never completed setup), wrong
+   * password, and a suspended account are indistinguishable to the caller.
+   * This is what prevents account enumeration (Step 5).
    */
   async login(scope: BusinessScope, params: AdminLoginParams): Promise<AdminLoginResult> {
     const genericFailure = () =>
-      new DomainError('INVALID_CREDENTIALS', 'Incorrect email or password.');
+      new DomainError('INVALID_CREDENTIALS', 'Incorrect email/login ID or password.');
 
-    const user = await this.users.findByEmail(params.email, 'ADMIN');
+    const user =
+      (await this.users.findByEmail(params.identifier, 'ADMIN')) ??
+      (await this.users.findByLoginId(params.identifier, 'ADMIN'));
     if (!user || !user.passwordHash) {
       // Burn roughly the same CPU time a real verify() would take, so the
       // response-time gap between "no such account" and "wrong password"

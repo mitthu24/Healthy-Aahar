@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { inviteAdminBodySchema, loginIdSchema } from './auth.js';
 import { pincodeSchema, moneySchema, paginationQuerySchema, phoneSchema } from './common.js';
+import { createDeliveryPartnerBodySchema } from './delivery.js';
 import { ERROR_CODES, httpStatusForErrorCode } from './errors.js';
 import { serviceabilityResponseSchema, createCityBodySchema } from './serviceability.js';
 
@@ -38,6 +40,53 @@ describe('phoneSchema', () => {
       expect(phoneSchema.safeParse(bad).success).toBe(false);
     },
   );
+});
+
+describe('loginIdSchema (Stage C)', () => {
+  it('normalizes to lowercase and trims whitespace', () => {
+    expect(loginIdSchema.parse('  Rider.RAJ  ')).toBe('rider.raj');
+  });
+
+  it.each(['ab', 'a'.repeat(33), 'rider@raj', 'rider raj', '-rider', 'rider-'])(
+    'rejects %s',
+    (bad) => {
+      expect(loginIdSchema.safeParse(bad).success).toBe(false);
+    },
+  );
+
+  it('accepts dots, underscores and hyphens in the middle', () => {
+    expect(loginIdSchema.safeParse('rider.raj_01-a').success).toBe(true);
+  });
+});
+
+describe('inviteAdminBodySchema (Stage C)', () => {
+  const base = { full_name: 'New Hire', role_ids: ['0193aaaa-0000-7000-8000-00000000000a'] };
+
+  it('accepts email only', () => {
+    expect(inviteAdminBodySchema.safeParse({ ...base, email: 'a@b.test' }).success).toBe(true);
+  });
+
+  it('accepts login_id only (email-free account)', () => {
+    expect(inviteAdminBodySchema.safeParse({ ...base, login_id: 'rider.raj' }).success).toBe(true);
+  });
+
+  it('rejects neither email nor login_id', () => {
+    expect(inviteAdminBodySchema.safeParse({ ...base }).success).toBe(false);
+  });
+});
+
+describe('createDeliveryPartnerBodySchema (Stage C)', () => {
+  const base = { full_name: 'New Partner' };
+
+  it('accepts login_id only (email-free account)', () => {
+    expect(
+      createDeliveryPartnerBodySchema.safeParse({ ...base, login_id: 'rider.raj' }).success,
+    ).toBe(true);
+  });
+
+  it('rejects neither email nor login_id', () => {
+    expect(createDeliveryPartnerBodySchema.safeParse({ ...base }).success).toBe(false);
+  });
 });
 
 describe('moneySchema', () => {

@@ -35,7 +35,7 @@ function toAdminUserRow(admin: {
   deletedAt: Date | null;
   lastPasswordChangeAt: Date | null;
   mustChangePassword: boolean;
-  user: { email: string | null };
+  user: { email: string | null; loginId: string | null };
   roles: { role: { key: string } }[];
 }): AdminUserRow {
   return {
@@ -43,6 +43,7 @@ function toAdminUserRow(admin: {
     businessId: admin.businessId,
     userId: admin.userId,
     email: admin.user.email,
+    loginId: admin.user.loginId,
     fullName: admin.fullName,
     designation: admin.designation,
     department: admin.department,
@@ -57,7 +58,7 @@ function toAdminUserRow(admin: {
 }
 
 const ADMIN_INCLUDE = {
-  user: { select: { email: true } },
+  user: { select: { email: true, loginId: true } },
   roles: { include: { role: { select: { key: true } } } },
 } as const;
 
@@ -84,6 +85,7 @@ export class PrismaAdminRepository implements AdminRepository {
         passwordHash: user.passwordHash,
         userType: 'ADMIN',
         email: user.email,
+        loginId: user.loginId,
         phone: user.phone,
         emailVerified: user.emailVerified,
         phoneVerified: user.phoneVerified,
@@ -112,6 +114,7 @@ export class PrismaAdminRepository implements AdminRepository {
               OR: [
                 { fullName: { contains: q, mode: 'insensitive' } },
                 { user: { email: { contains: q, mode: 'insensitive' } } },
+                { user: { loginId: { contains: q, mode: 'insensitive' } } },
               ],
             }
           : {}),
@@ -169,7 +172,8 @@ export class PrismaAdminRepository implements AdminRepository {
           data: {
             id: userId,
             userType: 'ADMIN',
-            email: input.email,
+            email: input.email ?? null,
+            loginId: input.loginId ?? null,
             emailVerified: false,
             status: 'ACTIVE',
           },
@@ -206,16 +210,20 @@ export class PrismaAdminRepository implements AdminRepository {
 
       return { ok: true, admin: toAdminUserRow(created) };
     } catch (error) {
-      // Fix #3: map ONLY the `(email, user_type)` unique-constraint
-      // violation to EMAIL_TAKEN — not every P2002. The SAME transaction
-      // can also throw P2002 from `adminUserRole`'s composite primary key
-      // `(admin_user_id, role_id)` if the caller supplied a duplicate role
-      // id; that is an unrelated error and must keep failing as one
-      // ("do not convert unrelated database errors into duplicate-invitation
-      // errors" — collapsing it here would silently hide a caller bug
-      // behind a confusing "email already exists" response).
+      // Fix #3: map ONLY the `(email, user_type)` / `(login_id, user_type)`
+      // unique-constraint violations to EMAIL_TAKEN/LOGIN_ID_TAKEN — not
+      // every P2002. The SAME transaction can also throw P2002 from
+      // `adminUserRole`'s composite primary key `(admin_user_id, role_id)`
+      // if the caller supplied a duplicate role id; that is an unrelated
+      // error and must keep failing as one ("do not convert unrelated
+      // database errors into duplicate-invitation errors" — collapsing it
+      // here would silently hide a caller bug behind a confusing "already
+      // exists" response).
       if (isUniqueConstraintViolation(error, 'email')) {
         return { ok: false, reason: 'EMAIL_TAKEN' };
+      }
+      if (isUniqueConstraintViolation(error, 'login_id')) {
+        return { ok: false, reason: 'LOGIN_ID_TAKEN' };
       }
       throw error;
     }

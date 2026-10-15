@@ -31,7 +31,9 @@ beforeEach(() => {
 });
 
 function fillAndSubmit() {
-  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'admin@gmail.com' } });
+  fireEvent.change(screen.getByLabelText('Email or Login ID'), {
+    target: { value: 'admin@gmail.com' },
+  });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a-real-password' } });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 }

@@ -63,13 +63,13 @@ registerRoute({
   permission: 'delivery_partners:manage',
   summary: 'Create a delivery partner (invites the account + assigns DELIVERY_PARTNER role)',
   phase: '06',
-  errors: ['VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED'],
+  errors: ['VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED', 'LOGIN_ID_TAKEN'],
   openapi: {
     tags: ['Admin: Delivery Partners'],
     request: { body: createDeliveryPartnerBodySchema },
     responses: {
       201: { description: 'Created', schema: createDeliveryPartnerResponseSchema },
-      409: jsonError('An admin account with this email already exists'),
+      409: jsonError('An admin account with this email or login ID already exists'),
     },
   },
 });
@@ -109,6 +109,7 @@ function toResponse(row: DeliveryPartnerRow) {
     id: row.adminUserId,
     full_name: row.fullName,
     email: row.email,
+    login_id: row.loginId,
     employee_code: row.employeeCode,
     duty_status: row.dutyStatus,
     duty_changed_at: row.dutyChangedAt?.toISOString() ?? null,
@@ -153,6 +154,7 @@ export function adminDeliveryPartnersRoutes(): Hono<AppBindings> {
     const scope = businessScope(c.env.businessId);
     const { partner, passwordResetLink } = await c.env.services.deliveryPartners.create(scope, {
       email: body.email,
+      loginId: body.login_id,
       fullName: body.full_name,
       employeeCode: body.employee_code,
       vehicleType: body.vehicle_type,

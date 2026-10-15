@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 export default function InviteEmployeePage() {
   const [roles, setRoles] = useState<Role[] | null>(null);
   const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [fullName, setFullName] = useState('');
   const [designation, setDesignation] = useState('');
   const [department, setDepartment] = useState('');
@@ -16,6 +17,8 @@ export default function InviteEmployeePage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [setupLink, setSetupLink] = useState<string | null>(null);
+  const [createdLoginId, setCreatedLoginId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     void apiClient
@@ -33,15 +36,21 @@ export default function InviteEmployeePage() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (!email.trim() && !loginId.trim()) {
+      setError('Enter an email or a login ID.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const result = await apiClient.inviteAdminUser({
-        email,
+        email: email.trim() || undefined,
+        login_id: loginId.trim() || undefined,
         full_name: fullName,
         designation: designation || undefined,
         department: department || undefined,
         role_ids: selectedRoleIds,
       });
+      setCreatedLoginId(result.login_id);
       setSetupLink(result.password_setup_link);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not invite this employee.');
@@ -50,11 +59,35 @@ export default function InviteEmployeePage() {
     }
   }
 
+  async function copySetupLink() {
+    try {
+      await navigator.clipboard.writeText(setupLink ?? '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be denied by the browser — the link is still
+      // visible and selectable, so this is a convenience failure only.
+    }
+  }
+
   if (setupLink) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-8">
         <h1 className="font-display text-heading-lg text-sand-900">Employee invited</h1>
         <Card className="mt-5 p-5">
+          {createdLoginId ? (
+            <div className="mb-4">
+              <p className="text-caption text-sand-600 font-medium uppercase tracking-wide">
+                Login ID
+              </p>
+              <p className="border-sand-200 bg-sand-50 text-body-sm mt-1 break-all rounded-md border p-3 font-mono">
+                {createdLoginId}
+              </p>
+              <p className="text-caption text-sand-500 mt-1">
+                {fullName} will sign in with this login ID and the password they choose below.
+              </p>
+            </div>
+          ) : null}
           <p className="text-body-sm text-sand-700">
             Share this one-time setup link with <strong>{fullName}</strong> through a secure channel
             (not a public one). It expires in 7 days and can only be used once.
@@ -66,6 +99,14 @@ export default function InviteEmployeePage() {
             This link will not be shown again — copy it now. It is never stored or logged.
           </p>
           <div className="mt-5 flex gap-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void copySetupLink()}
+            >
+              {copied ? 'Copied' : 'Copy setup link'}
+            </Button>
             <a
               href="/employees"
               className="text-sand-0 inline-flex h-9 items-center justify-center rounded-md bg-green-600 px-4 text-sm font-medium transition-colors hover:bg-green-700"
@@ -84,17 +125,32 @@ export default function InviteEmployeePage() {
 
       <Card className="mt-5 p-5">
         <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <FieldLabel htmlFor="emp-email">Email</FieldLabel>
-            <Input
-              id="emp-email"
-              type="email"
-              required
-              className="mt-1"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel htmlFor="emp-email">Email (optional)</FieldLabel>
+              <Input
+                id="emp-email"
+                type="email"
+                className="mt-1"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="emp-login-id">Login ID (optional)</FieldLabel>
+              <Input
+                id="emp-login-id"
+                className="mt-1"
+                placeholder="e.g. priya.sharma"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
+              />
+            </div>
           </div>
+          <p className="text-caption text-sand-500 -mt-2">
+            Provide an email, a login ID, or both — at least one is required so this employee can
+            sign in.
+          </p>
           <div>
             <FieldLabel htmlFor="emp-name">Full name</FieldLabel>
             <Input

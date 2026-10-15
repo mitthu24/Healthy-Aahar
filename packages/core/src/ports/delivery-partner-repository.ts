@@ -5,6 +5,8 @@ export type DeliveryPartnerRow = {
   adminUserId: string;
   fullName: string;
   email: string | null;
+  /** STAGE C: email-free login identifier, see schema.prisma's `User.loginId` doc comment. */
+  loginId: string | null;
   employeeCode: string | null;
   dutyStatus: DutyStatus;
   dutyChangedAt: Date | null;

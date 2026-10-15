@@ -17,7 +17,9 @@ export type DeliveryPartnerServiceDeps = {
 };
 
 export type CreateDeliveryPartnerParams = {
-  email: string;
+  email?: string | undefined;
+  /** STAGE C: email-free login identifier — see `RbacService.inviteAdmin`. */
+  loginId?: string | undefined;
   fullName: string;
   employeeCode?: string | undefined;
   vehicleType?: string | undefined;
@@ -62,6 +64,7 @@ export class DeliveryPartnerService {
 
     const { admin, passwordResetLink } = await this.rbac.inviteAdmin(scope, {
       email: params.email,
+      loginId: params.loginId,
       fullName: params.fullName,
       roleIds: [role.id],
       invitedByUserId: params.actorUserId,

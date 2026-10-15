@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { loginIdSchema } from './auth.js';
 import { moneySchema, paginatedSchema, uuidSchema } from './common.js';
 import { orderAddressSnapshotSchema, orderItemSchema } from './order.js';
 
@@ -25,6 +26,7 @@ export const deliveryPartnerSchema = z.object({
   id: uuidSchema,
   full_name: z.string(),
   email: z.string().nullable(),
+  login_id: z.string().nullable(),
   employee_code: z.string().nullable(),
   duty_status: dutyStatusSchema,
   duty_changed_at: z.string().nullable(),
@@ -43,13 +45,20 @@ export const listDeliveryPartnersQuerySchema = z.object({
   duty_status: dutyStatusSchema.optional(),
 });
 
-export const createDeliveryPartnerBodySchema = z.object({
-  email: z.string().trim().email(),
-  full_name: z.string().trim().min(1).max(120),
-  employee_code: z.string().trim().max(60).optional(),
-  vehicle_type: z.string().trim().max(60).optional(),
-  vehicle_number: z.string().trim().max(60).optional(),
-});
+export const createDeliveryPartnerBodySchema = z
+  .object({
+    email: z.string().trim().email().optional(),
+    /** STAGE C: alternative to `email` — see `inviteAdminBodySchema`'s doc comment. */
+    login_id: loginIdSchema.optional(),
+    full_name: z.string().trim().min(1).max(120),
+    employee_code: z.string().trim().max(60).optional(),
+    vehicle_type: z.string().trim().max(60).optional(),
+    vehicle_number: z.string().trim().max(60).optional(),
+  })
+  .refine((body) => Boolean(body.email) || Boolean(body.login_id), {
+    message: 'An email or a login ID is required.',
+    path: ['login_id'],
+  });
 export type CreateDeliveryPartnerBody = z.infer<typeof createDeliveryPartnerBodySchema>;
 
 export const createDeliveryPartnerResponseSchema = deliveryPartnerSchema.extend({

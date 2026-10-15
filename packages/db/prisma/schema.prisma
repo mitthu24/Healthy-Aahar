@@ -406,6 +406,13 @@ model User {
   /// admin has a row before they have set a password (passwordHash is
   /// null until the password-setup flow completes).
   email         String?       @db.Citext
+  /// STAGE C: an alternative, email-free login identifier for staff/delivery
+  /// accounts a founder creates without an email address. Nullable and
+  /// optional for the same reason `email` is — most CUSTOMER rows and every
+  /// pre-Stage-C ADMIN row have no value here. Citext for the same
+  /// case-insensitive-uniqueness reason as `email`; format (charset/length)
+  /// is enforced at the contract layer, not by the database.
+  loginId       String?       @map("login_id") @db.Citext
   phone         String?
   emailVerified Boolean       @default(false) @map("email_verified")
   phoneVerified Boolean       @default(false) @map("phone_verified")
@@ -433,6 +440,7 @@ model User {
   // guarantee for every row that does have one of these identifiers.
   @@unique([firebaseUid, userType])
   @@unique([email, userType])
+  @@unique([loginId, userType])
   @@index([userType, status])
   @@map("users")
 }

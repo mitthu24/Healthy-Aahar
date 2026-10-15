@@ -6,6 +6,8 @@ export type AdminUserRow = {
   businessId: string;
   userId: string;
   email: string | null;
+  /** STAGE C: email-free login identifier, see schema.prisma's `User.loginId` doc comment. */
+  loginId: string | null;
   fullName: string;
   designation: string | null;
   department: string | null;
@@ -32,7 +34,10 @@ export type EffectivePermissions = {
 };
 
 export type InviteAdminInput = {
-  email: string;
+  /** At least one of `email`/`loginId` must be set — enforced by
+   *  `RbacService.inviteAdmin`, not this repository. */
+  email?: string | undefined;
+  loginId?: string | undefined;
   fullName: string;
   designation?: string | undefined;
   department?: string | undefined;
@@ -60,7 +65,7 @@ export type AdminUserListFilter = {
  * `ADMIN_ALREADY_INVITED` code instead of an unhandled 500.
  */
 export type InviteAdminResult =
-  { ok: true; admin: AdminUserRow } | { ok: false; reason: 'EMAIL_TAKEN' };
+  { ok: true; admin: AdminUserRow } | { ok: false; reason: 'EMAIL_TAKEN' | 'LOGIN_ID_TAKEN' };
 
 export interface AdminRepository {
   findByUserId(

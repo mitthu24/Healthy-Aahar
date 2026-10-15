@@ -337,6 +337,99 @@ describe('inviting staff (docs/07 §5.1 — no public sign-up)', () => {
   });
 });
 
+describe('inviting staff by Stage C login ID (email-free accounts)', () => {
+  it('creates an account from login_id alone, with no password until setup', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'LOGIN_ID_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        login_id: 'rider.raj',
+        full_name: 'Rider Raj',
+        role_ids: [role.id],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: string;
+      email: string | null;
+      login_id: string | null;
+      password_setup_link: string;
+    };
+    expect(body.email).toBeNull();
+    expect(body.login_id).toBe('rider.raj');
+
+    const invited = await prisma.user.findUniqueOrThrow({
+      where: { loginId_userType: { loginId: 'rider.raj', userType: 'ADMIN' } },
+    });
+    expect(invited.passwordHash).toBeNull();
+
+    const setup = await app.request('/v1/auth/password/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: body.password_setup_link, password: 'rider-password-1' }),
+    });
+    expect(setup.status).toBe(200);
+
+    const session = await loginAsAdmin(app, { loginId: 'rider.raj', password: 'rider-password-1' });
+    expect(session.headers.Cookie).toBeTruthy();
+  });
+
+  it('rejects neither email nor login_id with 422, not a 500', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'NO_IDENTIFIER_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({ full_name: 'No Identifier', role_ids: [role.id] }),
+    });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('a duplicate login_id is rejected as LOGIN_ID_TAKEN, and creates nothing', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'DUP_LOGIN_ID_ROLE',
+      permissionKeys: ['catalog:read'],
+    });
+
+    const first = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        login_id: 'duplicate.rider',
+        full_name: 'First Rider',
+        role_ids: [role.id],
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers: superAdminHeaders,
+      body: JSON.stringify({
+        login_id: 'Duplicate.Rider',
+        full_name: 'Second Rider',
+        role_ids: [role.id],
+      }),
+    });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('LOGIN_ID_TAKEN');
+
+    const count = await prisma.adminUser.count({ where: { fullName: 'Second Rider' } });
+    expect(count).toBe(0);
+  });
+});
+
 describe('existing-admin password reset (Fix #2)', () => {
   it('a Super Admin can issue a new setup token for an existing admin, who can then complete setup and log in', async () => {
     const role = await seedRole(prisma, businessId, {

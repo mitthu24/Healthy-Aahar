@@ -11,6 +11,11 @@ import { apiClient } from '@/lib/api-client';
  * Delivery partner sign-in. Same credential/session flow as apps/admin
  * (`POST /v1/admin/auth/login`) — a partner is just an AdminUser with the
  * DELIVERY_PARTNER role, so there is no separate auth stack to build.
+ *
+ * The identifier field accepts either a registered email or a Stage C
+ * login ID — most riders a founder creates have no email at all, so this
+ * is the primary sign-in path for this app in practice. `type="text"`,
+ * not `type="email"`, since a login ID is never email-shaped.
  */
 export default function LoginPage() {
   const router = useRouter();
@@ -38,7 +43,7 @@ export default function LoginPage() {
         setError(
           err.code === 'RATE_LIMITED'
             ? 'Too many attempts. Please wait a moment and try again.'
-            : 'Incorrect email or password.',
+            : 'Incorrect email/login ID or password.',
         );
       } else {
         setError('Something went wrong. Please try again.');
@@ -58,12 +63,12 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
         <div>
           <label htmlFor="email" className="text-body-sm text-sand-700 font-medium">
-            Email
+            Email or Login ID
           </label>
           <input
             id="email"
             name="email"
-            type="email"
+            type="text"
             autoComplete="username"
             required
             value={email}

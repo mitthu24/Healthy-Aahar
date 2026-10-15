@@ -8,11 +8,17 @@ import { useState, type FormEvent } from 'react';
 import { apiClient } from '@/lib/api-client';
 
 /**
- * Admin sign-in (PHASE 03 — email/password, docs/07 §5.1).
+ * Admin sign-in (PHASE 03 — email/password, docs/07 §5.1; Stage C adds
+ * login-ID support).
  *
  * A successful login sets the `__Host-admin_session` cookie server-side;
  * this page never sees, stores or echoes the session value itself — it
  * only reads the API's success/failure response.
+ *
+ * The identifier field accepts either a registered email or a Stage C
+ * login ID (for an email-free staff/delivery account) — deliberately
+ * `type="text"`, not `type="email"`, since a login ID is never
+ * email-shaped and the browser's own email validation would block it.
  */
 export default function LoginPage() {
   const router = useRouter();
@@ -39,7 +45,7 @@ export default function LoginPage() {
         if (err.code === 'RATE_LIMITED') {
           setError('Too many attempts. Please wait a moment and try again.');
         } else {
-          setError('Incorrect email or password.');
+          setError('Incorrect email/login ID or password.');
         }
       } else {
         setError('Something went wrong. Please try again.');
@@ -59,12 +65,12 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
         <div>
           <label htmlFor="email" className="text-body-sm text-sand-700 font-medium">
-            Email
+            Email or Login ID
           </label>
           <input
             id="email"
             name="email"
-            type="email"
+            type="text"
             autoComplete="username"
             required
             value={email}

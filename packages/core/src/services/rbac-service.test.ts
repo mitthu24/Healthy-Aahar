@@ -7,6 +7,7 @@ import type {
   AdminUserListFilter,
   AdminUserRow,
   EffectivePermissions,
+  InviteAdminInput,
   InviteAdminResult,
   RoleRepository,
   RoleRow,
@@ -41,6 +42,7 @@ function row(overrides: Partial<AdminUserRow> = {}): AdminUserRow {
     businessId: BUSINESS_ID,
     userId: '0193dddd-0000-7000-8000-000000000001',
     email: 'staff@example.test',
+    loginId: null,
     fullName: 'Staff Member',
     designation: null,
     department: null,
@@ -73,8 +75,30 @@ class FakeAdminRepository implements AdminRepository {
   async loadEffectivePermissions(): Promise<EffectivePermissions> {
     return { permissions: [], isSuperAdmin: false };
   }
-  async invite(): Promise<InviteAdminResult> {
-    throw new Error('not used in these tests');
+  invitedWith: InviteAdminInput[] = [];
+  async invite(_scope: BusinessScope, input: InviteAdminInput): Promise<InviteAdminResult> {
+    this.invitedWith.push(input);
+    const taken = [...this.rows.values()].some(
+      (r) =>
+        (input.email && r.email === input.email) || (input.loginId && r.loginId === input.loginId),
+    );
+    if (taken) {
+      return { ok: false, reason: input.loginId ? 'LOGIN_ID_TAKEN' : 'EMAIL_TAKEN' };
+    }
+    const id = `admin-${this.rows.size + 1}`;
+    const created = row({
+      id,
+      userId: `user-${id}`,
+      email: input.email ?? null,
+      loginId: input.loginId ?? null,
+      fullName: input.fullName,
+      designation: input.designation ?? null,
+      department: input.department ?? null,
+      invitedBy: input.invitedByUserId,
+      roleKeys: [],
+    });
+    this.rows.set(id, created);
+    return { ok: true, admin: created };
   }
   async countActiveSuperAdmins(): Promise<number> {
     return this.activeSuperAdminCount;
@@ -379,5 +403,63 @@ describe('RbacService.updateDetails', () => {
         actorUserId: ACTOR_USER_ID,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('RbacService.inviteAdmin (Stage C: email-free login ID accounts)', () => {
+  function serviceWithWorkingPasswordReset(): RbacService {
+    return new RbacService(
+      admins,
+      roles,
+      {
+        issueToken: async () => 'https://admin.example.test/set-password?token=raw',
+      } as unknown as PasswordResetService,
+      sessions,
+      audit,
+    );
+  }
+
+  it('rejects an invite with neither email nor loginId', async () => {
+    await expect(
+      serviceWithWorkingPasswordReset().inviteAdmin(BUSINESS_ID, {
+        fullName: 'No Identifier',
+        roleIds: ['role-ops'],
+        invitedByUserId: ACTOR_USER_ID,
+        invitedByIsSuperAdmin: false,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(admins.invitedWith).toHaveLength(0);
+  });
+
+  it('creates an email-free account from loginId alone', async () => {
+    const { admin, passwordResetLink } = await serviceWithWorkingPasswordReset().inviteAdmin(
+      BUSINESS_ID,
+      {
+        loginId: 'rider.raj',
+        fullName: 'Rider Raj',
+        roleIds: ['role-ops'],
+        invitedByUserId: ACTOR_USER_ID,
+        invitedByIsSuperAdmin: false,
+      },
+    );
+
+    expect(admin.email).toBeNull();
+    expect(admin.loginId).toBe('rider.raj');
+    expect(passwordResetLink).toContain('token=');
+    expect(audit.events.map((e) => e.action)).toContain('admin_user.invited');
+  });
+
+  it('maps a duplicate loginId to LOGIN_ID_TAKEN, not ADMIN_ALREADY_INVITED', async () => {
+    admins.rows.set('existing', row({ id: 'existing', email: null, loginId: 'rider.raj' }));
+
+    await expect(
+      serviceWithWorkingPasswordReset().inviteAdmin(BUSINESS_ID, {
+        loginId: 'rider.raj',
+        fullName: 'Another Rider',
+        roleIds: ['role-ops'],
+        invitedByUserId: ACTOR_USER_ID,
+        invitedByIsSuperAdmin: false,
+      }),
+    ).rejects.toMatchObject({ code: 'LOGIN_ID_TAKEN' });
   });
 });

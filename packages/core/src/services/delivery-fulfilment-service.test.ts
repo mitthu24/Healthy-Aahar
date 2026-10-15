@@ -147,6 +147,7 @@ function partnerRow(overrides: Partial<DeliveryPartnerRow> = {}): DeliveryPartne
     adminUserId: PARTNER_ID,
     fullName: 'Partner One',
     email: 'partner@example.test',
+    loginId: null,
     employeeCode: null,
     dutyStatus: 'OFF_DUTY',
     dutyChangedAt: null,
