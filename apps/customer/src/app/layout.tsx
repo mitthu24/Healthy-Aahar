@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next';
 
 import { BottomNav } from '@/components/bottom-nav';
 import { Header } from '@/components/header';
+import { SessionBootstrap } from '@/components/session-bootstrap';
+import { readSessionCookie } from '@/lib/session-cookie';
 
 import './globals.css';
 
@@ -17,10 +19,13 @@ export const viewport: Viewport = {
   themeColor: '#2E8B57',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const initialToken = await readSessionCookie();
+
   return (
     <html lang="en-IN">
       <body className="bg-sand-50 font-body text-sand-800 min-h-dvh antialiased">
+        <SessionBootstrap initialToken={initialToken} />
         <Header />
         <div className="pb-16 md:pb-0">{children}</div>
         <BottomNav />

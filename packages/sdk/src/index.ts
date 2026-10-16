@@ -19,6 +19,7 @@ import type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  CustomerWhoAmI,
   DashboardSummary,
   DeliveryDashboardDto,
   DeliveryOrderDto,
@@ -66,6 +67,16 @@ export type ApiClientOptions = {
    * requests (docs/23 §6). Only relevant to admin methods.
    */
   getCsrfToken?: () => string | undefined;
+  /**
+   * Called whenever a response comes back `401` with code `UNAUTHENTICATED`
+   * or `SESSION_EXPIRED` — a session that was revoked, expired, or never
+   * valid. The caller uses this to clear whatever it persisted (in-memory
+   * store, cookie, secure storage) so the UI doesn't stay showing a signed-in
+   * state the server no longer honours. Purely a side effect: the
+   * triggering call's `ApiError` still rejects normally either way, so
+   * existing per-call error handling is unaffected by adding this.
+   */
+  onUnauthorized?: (code: string) => void;
   /** Identifies the caller, enabling minimum-version gating later (docs/06 §1.2). */
   clientId?: string;
   fetchImpl?: typeof fetch;
@@ -94,6 +105,7 @@ export class ApiClient {
   private readonly baseUrl: string;
   private readonly getToken?: () => Promise<string | null>;
   private readonly getCsrfToken?: () => string | undefined;
+  private readonly onUnauthorized?: (code: string) => void;
   private readonly clientId: string;
   private readonly fetchImpl: typeof fetch;
   /**
@@ -124,6 +136,7 @@ export class ApiClient {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.getToken = options.getToken;
     this.getCsrfToken = options.getCsrfToken;
+    this.onUnauthorized = options.onUnauthorized;
     this.clientId = options.clientId ?? 'web/0.2.0';
     // Bound explicitly: native `fetch` is receiver-checked (browsers throw
     // "Illegal invocation" when it's called as `this.fetchImpl(...)` with
@@ -186,9 +199,14 @@ export class ApiClient {
         };
       } | null;
 
+      const code = body?.error?.code ?? 'INTERNAL_ERROR';
+      if (res.status === 401 && (code === 'UNAUTHENTICATED' || code === 'SESSION_EXPIRED')) {
+        this.onUnauthorized?.(code);
+      }
+
       // Clients branch on `code`, never on `message` (docs/06 §1.4).
       throw new ApiError(
-        body?.error?.code ?? 'INTERNAL_ERROR',
+        code,
         body?.error?.message ?? 'Request failed',
         res.status,
         body?.error?.request_id,
@@ -247,6 +265,10 @@ export class ApiClient {
 
   customerLogout(): Promise<{ signed_out: boolean }> {
     return this.request('/v1/auth/logout', { method: 'POST' });
+  }
+
+  customerMe(): Promise<CustomerWhoAmI> {
+    return this.request('/v1/auth/me');
   }
 
   // ── Admin auth (PHASE 03 — email/password, DB-backed session cookie) ────
@@ -986,6 +1008,7 @@ export type {
   CityListResponse,
   CityPublic,
   CustomerSessionResponse,
+  CustomerWhoAmI,
   DashboardSummary,
   DeliveryDashboardDto,
   DeliveryOrderDto,

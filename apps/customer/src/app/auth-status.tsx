@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { apiClient } from '@/lib/api-client';
-import { getSessionToken, setSessionToken, subscribeSessionToken } from '@/lib/session-store';
+import { clearPersistedSessionToken } from '@/lib/session-client';
+import { getSessionToken, subscribeSessionToken } from '@/lib/session-store';
 
 /** Reads the in-memory session token (PHASE 03) and offers sign-in/sign-out. */
 export function AuthStatus() {
@@ -31,7 +32,7 @@ export function AuthStatus() {
       variant="ghost"
       onClick={async () => {
         await apiClient.customerLogout().catch(() => undefined);
-        setSessionToken(null);
+        clearPersistedSessionToken();
         router.push('/login');
       }}
     >
