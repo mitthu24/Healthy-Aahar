@@ -134,9 +134,11 @@ async function seedProductWithVariant(overrides: { sku?: string } = {}) {
   return { product, variant };
 }
 
-/** Seeds a real Order + OrderItem referencing `variantId` — the exact
- *  real-world condition `countOrderReferences` must catch. */
-async function seedOrderReferencing(variantId: string) {
+/** Seeds a real Order row with no items yet — split out from
+ *  `seedOrderReferencing` so the concurrency test below can race the actual
+ *  `OrderItem` insert (the reference-creating write) against a delete,
+ *  without the order shell's own setup being part of what's raced. */
+async function seedOrderShell() {
   const customerProfileId = (await seedCustomerUser(prisma, businessId)).profileId;
   const slot = await prisma.deliverySlot.create({
     data: {
@@ -152,7 +154,7 @@ async function seedOrderReferencing(variantId: string) {
       isActive: true,
     },
   });
-  const order = await prisma.order.create({
+  return prisma.order.create({
     data: {
       id: testId(),
       businessId,
@@ -184,10 +186,13 @@ async function seedOrderReferencing(variantId: string) {
       placedAt: now(),
     },
   });
-  await prisma.orderItem.create({
+}
+
+function createOrderItem(orderId: string, variantId: string) {
+  return prisma.orderItem.create({
     data: {
       id: testId(),
-      orderId: order.id,
+      orderId,
       variantId,
       productNameSnapshot: 'Dal Khichdi',
       quantity: 1,
@@ -195,6 +200,13 @@ async function seedOrderReferencing(variantId: string) {
       lineTotalPaise: 15_000n,
     },
   });
+}
+
+/** Seeds a real Order + OrderItem referencing `variantId` — the exact
+ *  real-world condition the delete's reference check must catch. */
+async function seedOrderReferencing(variantId: string) {
+  const order = await seedOrderShell();
+  await createOrderItem(order.id, variantId);
   return order;
 }
 
@@ -270,6 +282,48 @@ describe('DELETE /v1/admin/variants/:id', () => {
     expect(body.error.code).toBe('VARIANT_REFERENCED_BY_ORDERS');
   });
 
+  it('never leaves a variant soft-deleted while a concurrent stock adjustment gave it a live inventory movement', async () => {
+    // setStock never used to lock the variant row, so a concurrent stock
+    // adjustment could create the first-ever inventory_movements row for a
+    // variant in the exact window a delete had already decided
+    // "unreferenced" — the same race the checkout fix closes, for a
+    // different reference-creating path. Run many times: which operation
+    // the database schedules first is nondeterministic.
+    for (let i = 0; i < 10; i++) {
+      const { variant } = await seedProductWithVariant();
+
+      const [deleteRes, stockRes] = await Promise.all([
+        app.request(`/v1/admin/variants/${variant.id}`, {
+          method: 'DELETE',
+          headers: adminHeaders,
+        }),
+        app.request(`/v1/admin/variants/${variant.id}/stock`, {
+          method: 'POST',
+          headers: adminHeaders,
+          body: JSON.stringify({ quantity_on_hand: 20 }),
+        }),
+      ]);
+
+      expect([204, 409]).toContain(deleteRes.status);
+      expect([200, 404]).toContain(stockRes.status);
+
+      const variantRow = await prisma.productVariant.findUniqueOrThrow({
+        where: { id: variant.id },
+      });
+      const hasMovement =
+        (await prisma.inventoryMovement.count({ where: { variantId: variant.id } })) > 0;
+
+      if (variantRow.deletedAt !== null) {
+        expect(hasMovement).toBe(false);
+        expect(stockRes.status).toBe(404);
+      }
+      if (hasMovement) {
+        expect(variantRow.deletedAt).toBeNull();
+        expect(deleteRes.status).toBe(409);
+      }
+    }
+  });
+
   it('requires catalog:delete — a plain admin without it is forbidden', async () => {
     const { variant } = await seedProductWithVariant();
     const role = await seedRole(prisma, businessId, {
@@ -284,6 +338,23 @@ describe('DELETE /v1/admin/variants/:id', () => {
       headers: plainHeaders,
     });
     expect(res.status).toBe(403);
+  });
+
+  it('refuses a second, concurrent delete attempt once the first has committed (no double-decrement/double-audit)', async () => {
+    // Two admins clicking delete on the same unreferenced variant at the
+    // same moment: exactly one of the two concurrent requests must see the
+    // row (204), the other must see it already gone. This is the same
+    // atomic-UPDATE mechanism that closes the reference-check race,
+    // exercised against itself.
+    const { variant } = await seedProductWithVariant();
+
+    const [a, b] = await Promise.all([
+      app.request(`/v1/admin/variants/${variant.id}`, { method: 'DELETE', headers: adminHeaders }),
+      app.request(`/v1/admin/variants/${variant.id}`, { method: 'DELETE', headers: adminHeaders }),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([204, 404]);
   });
 });
 

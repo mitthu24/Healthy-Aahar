@@ -150,6 +150,22 @@ export class PrismaCheckoutRepository implements CheckoutRepository {
         for (const cartItem of cart.items) {
           if (!cartItem.variantId) continue; // combos are a later phase
 
+          // Lock the variant row before re-reading it: an admin's delete
+          // (Stage E, `deleteIfUnreferenced`) locks this same row before
+          // deciding whether it's referenced, so whichever of the two
+          // operations reaches this row first forces the other to wait and
+          // then act on committed data — the admin's delete sees this item
+          // once we commit (and correctly refuses with
+          // VARIANT_REFERENCED_BY_ORDERS), or we see `deleted_at` once the
+          // admin's delete commits (and correctly refuse below with
+          // ITEM_NOT_AVAILABLE) instead of either side racing past the
+          // other.
+          await tx.$queryRaw`
+            SELECT id FROM product_variants
+            WHERE id = ${cartItem.variantId}::uuid AND business_id = ${businessId}::uuid
+            FOR UPDATE
+          `;
+
           // Re-read live — never trust the cart's cached join for price/stock.
           const variant = await tx.productVariant.findFirst({
             where: { id: cartItem.variantId, businessId, deletedAt: null },

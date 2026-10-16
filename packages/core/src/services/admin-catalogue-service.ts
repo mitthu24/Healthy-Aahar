@@ -307,15 +307,17 @@ export class AdminCatalogueService {
   async deleteProduct(scope: BusinessScope, id: string, actorUserId: string) {
     const product = await this.getProduct(scope, id);
 
-    const referenceCount = await this.products.countOrderReferences(scope, id);
-    if (referenceCount > 0) {
+    const deleted = await this.products.deleteIfUnreferenced(scope, id);
+    if (!deleted) {
+      // Distinguish "referenced" from "someone else already deleted it"
+      // purely for an accurate error — this re-check has no bearing on the
+      // atomic gate above, which already made the real decision.
+      await this.getProduct(scope, id);
       throw new DomainError(
         'PRODUCT_REFERENCED_BY_ORDERS',
         'This product has order or inventory history and cannot be deleted. Archive it instead.',
       );
     }
-
-    await this.products.delete(scope, id);
 
     await this.audit.write(scope, {
       actorUserId,
@@ -565,15 +567,17 @@ export class AdminCatalogueService {
   async deleteVariant(scope: BusinessScope, variantId: string, actorUserId: string) {
     const existing = await this.getVariant(scope, variantId);
 
-    const referenceCount = await this.variants.countOrderReferences(scope, variantId);
-    if (referenceCount > 0) {
+    const deleted = await this.variants.deleteIfUnreferenced(scope, variantId);
+    if (!deleted) {
+      // Distinguish "referenced" from "someone else already deleted it"
+      // purely for an accurate error — this re-check has no bearing on the
+      // atomic gate above, which already made the real decision.
+      await this.getVariant(scope, variantId);
       throw new DomainError(
         'VARIANT_REFERENCED_BY_ORDERS',
         'This variant has order or inventory history and cannot be deleted. Mark it discontinued instead.',
       );
     }
-
-    await this.variants.delete(scope, variantId);
 
     await this.audit.write(scope, {
       actorUserId,

@@ -131,13 +131,17 @@ export interface AdminVariantRepository {
   ): Promise<AdminVariantRow>;
   findById(scope: BusinessScope, variantId: string): Promise<AdminVariantRow | null>;
 
-  /** Count of order items, combo components and inventory movements that
-   *  reference this variant — the caller (the service) refuses a hard
-   *  delete when this is nonzero, directing the admin to archive instead. */
-  countOrderReferences(scope: BusinessScope, variantId: string): Promise<number>;
-  /** Soft-deletes (`deleted_at`). Caller must already have verified
-   *  `countOrderReferences === 0`. */
-  delete(scope: BusinessScope, variantId: string): Promise<void>;
+  /**
+   * Atomically verifies zero references AND soft-deletes (`deleted_at`),
+   * inside one transaction: locks the variant row (`SELECT ... FOR UPDATE`),
+   * THEN checks for references, THEN writes — checkout's own variant
+   * lookup takes the same row lock before it inserts an order item
+   * (`prisma-checkout-repository.ts`), so whichever of the two operations
+   * gets here first forces the other to wait and act on committed data,
+   * rather than racing it. Returns `false` (no row changed) when the
+   * variant is referenced, already deleted, or not in this business.
+   */
+  deleteIfUnreferenced(scope: BusinessScope, variantId: string): Promise<boolean>;
 
   /**
    * Sets on-hand stock to an ABSOLUTE value via a conditional UPDATE
@@ -259,14 +263,16 @@ export interface AdminProductRepository {
   ): Promise<AdminProductRow>;
   removeImage(scope: BusinessScope, productId: string, imageId: string): Promise<AdminProductRow>;
 
-  /** Count of order items, combo components and inventory movements
-   *  referencing ANY of this product's variants — same convention as
-   *  `AdminVariantRepository.countOrderReferences`, rolled up to the
-   *  product level (deleting a product implies deleting its variants). */
-  countOrderReferences(scope: BusinessScope, productId: string): Promise<number>;
-  /** Soft-deletes the product and all its variants (`deleted_at`). Caller
-   *  must already have verified `countOrderReferences === 0`. */
-  delete(scope: BusinessScope, productId: string): Promise<void>;
+  /**
+   * Atomically verifies none of this product's variants are referenced AND
+   * soft-deletes the product and all its variants (`deleted_at`) — same
+   * lock-then-check-then-write transaction shape as
+   * `AdminVariantRepository.deleteIfUnreferenced`, locking the product row
+   * and every one of its variant rows before checking references. Returns
+   * `false` when any variant is referenced, the product is already
+   * deleted, or it isn't in this business.
+   */
+  deleteIfUnreferenced(scope: BusinessScope, productId: string): Promise<boolean>;
 
   /**
    * Device-upload counterpart to `addImage` (PHASE 05). `addImage` is for
