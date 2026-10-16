@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
 import { apiClient } from '@/lib/api-client';
-import { setSessionToken } from '@/lib/session-store';
+import { persistSessionToken } from '@/lib/session-client';
 
 /**
  * Shared sign-in / sign-up form (PHASE 03 auth, unchanged) — one component
@@ -33,7 +33,7 @@ export function AuthForm({ initialMode }: { initialMode: 'login' | 'register' })
           ? await apiClient.customerLogin({ email, password })
           : await apiClient.customerRegister({ email, password });
 
-      setSessionToken(result.token);
+      persistSessionToken(result.token);
       router.push(searchParams.get('next') ?? '/');
       router.refresh();
     } catch (err) {

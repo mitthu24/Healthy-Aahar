@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { ApiClient } from './index.js';
+import { ApiClient, ApiError } from './index.js';
 
 /**
  * Regression test for a live production bug: every API call from both
@@ -144,6 +144,84 @@ describe('ApiClient', () => {
 
       const changePasswordHeaders = new Headers(calls[1]!.init.headers);
       expect(changePasswordHeaders.get('X-CSRF-Token')).toBe('from-caller-override');
+    });
+  });
+
+  describe('onUnauthorized hook', () => {
+    /**
+     * Supports the customer-app session-persistence fix: a session that
+     * goes bad mid-use (revoked, expired) must clear whatever the caller
+     * persisted, not just reject the one call that discovered it. This is
+     * purely additive — callers that don't pass `onUnauthorized` see no
+     * behavior change at all.
+     */
+    function errorFetch(status: number, code: string) {
+      return (async () =>
+        new Response(JSON.stringify({ error: { code, message: 'nope', request_id: 'req-1' } }), {
+          status,
+        })) as unknown as typeof fetch;
+    }
+
+    it('fires with the response code on a 401 UNAUTHENTICATED', async () => {
+      const onUnauthorized = vi.fn();
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: errorFetch(401, 'UNAUTHENTICATED'),
+        onUnauthorized,
+      });
+
+      await expect(client.customerMe()).rejects.toBeInstanceOf(ApiError);
+      expect(onUnauthorized).toHaveBeenCalledTimes(1);
+      expect(onUnauthorized).toHaveBeenCalledWith('UNAUTHENTICATED');
+    });
+
+    it('fires on a 401 SESSION_EXPIRED', async () => {
+      const onUnauthorized = vi.fn();
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: errorFetch(401, 'SESSION_EXPIRED'),
+        onUnauthorized,
+      });
+
+      await expect(client.customerMe()).rejects.toBeInstanceOf(ApiError);
+      expect(onUnauthorized).toHaveBeenCalledWith('SESSION_EXPIRED');
+    });
+
+    it('does not fire on a 401 with an unrelated code', async () => {
+      const onUnauthorized = vi.fn();
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: errorFetch(401, 'SOME_OTHER_401'),
+        onUnauthorized,
+      });
+
+      await expect(client.customerMe()).rejects.toBeInstanceOf(ApiError);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it('does not fire on a non-401 error (e.g. 403 FORBIDDEN)', async () => {
+      const onUnauthorized = vi.fn();
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: errorFetch(403, 'FORBIDDEN'),
+        onUnauthorized,
+      });
+
+      await expect(client.customerMe()).rejects.toBeInstanceOf(ApiError);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it('the triggering call still rejects normally — the hook is a side effect, not a substitute for error handling', async () => {
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: errorFetch(401, 'SESSION_EXPIRED'),
+        onUnauthorized: () => undefined,
+      });
+
+      await expect(client.customerMe()).rejects.toMatchObject({
+        code: 'SESSION_EXPIRED',
+        status: 401,
+      });
     });
   });
 });

@@ -124,6 +124,7 @@ export const customerWhoAmISchema = z.object({
   user_id: uuidSchema,
   customer_profile_id: uuidSchema,
 });
+export type CustomerWhoAmI = z.infer<typeof customerWhoAmISchema>;
 
 // ── Password setup / reset (shared by admin invite + future self-service) ─
 
