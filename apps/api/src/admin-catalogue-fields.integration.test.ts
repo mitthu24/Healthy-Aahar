@@ -6,6 +6,7 @@ import {
   seedAdminUser,
   seedBusiness,
   seedPermissions,
+  seedUnits,
   setupTestDatabase,
   testId,
   truncateAll,
@@ -106,6 +107,7 @@ beforeEach(async () => {
   });
   businessId = business.id;
   await seedPermissions(prisma, PERMISSIONS);
+  await seedUnits(prisma, businessId);
   app = buildApp();
 
   const admin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
@@ -161,6 +163,7 @@ describe('SKU uniqueness', () => {
 
   it('allows the same SKU across two different businesses', async () => {
     const otherBusiness = await seedBusiness(prisma, { slug: 'catalogue-fields-it-other' });
+    await seedUnits(prisma, otherBusiness.id);
     const otherApp = createApp({
       env: testEnv(),
       prisma,

@@ -116,6 +116,14 @@ export type {
   AdminProductRepository,
 } from './ports/admin-catalogue-repository.js';
 export type {
+  UnitDimension,
+  UnitRow,
+  UnitInput,
+  UnitUpdateInput,
+  UnitRepository,
+  SettingRepository,
+} from './ports/settings-repository.js';
+export type {
   AdminDeliverySlotRow,
   DeliverySlotInput,
   DeliverySlotUpdateInput,
@@ -153,7 +161,8 @@ export {
   type AdminLoginParams,
   type AdminLoginResult,
 } from './services/admin-auth-service.js';
-export { RbacService } from './services/rbac-service.js';
+export { RbacService, type RbacServiceStageFDeps } from './services/rbac-service.js';
+export type { EmailChannel, EmailSendResult } from './ports/email-channel.js';
 export { AuditLogService } from './services/audit-log-service.js';
 export { PasswordResetService } from './services/password-reset-service.js';
 export { validateSession, type ValidatedSession } from './services/session-validation.js';
@@ -179,6 +188,10 @@ export {
   AdminCatalogueService,
   type AdminCatalogueServiceDeps,
 } from './services/admin-catalogue-service.js';
+export {
+  AdminSettingsService,
+  type AdminSettingsServiceDeps,
+} from './services/admin-settings-service.js';
 export {
   toAdminCategoryView,
   toAdminVariantView,

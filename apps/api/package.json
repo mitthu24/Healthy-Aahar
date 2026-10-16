@@ -21,6 +21,7 @@
     "@healthy-aahar/contracts": "workspace:*",
     "@healthy-aahar/core": "workspace:*",
     "@healthy-aahar/db": "workspace:*",
+    "@healthy-aahar/notifications": "workspace:*",
     "@healthy-aahar/observability": "workspace:*",
     "@healthy-aahar/storage": "workspace:^",
     "@hono/node-server": "^1.13.3",

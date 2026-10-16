@@ -1,10 +1,10 @@
 'use client';
 
-import { UNIT_CATALOG } from '@healthy-aahar/contracts';
 import {
   ApiError,
   type AdminCategoryDto,
   type AdminProductDto,
+  type AdminUnitDto,
   type AdminVariantDto,
 } from '@healthy-aahar/sdk';
 import {
@@ -42,12 +42,18 @@ function statusTone(status: string): BadgeTone {
   }
 }
 
-const UNIT_OPTIONS = UNIT_CATALOG.map((u) => ({ value: u.code, label: u.label }));
-
-function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: () => void }) {
+function AddVariantForm({
+  productId,
+  unitOptions,
+  onAdded,
+}: {
+  productId: string;
+  unitOptions: { value: string; label: string }[];
+  onAdded: () => void;
+}) {
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
-  const [unit, setUnit] = useState('g');
+  const [unit, setUnit] = useState(unitOptions[0]?.value ?? '');
   const [unitValue, setUnitValue] = useState('500');
   const [price, setPrice] = useState('');
   const [mrp, setMrp] = useState('');
@@ -128,7 +134,7 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
             id="v-unit"
             className="mt-1"
             value={unit}
-            options={UNIT_OPTIONS}
+            options={unitOptions}
             onChange={(e) => setUnit(e.target.value)}
           />
         </div>
@@ -195,10 +201,12 @@ function AddVariantForm({ productId, onAdded }: { productId: string; onAdded: ()
 
 function EditVariantForm({
   variant,
+  unitOptions,
   onSaved,
   onCancel,
 }: {
   variant: AdminVariantDto;
+  unitOptions: { value: string; label: string }[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -264,7 +272,16 @@ function EditVariantForm({
             id={`edit-v-unit-${variant.id}`}
             className="mt-1"
             value={unit}
-            options={UNIT_OPTIONS}
+            // The variant's current unit may have since been deactivated
+            // (still valid to KEEP, per Stage F — "existing products
+            // continue to display their previously assigned units") —
+            // included explicitly so editing other fields never silently
+            // forces a different unit onto it.
+            options={
+              unitOptions.some((o) => o.value === variant.unit)
+                ? unitOptions
+                : [{ value: variant.unit, label: `${variant.unit} (inactive)` }, ...unitOptions]
+            }
             onChange={(e) => setUnit(e.target.value)}
           />
         </div>
@@ -320,7 +337,15 @@ function EditVariantForm({
   );
 }
 
-function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChanged: () => void }) {
+function VariantRow({
+  variant,
+  unitOptions,
+  onChanged,
+}: {
+  variant: AdminVariantDto;
+  unitOptions: { value: string; label: string }[];
+  onChanged: () => void;
+}) {
   const [editingStock, setEditingStock] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -366,6 +391,7 @@ function VariantRow({ variant, onChanged }: { variant: AdminVariantDto; onChange
       <Card className="p-4">
         <EditVariantForm
           variant={variant}
+          unitOptions={unitOptions}
           onSaved={() => {
             setEditingDetails(false);
             onChanged();
@@ -757,6 +783,7 @@ export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const [product, setProduct] = useState<AdminProductDto | null>(null);
   const [categories, setCategories] = useState<AdminCategoryDto[]>([]);
+  const [units, setUnits] = useState<AdminUnitDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
@@ -784,6 +811,10 @@ export default function ProductDetailPage() {
       .listAdminCategories({ limit: 100 })
       .then((r) => setCategories(r.data))
       .catch(() => setCategories([]));
+    void apiClient
+      .listUnits({ active_only: true })
+      .then((r) => setUnits(r.data))
+      .catch(() => setUnits([]));
   }, [params.id]);
 
   async function changeStatus(status: 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'ARCHIVED') {
@@ -825,6 +856,8 @@ export default function ProductDetailPage() {
       </main>
     );
   }
+
+  const unitOptions = units.map((u) => ({ value: u.code, label: u.label }));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-8 pb-16">
@@ -963,14 +996,33 @@ export default function ProductDetailPage() {
             </p>
           ) : (
             product.variants.map((variant) => (
-              <VariantRow key={variant.id} variant={variant} onChanged={() => void load()} />
+              <VariantRow
+                key={variant.id}
+                variant={variant}
+                unitOptions={unitOptions}
+                onChanged={() => void load()}
+              />
             ))
           )}
         </div>
         <Card className="mt-4 p-4">
           <h3 className="text-body-sm text-sand-900 font-medium">Add a variant</h3>
           <div className="mt-3">
-            <AddVariantForm productId={product.id} onAdded={() => void load()} />
+            {unitOptions.length === 0 ? (
+              <p className="text-caption text-danger-600">
+                No active units configured —{' '}
+                <a href="/settings/units" className="text-green-700 hover:underline">
+                  add one in Settings
+                </a>{' '}
+                before adding a variant.
+              </p>
+            ) : (
+              <AddVariantForm
+                productId={product.id}
+                unitOptions={unitOptions}
+                onAdded={() => void load()}
+              />
+            )}
           </div>
         </Card>
       </section>

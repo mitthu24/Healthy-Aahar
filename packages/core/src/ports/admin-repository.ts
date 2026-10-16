@@ -51,6 +51,11 @@ export type InviteAdminInput = {
   department?: string | undefined;
   roleIds: string[];
   invitedByUserId: string;
+  /** Stage F: set only when the inviter chose an initial password instead
+   *  of the setup-link flow — already hashed by the caller (RbacService),
+   *  never a raw password. */
+  passwordHash?: string | undefined;
+  mustChangePassword?: boolean | undefined;
 };
 
 export type UpdateAdminDetailsInput = {
@@ -123,6 +128,12 @@ export interface AdminRepository {
 
   /** Stamps `last_password_change_at`, clearing the "must change password" signal. */
   markPasswordChanged(scope: BusinessScope, adminUserId: string): Promise<void>;
+
+  /** Stage F: sets the "must change password" gate directly — used after an
+   *  admin hands the employee a credential someone else knows (generated
+   *  temporary password), mirroring the bootstrap script's existing use of
+   *  the same flag for the same reason. */
+  setMustChangePassword(scope: BusinessScope, adminUserId: string, value: boolean): Promise<void>;
 }
 
 export type RoleRow = {

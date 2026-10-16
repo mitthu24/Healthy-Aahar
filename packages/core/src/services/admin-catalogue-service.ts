@@ -23,6 +23,18 @@ export type AdminCatalogueServiceDeps = {
   audit: AuditLogRepository;
   storage: StoragePort;
   maxUploadBytes: number;
+  /** Stage F: validates a variant's `unit` against this business's own
+   *  database-backed, active units (`AdminSettingsService.assertUnitIsActive`).
+   *  Optional so existing unit tests that construct this service directly
+   *  don't all need updating — omitted entirely means no unit validation,
+   *  which the real app.ts wiring never does. */
+  assertUnitIsActive?: (scope: BusinessScope, code: string) => Promise<void>;
+  /** Stage F: the business's configurable tax-rate ceiling
+   *  (`AdminSettingsService.getMaxTaxRateBps`), replacing the previous
+   *  hardcoded 10,000bps (100%) bound. Optional for the same reason as
+   *  `assertUnitIsActive`; omitted falls back to the original 10,000bps cap
+   *  (already enforced at the contract layer, so this is a no-op then). */
+  getMaxTaxRateBps?: (scope: BusinessScope) => Promise<number>;
 };
 
 const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
@@ -49,6 +61,8 @@ export class AdminCatalogueService {
   private readonly audit: AuditLogRepository;
   private readonly storage: StoragePort;
   private readonly maxUploadBytes: number;
+  private readonly assertUnitIsActive?: (scope: BusinessScope, code: string) => Promise<void>;
+  private readonly getMaxTaxRateBps?: (scope: BusinessScope) => Promise<number>;
 
   constructor({
     categories,
@@ -57,6 +71,8 @@ export class AdminCatalogueService {
     audit,
     storage,
     maxUploadBytes,
+    assertUnitIsActive,
+    getMaxTaxRateBps,
   }: AdminCatalogueServiceDeps) {
     this.categories = categories;
     this.products = products;
@@ -64,6 +80,8 @@ export class AdminCatalogueService {
     this.audit = audit;
     this.storage = storage;
     this.maxUploadBytes = maxUploadBytes;
+    this.assertUnitIsActive = assertUnitIsActive;
+    this.getMaxTaxRateBps = getMaxTaxRateBps;
   }
 
   // ── Categories ───────────────────────────────────────────────────────
@@ -509,6 +527,9 @@ export class AdminCatalogueService {
       });
     }
 
+    await this.assertUnitIsActive?.(scope, input.unit);
+    await this.assertWithinTaxRateCeiling(scope, input.taxRateBps);
+
     const created = await this.variants.create(scope, productId, input);
 
     await this.audit.write(scope, {
@@ -544,6 +565,11 @@ export class AdminCatalogueService {
       });
     }
 
+    if (input.unit !== undefined) await this.assertUnitIsActive?.(scope, input.unit);
+    if (input.taxRateBps !== undefined) {
+      await this.assertWithinTaxRateCeiling(scope, input.taxRateBps);
+    }
+
     const updated = await this.variants.update(scope, variantId, input);
 
     await this.audit.write(scope, {
@@ -556,6 +582,21 @@ export class AdminCatalogueService {
     });
 
     return updated;
+  }
+
+  private async assertWithinTaxRateCeiling(
+    scope: BusinessScope,
+    taxRateBps: number | undefined,
+  ): Promise<void> {
+    if (taxRateBps === undefined || !this.getMaxTaxRateBps) return;
+    const ceiling = await this.getMaxTaxRateBps(scope);
+    if (taxRateBps > ceiling) {
+      throw new DomainError(
+        'VALIDATION_FAILED',
+        `Tax rate cannot exceed this business's configured ceiling of ${(ceiling / 100).toFixed(2)}%.`,
+        { details: [{ field: 'tax_rate_bps', issue: `must be <= ${ceiling}` }] },
+      );
+    }
   }
 
   /**

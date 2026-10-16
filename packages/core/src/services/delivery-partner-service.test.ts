@@ -102,6 +102,7 @@ class FakeAdminRepository implements AdminRepository {
     return updated;
   }
   async markPasswordChanged(): Promise<void> {}
+  async setMustChangePassword(): Promise<void> {}
 }
 
 class FakeRoleRepository implements RoleRepository {

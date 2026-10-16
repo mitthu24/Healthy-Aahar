@@ -11,6 +11,12 @@ import type {
   AdminOrderListResponse,
   AdminProductDto,
   AdminProductListResponse,
+  AdminUnitDto,
+  AdminUnitListResponse,
+  CatalogueSettingsDto,
+  CreateUnitBody,
+  UpdateCatalogueSettingsBody,
+  UpdateUnitBody,
   AdminVariantDto,
   AdminUser,
   AuditLogEntry,
@@ -36,6 +42,7 @@ import type {
   Role,
   Permission,
   SalesTrendResponse,
+  TemporaryPasswordResponse,
   ServiceabilityResponse,
   TopProductsResponse,
 } from '@healthy-aahar/contracts';
@@ -809,6 +816,41 @@ export class ApiClient {
     });
   }
 
+  // ── Admin: settings (Stage F — units, catalogue tax-rate ceiling) ───────
+
+  listUnits(params: { active_only?: boolean } = {}): Promise<AdminUnitListResponse> {
+    return this.request(
+      `/v1/admin/settings/units${this.query({
+        active_only: params.active_only === undefined ? undefined : String(params.active_only),
+      })}`,
+    );
+  }
+
+  createUnit(body: CreateUnitBody): Promise<AdminUnitDto> {
+    return this.request('/v1/admin/settings/units', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateUnit(id: string, body: UpdateUnitBody): Promise<AdminUnitDto> {
+    return this.request(`/v1/admin/settings/units/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  getCatalogueSettings(): Promise<CatalogueSettingsDto> {
+    return this.request('/v1/admin/settings/catalogue');
+  }
+
+  updateCatalogueSettings(body: UpdateCatalogueSettingsBody): Promise<CatalogueSettingsDto> {
+    return this.request('/v1/admin/settings/catalogue', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
   // ── Admin: delivery-slot management (Phase 04) ───────────────────────────
 
   listAdminDeliverySlots(): Promise<AdminDeliverySlotListResponse> {
@@ -875,8 +917,9 @@ export class ApiClient {
     designation?: string;
     department?: string;
     role_ids: string[];
+    password?: string;
     password_setup_continue_url?: string;
-  }): Promise<AdminUser & { password_setup_link: string }> {
+  }): Promise<AdminUser & { password_setup_link: string | null }> {
     return this.request('/v1/admin/admin-users', { method: 'POST', body: JSON.stringify(body) });
   }
 
@@ -905,10 +948,17 @@ export class ApiClient {
   resetAdminUserPassword(
     id: string,
     body: { password_setup_continue_url?: string } = {},
-  ): Promise<{ password_setup_link: string }> {
+  ): Promise<{ password_setup_link: string; email_status: 'SENT' | 'SKIPPED' | 'FAILED' }> {
     return this.request(`/v1/admin/admin-users/${id}/reset-password`, {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  }
+
+  /** The plaintext is returned exactly once, in this call's response only. */
+  generateTemporaryPassword(id: string): Promise<TemporaryPasswordResponse> {
+    return this.request(`/v1/admin/admin-users/${id}/generate-temporary-password`, {
+      method: 'POST',
     });
   }
 
@@ -977,6 +1027,12 @@ export type {
   AdminOrderListResponse,
   AdminProductDto,
   AdminProductListResponse,
+  AdminUnitDto,
+  AdminUnitListResponse,
+  CatalogueSettingsDto,
+  CreateUnitBody,
+  UpdateCatalogueSettingsBody,
+  UpdateUnitBody,
   AdminVariantDto,
   AdminUser,
   AuditLogEntry,
@@ -1007,6 +1063,7 @@ export type {
   ProductVariantDto,
   Role,
   SalesTrendResponse,
+  TemporaryPasswordResponse,
   ServiceabilityResponse,
   TopProductsResponse,
 } from '@healthy-aahar/contracts';

@@ -2,6 +2,7 @@ export {
   hashPassword,
   verifyPassword,
   assertPasswordStrength,
+  generateTemporaryPassword,
   PasswordHashError,
 } from './password.js';
 export { generateSessionToken, hashSessionToken } from './session-token.js';

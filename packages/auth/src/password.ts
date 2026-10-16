@@ -141,3 +141,15 @@ export function assertPasswordStrength(password: string): void {
     throw new PasswordHashError('Password must be at most 256 characters.');
   }
 }
+
+/**
+ * Stage F — "Generate temporary password". 18 bytes from the platform CSPRNG
+ * (same `node:crypto` source `generateSessionToken` already uses for session
+ * tokens), base64url-encoded to ~24 characters — comfortably clears
+ * `assertPasswordStrength`'s 10-character floor with 144 bits of entropy,
+ * far more than any human-chosen password. Never derived from anything
+ * guessable (time, user id, counter) — each call is independent.
+ */
+export function generateTemporaryPassword(): string {
+  return randomBytes(18).toString('base64url');
+}

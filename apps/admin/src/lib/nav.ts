@@ -7,6 +7,7 @@ import {
   OrdersIcon,
   ProductsIcon,
   RolesIcon,
+  SettingsIcon,
   SlotsIcon,
 } from '@/components/shell/icons';
 
@@ -63,6 +64,17 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { href: '/roles', label: 'Roles & Permissions', icon: RolesIcon, permission: 'roles:read' },
       { href: '/audit-log', label: 'Audit Log', icon: AuditIcon, permission: 'audit:read' },
+    ],
+  },
+  {
+    label: 'Settings',
+    items: [
+      {
+        href: '/settings',
+        label: 'Global Settings',
+        icon: SettingsIcon,
+        permission: 'settings:read',
+      },
     ],
   },
 ];

@@ -123,6 +123,13 @@ export const ERROR_CODES = {
   VARIANT_REFERENCED_BY_ORDERS: 409,
   SKU_TAKEN: 409,
   INVALID_CATEGORY_PARENT: 422,
+
+  // ── Admin panel improvements (Stage F) ───────────────────────────────────
+  UNIT_CODE_TAKEN: 409,
+  UNIT_NOT_FOUND: 404,
+  UNIT_IN_USE: 409,
+  INVALID_UNIT: 422,
+  RECENT_AUTH_REQUIRED: 403,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;

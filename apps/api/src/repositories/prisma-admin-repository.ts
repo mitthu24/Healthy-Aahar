@@ -168,9 +168,12 @@ export class PrismaAdminRepository implements AdminRepository {
         const userId = newId();
         const adminUserId = newId();
 
-        // No `firebase_uid`, no `password_hash` — PHASE 03 admins exist
-        // without a credential until they complete the password-setup flow
-        // (RbacService.inviteAdmin issues the token for that separately).
+        // No `firebase_uid` — PHASE 03 admins exist without a credential
+        // until they complete the password-setup flow (RbacService
+        // .inviteAdmin issues the token for that separately), UNLESS Stage
+        // F's `passwordHash` is given (the caller already hashed an
+        // admin-chosen initial password), in which case it's set here
+        // directly and no setup token gets issued.
         await tx.user.create({
           data: {
             id: userId,
@@ -179,6 +182,7 @@ export class PrismaAdminRepository implements AdminRepository {
             loginId: input.loginId ?? null,
             emailVerified: false,
             status: 'ACTIVE',
+            passwordHash: input.passwordHash ?? null,
           },
         });
 
@@ -193,6 +197,7 @@ export class PrismaAdminRepository implements AdminRepository {
             department: input.department ?? null,
             isSuperAdmin,
             invitedBy: input.invitedByUserId,
+            mustChangePassword: input.mustChangePassword ?? false,
           },
         });
 
@@ -339,6 +344,18 @@ export class PrismaAdminRepository implements AdminRepository {
     await this.prisma.adminUser.update({
       where: { id: adminUserId },
       data: { lastPasswordChangeAt: now(), mustChangePassword: false },
+    });
+  }
+
+  async setMustChangePassword(
+    scope: BusinessScope,
+    adminUserId: string,
+    value: boolean,
+  ): Promise<void> {
+    void scope;
+    await this.prisma.adminUser.update({
+      where: { id: adminUserId },
+      data: { mustChangePassword: value },
     });
   }
 }
