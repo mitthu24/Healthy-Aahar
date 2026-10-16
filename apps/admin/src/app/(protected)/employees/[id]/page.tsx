@@ -1,7 +1,16 @@
 'use client';
 
 import { ApiError, type AdminUser, type Role } from '@healthy-aahar/sdk';
-import { Badge, Button, Card, ErrorState, FieldLabel, Input, Skeleton } from '@healthy-aahar/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  ErrorState,
+  FieldLabel,
+  Input,
+  Skeleton,
+} from '@healthy-aahar/ui';
 import { useParams } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
@@ -148,6 +157,12 @@ export default function EmployeeDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<string | null>(null);
+  const [resetEmailStatus, setResetEmailStatus] = useState<
+    'SENT' | 'SKIPPED' | 'FAILED' | null
+  >(null);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [tempPasswordCopied, setTempPasswordCopied] = useState(false);
+  const [confirmingTempPassword, setConfirmingTempPassword] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
 
   async function load() {
@@ -170,14 +185,49 @@ export default function EmployeeDetailPage() {
   async function onResetPassword() {
     setActionError(null);
     setResetLink(null);
+    setResetEmailStatus(null);
     setIsBusy(true);
     try {
       const result = await apiClient.resetAdminUserPassword(params.id);
       setResetLink(result.password_setup_link);
+      setResetEmailStatus(result.email_status);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not issue a reset link.');
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function onGenerateTemporaryPassword() {
+    setActionError(null);
+    setTemporaryPassword(null);
+    setTempPasswordCopied(false);
+    setConfirmingTempPassword(false);
+    setIsBusy(true);
+    try {
+      const result = await apiClient.generateTemporaryPassword(params.id);
+      setTemporaryPassword(result.temporary_password);
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError
+          ? err.code === 'CANNOT_MANAGE_SUPER_ADMIN'
+            ? 'Only a Super Admin may generate a temporary password for another Super Admin.'
+            : err.message
+          : 'Could not generate a temporary password.',
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function copyTemporaryPassword() {
+    try {
+      await navigator.clipboard.writeText(temporaryPassword ?? '');
+      setTempPasswordCopied(true);
+      setTimeout(() => setTempPasswordCopied(false), 2000);
+    } catch {
+      // Clipboard access can be denied — the password is still visible and
+      // selectable, so this is a convenience failure only.
     }
   }
 
@@ -241,11 +291,36 @@ export default function EmployeeDetailPage() {
       {resetLink ? (
         <Card className="mt-4 p-4">
           <p className="text-body-sm text-sand-700">
-            One-time setup link — share securely, not shown again:
+            {resetEmailStatus === 'SENT'
+              ? 'Reset email sent. The link below is also shown as a fallback — not shown again.'
+              : resetEmailStatus === 'FAILED'
+                ? 'The reset email could not be sent — share this link securely instead.'
+                : 'Email sending is not configured in this environment — share this one-time link securely instead:'}
           </p>
           <p className="border-sand-200 bg-sand-50 text-caption mt-2 break-all rounded-md border p-2 font-mono">
             {resetLink}
           </p>
+        </Card>
+      ) : null}
+
+      {temporaryPassword ? (
+        <Card className="mt-4 p-4">
+          <p className="text-body-sm text-sand-700">
+            Temporary password — share it securely, not shown again. The employee must change it
+            at first sign-in; every existing session for this account has been signed out.
+          </p>
+          <p className="border-sand-200 bg-sand-50 text-body-md mt-2 break-all rounded-md border p-2 font-mono">
+            {temporaryPassword}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="mt-3"
+            onClick={() => void copyTemporaryPassword()}
+          >
+            {tempPasswordCopied ? 'Copied' : 'Copy password'}
+          </Button>
         </Card>
       ) : null}
 
@@ -260,6 +335,14 @@ export default function EmployeeDetailPage() {
         </Button>
         <Button
           size="sm"
+          variant="secondary"
+          isLoading={isBusy}
+          onClick={() => setConfirmingTempPassword(true)}
+        >
+          Generate temporary password
+        </Button>
+        <Button
+          size="sm"
           variant={employee.deactivated ? 'secondary' : 'danger'}
           isLoading={isBusy}
           onClick={() => void onToggleActive()}
@@ -267,6 +350,16 @@ export default function EmployeeDetailPage() {
           {employee.deactivated ? 'Reactivate account' : 'Deactivate account'}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingTempPassword}
+        onClose={() => setConfirmingTempPassword(false)}
+        onConfirm={onGenerateTemporaryPassword}
+        title="Generate a temporary password?"
+        description={`This immediately replaces ${employee.full_name}'s current password and signs them out of every active session. They must choose a new password the first time they sign in with it.`}
+        confirmLabel="Generate"
+        destructive
+      />
 
       <section className="mt-8">
         <h2 className="text-heading-sm text-sand-900">Details</h2>

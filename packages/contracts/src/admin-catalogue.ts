@@ -1,7 +1,15 @@
 import { z } from 'zod';
 
 import { moneySchema, paginatedSchema, slugSchema, uuidSchema } from './common.js';
-import { unitCodeSchema } from './units.js';
+
+/**
+ * Stage F: a variant's unit code is validated against the business's own
+ * database-backed, active units (`AdminSettingsService.assertUnitIsActive`)
+ * at the service layer, not a fixed enum here — `units.ts`'s `UNIT_CATALOG`
+ * now only back-fills the initial rows (`prisma/seed.ts`) and is no longer
+ * the source of truth for what a variant may be assigned.
+ */
+const variantUnitSchema = z.string().trim().min(1).max(20);
 
 /**
  * Admin catalogue management (Phase 04B).
@@ -107,7 +115,7 @@ const skuSchema = z
 export const createVariantBodySchema = z.object({
   sku: skuSchema,
   name: z.string().trim().min(1).max(120),
-  unit: unitCodeSchema,
+  unit: variantUnitSchema,
   unit_value: z.number().positive(),
   mrp_paise: z.number().int().positive().optional(),
   price_paise: z.number().int().positive(),
@@ -121,7 +129,7 @@ export type CreateVariantBody = z.infer<typeof createVariantBodySchema>;
 
 export const updateVariantBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  unit: unitCodeSchema.optional(),
+  unit: variantUnitSchema.optional(),
   unit_value: z.number().positive().optional(),
   mrp_paise: z.number().int().positive().nullable().optional(),
   price_paise: z.number().int().positive().optional(),

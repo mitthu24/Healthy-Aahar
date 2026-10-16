@@ -298,6 +298,7 @@ model Business {
   cities                  City[]
   servicePincodes         ServicePincode[]
   settings                Setting[]
+  units                   Unit[]
   categories              Category[]
   products                Product[]
   combos                  Combo[]
@@ -710,6 +711,42 @@ model Category {
   @@index([parentId, displayOrder])
   @@index([businessId, isActive])
   @@map("categories")
+}
+
+enum UnitDimension {
+  MASS
+  VOLUME
+  COUNT
+
+  @@map("unit_dimension")
+}
+
+/// Stage F — database-backed unit catalogue, replacing the hardcoded
+/// `UNIT_CATALOG` constant (`packages/contracts/src/units.ts`). Business-
+/// scoped like every other catalogue entity here (categories, products):
+/// `unit_dimension` never mixes MASS/VOLUME/COUNT, so a variant's `unit`
+/// can never silently cross dimensions. `code` is never deleted once a
+/// variant has used it — `isActive = false` removes it from new
+/// selections while every existing `product_variants.unit` string keeps
+/// resolving to its historical label via this table (or displays as-is if
+/// a code is ever retired without a row, which never happens through the
+/// admin UI — see `AdminSettingsService.deactivateUnit`).
+model Unit {
+  id         String        @id @db.Uuid
+  businessId String        @map("business_id") @db.Uuid
+  code       String
+  label      String
+  symbol     String
+  dimension  UnitDimension
+  isActive   Boolean       @default(true) @map("is_active")
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, code])
+  @@index([businessId, isActive])
+  @@map("units")
 }
 
 /// The marketing and informational entity. **Not purchasable and has no

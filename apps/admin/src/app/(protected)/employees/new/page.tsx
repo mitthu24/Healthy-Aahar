@@ -6,19 +6,36 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { apiClient } from '@/lib/api-client';
 
+/** Cryptographically-fine-for-UI-only random password suggestion — the
+ *  actual security boundary is server-side `assertPasswordStrength` /
+ *  scrypt hashing; this just saves the admin from typing one by hand. Not
+ *  used for "Generate temporary password" (employee detail page), which is
+ *  a server-generated, server-hashed credential by design. */
+function suggestPassword(): string {
+  if (typeof crypto === 'undefined' || !crypto.getRandomValues) return '';
+  const bytes = crypto.getRandomValues(new Uint8Array(14));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/[+/=]/g, '')
+    .slice(0, 16);
+}
+
 export default function InviteEmployeePage() {
   const [roles, setRoles] = useState<Role[] | null>(null);
   const [email, setEmail] = useState('');
-  const [loginId, setLoginId] = useState('');
   const [employeeCode, setEmployeeCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [designation, setDesignation] = useState('');
   const [department, setDepartment] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  // Default flow (Stage F): admin sets an initial password directly. The
+  // setup-link flow (employee chooses their own password) remains fully
+  // supported as an alternative — toggled here, never removed.
+  const [useSetupLink, setUseSetupLink] = useState(false);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [setupLink, setSetupLink] = useState<string | null>(null);
-  const [createdLoginId, setCreatedLoginId] = useState<string | null>(null);
+  const [invitedWithPassword, setInvitedWithPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -37,27 +54,34 @@ export default function InviteEmployeePage() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!email.trim() && !loginId.trim()) {
-      setError('Enter an email or a login ID.');
+    if (!email.trim()) {
+      setError('Enter an email address.');
       return;
     }
     if (!employeeCode.trim()) {
       setError('Enter an employee ID.');
       return;
     }
+    if (!useSetupLink && password.trim().length < 10) {
+      setError('Password must be at least 10 characters.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const result = await apiClient.inviteAdminUser({
-        email: email.trim() || undefined,
-        login_id: loginId.trim() || undefined,
+        email: email.trim(),
         employee_code: employeeCode.trim(),
         full_name: fullName,
         designation: designation || undefined,
         department: department || undefined,
         role_ids: selectedRoleIds,
+        password: useSetupLink ? undefined : password.trim(),
       });
-      setCreatedLoginId(result.login_id);
-      setSetupLink(result.password_setup_link);
+      if (result.password_setup_link) {
+        setSetupLink(result.password_setup_link);
+      } else {
+        setInvitedWithPassword(fullName);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not invite this employee.');
     } finally {
@@ -76,24 +100,34 @@ export default function InviteEmployeePage() {
     }
   }
 
+  if (invitedWithPassword) {
+    return (
+      <main className="mx-auto max-w-2xl px-6 py-8">
+        <h1 className="font-display text-heading-lg text-sand-900">Employee invited</h1>
+        <Card className="mt-5 p-5">
+          <p className="text-body-sm text-sand-700">
+            <strong>{invitedWithPassword}</strong>&rsquo;s account was created with the password
+            you set. Share it with them through a secure channel (not a public one) — they will
+            be required to choose a new password the first time they sign in.
+          </p>
+          <div className="mt-5 flex gap-3">
+            <a
+              href="/employees"
+              className="text-sand-0 inline-flex h-9 items-center justify-center rounded-md bg-green-600 px-4 text-sm font-medium transition-colors hover:bg-green-700"
+            >
+              Back to employees
+            </a>
+          </div>
+        </Card>
+      </main>
+    );
+  }
+
   if (setupLink) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-8">
         <h1 className="font-display text-heading-lg text-sand-900">Employee invited</h1>
         <Card className="mt-5 p-5">
-          {createdLoginId ? (
-            <div className="mb-4">
-              <p className="text-caption text-sand-600 font-medium uppercase tracking-wide">
-                Login ID
-              </p>
-              <p className="border-sand-200 bg-sand-50 text-body-sm mt-1 break-all rounded-md border p-3 font-mono">
-                {createdLoginId}
-              </p>
-              <p className="text-caption text-sand-500 mt-1">
-                {fullName} will sign in with this login ID and the password they choose below.
-              </p>
-            </div>
-          ) : null}
           <p className="text-body-sm text-sand-700">
             Share this one-time setup link with <strong>{fullName}</strong> through a secure channel
             (not a public one). It expires in 7 days and can only be used once.
@@ -131,32 +165,17 @@ export default function InviteEmployeePage() {
 
       <Card className="mt-5 p-5">
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor="emp-email">Email (optional)</FieldLabel>
-              <Input
-                id="emp-email"
-                type="email"
-                className="mt-1"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <FieldLabel htmlFor="emp-login-id">Login ID (optional)</FieldLabel>
-              <Input
-                id="emp-login-id"
-                className="mt-1"
-                placeholder="e.g. priya.sharma"
-                value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
-              />
-            </div>
+          <div>
+            <FieldLabel htmlFor="emp-email">Email</FieldLabel>
+            <Input
+              id="emp-email"
+              type="email"
+              required
+              className="mt-1"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
-          <p className="text-caption text-sand-500 -mt-2">
-            Provide an email, a login ID, or both — at least one is required so this employee can
-            sign in.
-          </p>
           <div>
             <FieldLabel htmlFor="emp-employee-code">Employee ID</FieldLabel>
             <Input
@@ -197,6 +216,54 @@ export default function InviteEmployeePage() {
                 onChange={(e) => setDepartment(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="border-sand-100 rounded-md border p-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={useSetupLink}
+                onChange={(e) => setUseSetupLink(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <span className="text-body-sm text-sand-800">
+                Send a setup link instead (the employee chooses their own password)
+              </span>
+            </label>
+
+            {useSetupLink ? (
+              <p className="text-caption text-sand-500 mt-2">
+                A one-time link will be issued after creating this account for you to share
+                securely. More private — you never see their password.
+              </p>
+            ) : (
+              <div className="mt-3">
+                <FieldLabel htmlFor="emp-password">Initial password</FieldLabel>
+                <div className="mt-1 flex gap-2">
+                  <Input
+                    id="emp-password"
+                    type="text"
+                    required={!useSetupLink}
+                    minLength={10}
+                    className="flex-1"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPassword(suggestPassword())}
+                  >
+                    Suggest
+                  </Button>
+                </div>
+                <p className="text-caption text-sand-500 mt-1">
+                  At least 10 characters. The employee must choose a new password the first time
+                  they sign in — this one stops working after that.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>

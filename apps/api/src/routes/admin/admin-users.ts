@@ -9,6 +9,7 @@ import {
   passwordSetupLinkResponseSchema,
   resetAdminPasswordBodySchema,
   setAdminRolesBodySchema,
+  temporaryPasswordResponseSchema,
   updateAdminDetailsBodySchema,
 } from '@healthy-aahar/contracts';
 import { businessScope, DomainError, type AdminUserRow } from '@healthy-aahar/core';
@@ -114,6 +115,28 @@ registerRoute({
     request: { params: idParamSchema, body: resetAdminPasswordBodySchema },
     responses: {
       200: { description: 'Token issued', schema: passwordSetupLinkResponseSchema },
+      403: jsonError('Only a Super Admin may reset another Super Admin’s password'),
+      404: jsonError('Not found'),
+    },
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/v1/admin/admin-users/{id}/generate-temporary-password',
+  audience: 'admin',
+  permission: 'admin_users:update',
+  summary: 'Generate a one-time temporary password for an existing staff member',
+  phase: 'stage-f',
+  errors: ['NOT_FOUND', 'CANNOT_MANAGE_SUPER_ADMIN'],
+  openapi: {
+    tags: ['Admin: Staff'],
+    request: { params: idParamSchema },
+    responses: {
+      200: {
+        description: 'Temporary password — shown exactly once, never retrievable again',
+        schema: temporaryPasswordResponseSchema,
+      },
       403: jsonError('Only a Super Admin may reset another Super Admin’s password'),
       404: jsonError('Not found'),
     },
@@ -236,6 +259,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
       invitedByUserId: actor.userId,
       invitedByIsSuperAdmin: actor.isSuperAdmin,
       passwordResetContinueUrl: body.password_setup_continue_url,
+      initialPassword: body.password,
     });
 
     return c.json({ ...toResponse(admin), password_setup_link: passwordResetLink }, 201);
@@ -286,14 +310,29 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
 
     const scope = businessScope(c.env.businessId);
-    const { passwordResetLink } = await c.env.services.rbac.resetAdminPassword(scope, {
+    const { passwordResetLink, emailStatus } = await c.env.services.rbac.resetAdminPassword(scope, {
       targetAdminUserId: params.id,
       actorUserId: actor.userId,
       actorIsSuperAdmin: actor.isSuperAdmin,
       passwordResetContinueUrl: body.password_setup_continue_url,
     });
 
-    return c.json({ password_setup_link: passwordResetLink });
+    return c.json({ password_setup_link: passwordResetLink, email_status: emailStatus });
+  });
+
+  app.post('/:id/generate-temporary-password', async (c) => {
+    const params = idParamSchema.parse({ id: c.req.param('id') });
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new DomainError('UNAUTHENTICATED', 'Not authenticated.');
+
+    const scope = businessScope(c.env.businessId);
+    const { temporaryPassword } = await c.env.services.rbac.generateTemporaryPassword(scope, {
+      targetAdminUserId: params.id,
+      actorUserId: actor.userId,
+      actorIsSuperAdmin: actor.isSuperAdmin,
+    });
+
+    return c.json({ temporary_password: temporaryPassword });
   });
 
   app.post('/:id/deactivate', async (c) => {

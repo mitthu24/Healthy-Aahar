@@ -92,7 +92,7 @@ importers:
         version: 10.6.1(postcss@8.5.23)
       eslint:
         specifier: ^9.13.0
-        version: 9.39.5(jiti@2.6.1)
+        version: 9.39.5(jiti@1.21.7)
       jsdom:
         specifier: '25'
         version: 25.0.1
@@ -107,10 +107,10 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^7.3.7
-        version: 7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1)
+        version: 7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/api:
     dependencies:
@@ -129,6 +129,9 @@ importers:
       '@healthy-aahar/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@healthy-aahar/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@healthy-aahar/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -202,7 +205,7 @@ importers:
         version: 10.6.1(postcss@8.5.23)
       eslint:
         specifier: ^9.13.0
-        version: 9.39.5(jiti@1.21.7)
+        version: 9.39.5(jiti@2.6.1)
       postcss:
         specifier: 8.5.23
         version: 8.5.23
@@ -214,10 +217,10 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^7.3.7
-        version: 7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1)
+        version: 7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/delivery:
     dependencies:
@@ -501,6 +504,9 @@ importers:
       '@healthy-aahar/config':
         specifier: workspace:*
         version: link:../config
+      '@healthy-aahar/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@healthy-aahar/core':
         specifier: workspace:*
         version: link:../core
@@ -4789,7 +4795,7 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
     optionalDependencies:
-      vitest: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
@@ -4980,7 +4986,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))
 
   '@vitest/expect@4.1.11':
     dependencies:

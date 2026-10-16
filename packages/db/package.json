@@ -35,6 +35,7 @@
   "dependencies": {
     "@healthy-aahar/auth": "workspace:*",
     "@healthy-aahar/config": "workspace:*",
+    "@healthy-aahar/contracts": "workspace:*",
     "@healthy-aahar/core": "workspace:*",
     "@prisma/client": "^5.22.0",
     "prisma": "^5.22.0",

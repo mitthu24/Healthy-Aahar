@@ -13,9 +13,22 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { UNIT_CATALOG } from '@healthy-aahar/contracts';
 import { SYSTEM_ROLES } from '@healthy-aahar/core';
 import { PrismaClient, ServiceabilityStatus } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
+
+/** Stage F: symbols for the pre-Stage-F hardcoded unit codes, used only to
+ *  back-fill their initial `units` rows — not a general code-to-symbol
+ *  mapping (new units created via the admin UI supply their own symbol). */
+const UNIT_SYMBOLS: Record<string, string> = {
+  g: 'g',
+  kg: 'kg',
+  ml: 'ml',
+  L: 'L',
+  piece: 'pc',
+  pack: 'pack',
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -196,27 +209,67 @@ async function main(): Promise<void> {
     log(`cities=${cityCount} pincodes=${pincodeCount}`);
 
     // ── Settings ─────────────────────────────────────────────────────────
-    // Updated on every run because these are engineering-owned defaults until
-    // the admin settings screen ships in PHASE 04.
+    // Stage F: the admin settings screen now lets an operator edit these
+    // values, so re-running the seed (every deploy — see the API's start
+    // command) must never overwrite a value they've already set. Only
+    // creates a row that doesn't exist yet; an existing row's `value` is
+    // left untouched (its description/is_public metadata, which the admin
+    // UI doesn't expose, still refreshes to match engineering's latest
+    // wording).
     for (const setting of data.settings) {
-      await prisma.setting.upsert({
+      const existing = await prisma.setting.findUnique({
         where: { businessId_key: { businessId: business.id, key: setting.key } },
-        create: {
-          id: uuidv7(),
-          businessId: business.id,
-          key: setting.key,
-          value: setting.value as never,
-          description: setting.description ?? null,
-          isPublic: setting.isPublic ?? false,
-        },
-        update: {
-          value: setting.value as never,
-          description: setting.description ?? null,
-          isPublic: setting.isPublic ?? false,
-        },
+        select: { id: true },
       });
+      if (existing) {
+        await prisma.setting.update({
+          where: { id: existing.id },
+          data: {
+            description: setting.description ?? null,
+            isPublic: setting.isPublic ?? false,
+          },
+        });
+      } else {
+        await prisma.setting.create({
+          data: {
+            id: uuidv7(),
+            businessId: business.id,
+            key: setting.key,
+            value: setting.value as never,
+            description: setting.description ?? null,
+            isPublic: setting.isPublic ?? false,
+          },
+        });
+      }
     }
     log(`settings=${data.settings.length}`);
+
+    // ── Units (Stage F) ──────────────────────────────────────────────────
+    // Back-fills the previously-hardcoded UNIT_CATALOG as real rows, once,
+    // per business — idempotent (skips a code that already exists) and
+    // never overwrites an admin's edit to an existing row's label/symbol/
+    // active status on a later re-run.
+    let unitCount = 0;
+    for (const unit of UNIT_CATALOG) {
+      const existingUnit = await prisma.unit.findUnique({
+        where: { businessId_code: { businessId: business.id, code: unit.code } },
+        select: { id: true },
+      });
+      if (!existingUnit) {
+        await prisma.unit.create({
+          data: {
+            id: uuidv7(),
+            businessId: business.id,
+            code: unit.code,
+            label: unit.label,
+            symbol: UNIT_SYMBOLS[unit.code] ?? unit.code,
+            dimension: unit.dimension,
+          },
+        });
+      }
+      unitCount += 1;
+    }
+    log(`units=${unitCount}`);
 
     // ── RBAC: seven system roles (docs/08 §3) ───────────────────────────
     //

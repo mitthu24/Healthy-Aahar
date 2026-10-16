@@ -160,7 +160,11 @@ export const inviteAdminBodySchema = z
     email: z.string().trim().email().optional(),
     /** STAGE C: alternative to `email` — a founder creating a staff
      *  account with no email address supplies this instead. At least one
-     *  of the two is required (enforced by `.refine` below). */
+     *  of the two is required (enforced by `.refine` below). Stage F keeps
+     *  this in the API contract (an existing, tested capability — an
+     *  employee already signing in with a login ID must keep working) even
+     *  though the standard admin-UI invite form no longer exposes this
+     *  field, offering only email + password. */
     login_id: loginIdSchema.optional(),
     /** STAGE E: required for every employee record, unique within the business. */
     employee_code: employeeCodeSchema,
@@ -168,7 +172,14 @@ export const inviteAdminBodySchema = z
     designation: z.string().trim().max(120).optional(),
     department: z.string().trim().max(120).optional(),
     role_ids: z.array(uuidSchema).min(1),
-    /** Base URL the API appends `?token=<raw>` to — the admin app's "set your password" page. */
+    /** Stage F: an admin-chosen initial password — the employee must change
+     *  it at first login (`mustChangePassword`). Mutually exclusive in
+     *  practice with the setup-link flow below (the service only issues a
+     *  link when this is omitted), but both remain valid API shapes so the
+     *  setup-link flow keeps working for any caller that prefers it. */
+    password: z.string().trim().min(10).max(256).optional(),
+    /** Base URL the API appends `?token=<raw>` to — the admin app's "set your password" page.
+     *  Only meaningful when `password` is omitted. */
     password_setup_continue_url: z.string().url().optional(),
   })
   .refine((body) => Boolean(body.email) || Boolean(body.login_id), {
@@ -189,11 +200,13 @@ export const listAdminUsersQuerySchema = z.object({
 
 export const inviteAdminResponseSchema = adminUserSchema.extend({
   /**
-   * The one-time password-setup link. No email is sent by this API (no
-   * Brevo wiring is part of this phase) — whoever called this endpoint is
-   * responsible for delivering it to the invited admin out of band.
+   * The one-time password-setup link, or `null` when the inviter instead
+   * chose an initial password (`password` in the request body) — in that
+   * case there is nothing left for a setup link to authorize, since the
+   * account already has a credential (the employee must still change it at
+   * first login).
    */
-  password_setup_link: z.string(),
+  password_setup_link: z.string().nullable(),
 });
 
 export const setAdminRolesBodySchema = z.object({
@@ -210,7 +223,21 @@ export const resetAdminPasswordBodySchema = z.object({
 export const passwordSetupLinkResponseSchema = z.object({
   /** One-time, single-use. Never logged; delivered by the caller out of band. */
   password_setup_link: z.string(),
+  /** Stage F: whether the reset email was actually delivered through the
+   *  configured channel — honestly reported; `SKIPPED` means no provider is
+   *  configured in this environment (see `RbacService.resetAdminPassword`),
+   *  never claimed as `SENT` when it wasn't. The link is always returned
+   *  regardless, as a fallback the admin can relay manually. */
+  email_status: z.enum(['SENT', 'SKIPPED', 'FAILED']),
 });
+
+/** Stage F — "Generate temporary password": the plaintext is returned
+ *  exactly once, in this response only — never persisted, logged, or
+ *  retrievable again after this call. */
+export const temporaryPasswordResponseSchema = z.object({
+  temporary_password: z.string(),
+});
+export type TemporaryPasswordResponse = z.infer<typeof temporaryPasswordResponseSchema>;
 
 export const adminUserListResponseSchema = z.object({ data: z.array(adminUserSchema) });
 

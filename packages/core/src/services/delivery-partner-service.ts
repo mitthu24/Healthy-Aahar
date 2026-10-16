@@ -75,6 +75,11 @@ export class DeliveryPartnerService {
       // principle of least privilege for this call site.
       invitedByIsSuperAdmin: false,
     });
+    // This call site never passes `initialPassword`, so inviteAdmin always
+    // issues a setup-link token — null would mean that invariant broke.
+    if (passwordResetLink === null) {
+      throw new Error('inviteAdmin unexpectedly returned no password-reset link.');
+    }
 
     const profile = await this.partners.createProfile(scope, admin.id, {
       vehicleType: params.vehicleType,

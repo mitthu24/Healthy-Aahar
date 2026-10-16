@@ -214,6 +214,26 @@ export async function seedPermissions(
   });
 }
 
+/** Stage F: back-fills the same default units `prisma/seed.ts` seeds for a
+ *  real business — a test-only `seedBusiness` call does NOT run that seed
+ *  script, so any test exercising variant create/update through the real
+ *  admin API (which now validates `unit` against this table) needs this
+ *  first, exactly like `seedPermissions` for RBAC-gated routes. */
+export async function seedUnits(prisma: PrismaClient, businessId: string): Promise<void> {
+  const UNITS = [
+    { code: 'g', label: 'Grams (g)', symbol: 'g', dimension: 'MASS' as const },
+    { code: 'kg', label: 'Kilograms (kg)', symbol: 'kg', dimension: 'MASS' as const },
+    { code: 'ml', label: 'Millilitres (ml)', symbol: 'ml', dimension: 'VOLUME' as const },
+    { code: 'L', label: 'Litres (L)', symbol: 'L', dimension: 'VOLUME' as const },
+    { code: 'piece', label: 'Piece', symbol: 'pc', dimension: 'COUNT' as const },
+    { code: 'pack', label: 'Pack', symbol: 'pack', dimension: 'COUNT' as const },
+  ];
+  await prisma.unit.createMany({
+    data: UNITS.map((u) => ({ id: uuidv7(), businessId, ...u })),
+    skipDuplicates: true,
+  });
+}
+
 /** Seeds one system role scoped to a business, wiring the given permission keys. Permissions must already exist (seedPermissions). */
 export async function seedRole(
   prisma: PrismaClient,

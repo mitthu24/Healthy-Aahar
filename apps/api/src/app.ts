@@ -5,6 +5,7 @@ import {
   AdminAuthService,
   AdminCatalogueService,
   AdminDeliverySlotService,
+  AdminSettingsService,
   CartService,
   CatalogueService,
   CheckoutService,
@@ -23,9 +24,11 @@ import {
 } from '@healthy-aahar/core';
 import {
   PermissionCache,
+  generateTemporaryPassword,
   scryptPasswordHasher,
   sha256SessionTokenHasher,
 } from '@healthy-aahar/auth';
+import { NoopChannel } from '@healthy-aahar/notifications';
 import type { PrismaClient } from '@healthy-aahar/db';
 import type { Logger } from '@healthy-aahar/observability';
 import { createR2StorageAdapter, resolveR2Endpoint } from '@healthy-aahar/storage';
@@ -66,12 +69,17 @@ import {
   PrismaAdminVariantRepository,
 } from './repositories/prisma-admin-catalogue-repository.js';
 import { PrismaAdminDeliverySlotRepository } from './repositories/prisma-admin-delivery-slot-repository.js';
+import {
+  PrismaSettingRepository,
+  PrismaUnitRepository,
+} from './repositories/prisma-settings-repository.js';
 import { adminServiceabilityRoutes } from './routes/admin/serviceability.js';
 import { adminAuthRoutes } from './routes/admin/auth.js';
 import { adminUsersRoutes } from './routes/admin/admin-users.js';
 import { auditLogRoutes } from './routes/admin/audit-log.js';
 import { adminOrdersRoutes } from './routes/admin/orders.js';
 import { adminCatalogueRoutes } from './routes/admin/catalogue.js';
+import { adminSettingsRoutes } from './routes/admin/settings.js';
 import { adminDeliverySlotsRoutes } from './routes/admin/delivery-slots.js';
 import { adminDeliveryPartnersRoutes } from './routes/admin/delivery-partners.js';
 import { adminOrderAssignmentRoutes } from './routes/admin/order-assignment.js';
@@ -151,7 +159,23 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
     sha256SessionTokenHasher,
   );
 
-  const rbacService = new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo);
+  const rbacService = new RbacService(adminRepo, roleRepo, passwordReset, sessionRepo, auditRepo, {
+    users: userRepo,
+    passwordHasher: scryptPasswordHasher,
+    generateTemporaryPassword,
+    // No real email provider adapter exists yet in this codebase (docs/18
+    // §3: "PHASE 11 implements the Brevo ... adapters") — NoopChannel
+    // reports SKIPPED honestly rather than this code pretending to send.
+    // Swapping in a real adapter here (once built) is the only change
+    // needed to make admin_user.password_reset_issued actually deliver.
+    emailChannel: new NoopChannel('EMAIL'),
+  });
+
+  const adminSettings = new AdminSettingsService({
+    units: new PrismaUnitRepository(prisma),
+    settings: new PrismaSettingRepository(prisma),
+    audit: auditRepo,
+  });
 
   const services = {
     serviceability: new ServiceabilityService({
@@ -191,7 +215,10 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
       audit: auditRepo,
       storage: productImageStorage,
       maxUploadBytes: env.R2_UPLOAD_MAX_BYTES,
+      assertUnitIsActive: (scope, code) => adminSettings.assertUnitIsActive(scope, code),
+      getMaxTaxRateBps: (scope) => adminSettings.getMaxTaxRateBps(scope),
     }),
+    adminSettings,
     adminDeliverySlots: new AdminDeliverySlotService({
       slots: new PrismaAdminDeliverySlotRepository(prisma),
       audit: auditRepo,
@@ -356,6 +383,7 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
   app.route('/v1/admin', adminOrdersRoutes());
   app.route('/v1/admin', adminOrderAssignmentRoutes());
   app.route('/v1/admin', adminCatalogueRoutes());
+  app.route('/v1/admin', adminSettingsRoutes());
   app.route('/v1/admin', adminDeliverySlotsRoutes());
   app.route('/v1/admin/delivery-partners', adminDeliveryPartnersRoutes());
   app.route('/v1/admin/delivery', deliveryRoutes());

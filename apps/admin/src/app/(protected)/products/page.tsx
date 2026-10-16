@@ -1,7 +1,15 @@
 'use client';
 
 import type { AdminProductListResponse } from '@healthy-aahar/sdk';
-import { Badge, Button, EmptyState, ErrorState, Skeleton, type BadgeTone } from '@healthy-aahar/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  Input,
+  Skeleton,
+  type BadgeTone,
+} from '@healthy-aahar/ui';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -31,29 +39,48 @@ const STATUS_FILTERS = [
 export default function ProductsPage() {
   const [page, setPage] = useState<AdminProductListResponse | null>(null);
   const [status, setStatus] = useState<string | undefined>(undefined);
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function load(q: string, s: string | undefined) {
     setError(null);
     setPage(null);
     try {
-      setPage(await apiClient.listAdminProducts({ limit: 50, status }));
+      setPage(await apiClient.listAdminProducts({ limit: 50, status: s, q: q || undefined }));
     } catch {
       setError('Could not load products.');
     }
   }
 
+  // Debounced so typing doesn't fire a request per keystroke.
   useEffect(() => {
-    void load();
-  }, [status]);
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    void load(debouncedQuery, status);
+  }, [status, debouncedQuery]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-heading-lg text-sand-900">Products</h1>
         <Link href="/products/new">
           <Button size="sm">New product</Button>
         </Link>
+      </div>
+
+      <div className="mt-4">
+        <Input
+          type="search"
+          placeholder="Search products by name…"
+          aria-label="Search products"
+          className="max-w-sm"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -74,7 +101,7 @@ export default function ProductsPage() {
       </div>
 
       {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
+        <ErrorState message={error} onRetry={() => void load(debouncedQuery, status)} />
       ) : page === null ? (
         <div className="mt-6 space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (

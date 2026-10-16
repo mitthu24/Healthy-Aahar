@@ -6,6 +6,7 @@ import {
   seedAdminUser,
   seedBusiness,
   seedPermissions,
+  seedRole,
   setupTestDatabase,
   truncateAll,
 } from '@healthy-aahar/db/testing';
@@ -388,5 +389,291 @@ describe('password-setup token expiry (complements the reuse test in rbac.integr
     // Still no password — the expired attempt did not silently succeed.
     const user = await prisma.user.findUniqueOrThrow({ where: { id: admin.userId } });
     expect(user.passwordHash).toBeNull();
+  });
+});
+
+describe('invite with an initial password (Stage F — alternative to the setup-link flow)', () => {
+  async function superAdminHeaders() {
+    const admin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    return (await loginAsAdmin(app, admin)).headers;
+  }
+
+  it('creates the account with the chosen password already set, no setup link issued, and forces a change at first login', async () => {
+    const headers = await superAdminHeaders();
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'new.hire@example.test',
+        employee_code: 'EMP-900',
+        full_name: 'New Hire',
+        role_ids: [],
+        password: 'a-chosen-initial-password',
+      }),
+    });
+    // role_ids: [] is invalid (inviteAdmin requires at least one) — use a
+    // real role instead so this test actually exercises the password path.
+    expect(res.status).not.toBe(201);
+
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_ROLE',
+      permissionKeys: ['orders:read'],
+    });
+    const created = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'new.hire2@example.test',
+        employee_code: 'EMP-901',
+        full_name: 'New Hire Two',
+        role_ids: [role.id],
+        password: 'a-chosen-initial-password',
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { password_setup_link: string | null; id: string };
+    expect(body.password_setup_link).toBeNull();
+
+    // Logs in with the chosen password, and is immediately gated.
+    const loginRes = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'new.hire2@example.test',
+        password: 'a-chosen-initial-password',
+      }),
+    });
+    expect(loginRes.status).toBe(200);
+    const loginBody = (await loginRes.json()) as { must_change_password: boolean };
+    expect(loginBody.must_change_password).toBe(true);
+
+    const newHeaders = (
+      await loginAsAdmin(app, { email: 'new.hire2@example.test', password: 'a-chosen-initial-password' })
+    ).headers;
+    const blocked = await app.request('/v1/admin/orders', { headers: newHeaders });
+    expect(blocked.status).toBe(403);
+  });
+
+  it('rejects a password shorter than 10 characters at the schema layer (422)', async () => {
+    const headers = await superAdminHeaders();
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_ROLE2',
+      permissionKeys: ['orders:read'],
+    });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'short.pw@example.test',
+        employee_code: 'EMP-902',
+        full_name: 'Short Password',
+        role_ids: [role.id],
+        password: 'short',
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('rejects a duplicate employee_code with 409, creating nothing', async () => {
+    const headers = await superAdminHeaders();
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_ROLE3',
+      permissionKeys: ['orders:read'],
+    });
+
+    const first = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'dup1@example.test',
+        employee_code: 'EMP-DUP',
+        full_name: 'Dup One',
+        role_ids: [role.id],
+        password: 'a-chosen-initial-password',
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'dup2@example.test',
+        employee_code: 'EMP-DUP',
+        full_name: 'Dup Two',
+        role_ids: [role.id],
+        password: 'a-chosen-initial-password',
+      }),
+    });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('EMPLOYEE_CODE_TAKEN');
+
+    const count = await prisma.adminUser.count({ where: { employeeCode: 'EMP-DUP' } });
+    expect(count).toBe(1);
+  });
+
+  it('the setup-link flow still works unchanged when password is omitted', async () => {
+    const headers = await superAdminHeaders();
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_ROLE4',
+      permissionKeys: ['orders:read'],
+    });
+
+    const res = await app.request('/v1/admin/admin-users', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        email: 'setup.link@example.test',
+        employee_code: 'EMP-903',
+        full_name: 'Setup Link',
+        role_ids: [role.id],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { password_setup_link: string | null };
+    expect(typeof body.password_setup_link).toBe('string');
+    expect(body.password_setup_link).not.toBeNull();
+  });
+});
+
+describe('generate temporary password (Stage F)', () => {
+  it('generates a password, forces a change, and revokes the target\'s existing sessions', async () => {
+    const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+
+    const target = await seedAdminUser(prisma, businessId, { fullName: 'Target Employee' });
+    const { headers: targetHeaders, cookieHeader: targetCookie } = await loginAsAdmin(app, target);
+
+    // Target's session is valid before the reset.
+    const before = await app.request('/v1/admin/auth/me', { headers: targetHeaders });
+    expect(before.status).toBe(200);
+
+    const res = await app.request(
+      `/v1/admin/admin-users/${target.id}/generate-temporary-password`,
+      { method: 'POST', headers: actorHeaders },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { temporary_password: string };
+    expect(body.temporary_password.length).toBeGreaterThanOrEqual(10);
+
+    // The target's OLD session (from before the reset) is now revoked.
+    const reused = await app.request('/v1/admin/auth/me', {
+      headers: { Cookie: targetCookie },
+    });
+    expect(reused.status).toBe(401);
+
+    // The employee signs in with the temporary password and is gated.
+    const loginRes = await app.request('/v1/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: target.email, password: body.temporary_password }),
+    });
+    expect(loginRes.status).toBe(200);
+    const loginBody = (await loginRes.json()) as { must_change_password: boolean };
+    expect(loginBody.must_change_password).toBe(true);
+
+    const newHeaders = (
+      await loginAsAdmin(app, { email: target.email, password: body.temporary_password })
+    ).headers;
+    const blocked = await app.request('/v1/admin/orders', { headers: newHeaders });
+    expect(blocked.status).toBe(403);
+  });
+
+  it('never logs or returns the password anywhere except this one response (audit log carries no password)', async () => {
+    const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+    const target = await seedAdminUser(prisma, businessId, {});
+
+    const res = await app.request(
+      `/v1/admin/admin-users/${target.id}/generate-temporary-password`,
+      { method: 'POST', headers: actorHeaders },
+    );
+    const body = (await res.json()) as { temporary_password: string };
+
+    const entries = await prisma.auditLog.findMany({
+      where: { action: 'admin_user.temporary_password_generated', resourceId: target.id },
+    });
+    expect(entries).toHaveLength(1);
+    expect(JSON.stringify(entries[0]?.metadata ?? {})).not.toContain(body.temporary_password);
+  });
+
+  it('a non-Super-Admin cannot generate a temporary password for a Super Admin (403)', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_MANAGER',
+      permissionKeys: ['admin_users:update'],
+    });
+    const actor = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+    const superAdminTarget = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+
+    const res = await app.request(
+      `/v1/admin/admin-users/${superAdminTarget.id}/generate-temporary-password`,
+      { method: 'POST', headers: actorHeaders },
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('CANNOT_MANAGE_SUPER_ADMIN');
+  });
+
+  it('a Super Admin CAN generate a temporary password for another Super Admin', async () => {
+    const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+    const otherSuperAdmin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+
+    const res = await app.request(
+      `/v1/admin/admin-users/${otherSuperAdmin.id}/generate-temporary-password`,
+      { method: 'POST', headers: actorHeaders },
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('404s for an unknown admin id', async () => {
+    const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+
+    const res = await app.request(
+      '/v1/admin/admin-users/00000000-0000-7000-8000-000000000000/generate-temporary-password',
+      { method: 'POST', headers: actorHeaders },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('requires admin_users:update — a plain admin without it is forbidden', async () => {
+    const role = await seedRole(prisma, businessId, {
+      key: 'STAGE_F_NO_PERM',
+      permissionKeys: ['orders:read'],
+    });
+    const actor = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+    const target = await seedAdminUser(prisma, businessId, {});
+
+    const res = await app.request(
+      `/v1/admin/admin-users/${target.id}/generate-temporary-password`,
+      { method: 'POST', headers: actorHeaders },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('password reset by email — honest status reporting (Stage F)', () => {
+  it('always returns the link, and reports SKIPPED when no email provider is configured (the real state of this environment)', async () => {
+    const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+    const actorHeaders = (await loginAsAdmin(app, actor)).headers;
+    const target = await seedAdminUser(prisma, businessId, {});
+
+    const res = await app.request(`/v1/admin/admin-users/${target.id}/reset-password`, {
+      method: 'POST',
+      headers: actorHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { password_setup_link: string; email_status: string };
+    expect(typeof body.password_setup_link).toBe('string');
+    // Never silently reported as SENT when nothing was actually sent (no
+    // real provider adapter exists yet — see RbacService.resetAdminPassword).
+    expect(body.email_status).toBe('SKIPPED');
   });
 });

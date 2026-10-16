@@ -8,8 +8,23 @@ import type {
   RoleRow,
 } from '../ports/admin-repository.js';
 import type { AuditLogRepository } from '../ports/audit-log-repository.js';
+import type { EmailChannel } from '../ports/email-channel.js';
+import type { PasswordHasher } from '../ports/password-hasher.js';
 import type { SessionRepository } from '../ports/session-repository.js';
+import type { UserRepository } from '../ports/user-repository.js';
 import type { PasswordResetService } from './password-reset-service.js';
+
+/** Stage F deps, appended rather than inserted — keeps every existing
+ *  positional `new RbacService(...)` call site (several in tests) valid
+ *  without updating each one; only the two new flows below need them. */
+export type RbacServiceStageFDeps = {
+  users: UserRepository;
+  passwordHasher: PasswordHasher;
+  generateTemporaryPassword: () => string;
+  /** Omitted = password-reset emails are never attempted; the route layer
+   *  reports this honestly as "not configured" rather than claiming SENT. */
+  emailChannel?: EmailChannel;
+};
 
 /**
  * RBAC administration: invite/deactivate staff, assign roles, manage roles
@@ -34,6 +49,7 @@ export class RbacService {
     private readonly passwordReset: PasswordResetService,
     private readonly sessions: SessionRepository,
     private readonly audit: AuditLogRepository,
+    private readonly stageF?: RbacServiceStageFDeps,
   ) {}
 
   async inviteAdmin(
@@ -59,8 +75,20 @@ export class RbacService {
       invitedByIsSuperAdmin: boolean;
       /** Base URL the caller appends `?token=<raw>` to, e.g. the admin app's "set password" page. */
       passwordResetContinueUrl?: string;
+      /**
+       * STAGE F: an admin-chosen initial password, as an alternative to the
+       * setup-link flow (both remain supported — see `inviteAdminBodySchema`).
+       * When given, the account is created with this password already set
+       * (hashed via the same approved hasher every other credential in this
+       * system uses) and `mustChangePassword = true`, so the employee must
+       * choose their own password at first login before reaching anything
+       * else — the admin's choice is never usable beyond that first sign-in.
+       * No setup-link token is issued in this branch; there is nothing left
+       * for it to authorize.
+       */
+      initialPassword?: string;
     },
-  ): Promise<{ admin: AdminUserRow; passwordResetLink: string }> {
+  ): Promise<{ admin: AdminUserRow; passwordResetLink: string | null }> {
     if (!params.email && !params.loginId) {
       throw new DomainError(
         'VALIDATION_FAILED',
@@ -71,6 +99,16 @@ export class RbacService {
     const roles = await this.loadRolesOrThrow(scope, params.roleIds);
     this.assertMayGrant(roles, params.invitedByIsSuperAdmin);
 
+    let passwordHash: string | undefined;
+    if (params.initialPassword !== undefined) {
+      if (!this.stageF) {
+        throw new Error('RbacService: initialPassword requires Stage F deps to be configured.');
+      }
+      const weakness = this.stageF.passwordHasher.checkStrength(params.initialPassword);
+      if (weakness) throw new DomainError('WEAK_PASSWORD', weakness);
+      passwordHash = await this.stageF.passwordHasher.hash(params.initialPassword);
+    }
+
     const result = await this.admins.invite(scope, {
       email: params.email,
       loginId: params.loginId,
@@ -80,6 +118,8 @@ export class RbacService {
       department: params.department,
       roleIds: params.roleIds,
       invitedByUserId: params.invitedByUserId,
+      passwordHash,
+      mustChangePassword: passwordHash !== undefined,
     });
 
     // Fix #3: a duplicate (email, user_type) / (login_id, user_type) /
@@ -101,11 +141,15 @@ export class RbacService {
     }
     const admin = result.admin;
 
-    const passwordResetLink = await this.passwordReset.issueToken({
-      userId: admin.userId,
-      purpose: 'SETUP',
-      continueUrl: params.passwordResetContinueUrl,
-    });
+    // A password was set directly — no setup token needed or issued.
+    const passwordResetLink =
+      passwordHash === undefined
+        ? await this.passwordReset.issueToken({
+            userId: admin.userId,
+            purpose: 'SETUP',
+            continueUrl: params.passwordResetContinueUrl,
+          })
+        : null;
 
     await this.audit.write(scope, {
       actorUserId: params.invitedByUserId,
@@ -118,10 +162,60 @@ export class RbacService {
         login_id: params.loginId,
         employee_code: params.employeeCode,
         roles: roles.map((r) => r.key),
+        // Never the password itself — only whether this invite used one.
+        used_initial_password: passwordHash !== undefined,
       },
     });
 
     return { admin, passwordResetLink };
+  }
+
+  /**
+   * Stage F — "Generate temporary password": an authorized admin generates
+   * a one-time credential for an EXISTING employee, as an alternative to
+   * `resetAdminPassword`'s email/link flow (e.g. when the employee is
+   * standing right there, or email isn't configured). The plaintext is
+   * returned to the caller EXACTLY ONCE — nothing here logs it, and only
+   * its hash is ever persisted (`UserRepository.setPassword`, the same
+   * single write path `PasswordResetService.setPassword` uses). Every
+   * existing session is revoked, matching `resetAdminPassword`/
+   * `deactivate`'s convention: a credential change must not leave an old
+   * session usable. Subject to the same `assertMayManageTarget` boundary as
+   * every other sensitive action on another admin's account — a
+   * non-Super-Admin cannot do this to a Super Admin, same as it cannot
+   * reset one's password or deactivate one.
+   */
+  async generateTemporaryPassword(
+    scope: BusinessScope,
+    params: { targetAdminUserId: string; actorUserId: string; actorIsSuperAdmin: boolean },
+  ): Promise<{ temporaryPassword: string }> {
+    if (!this.stageF) {
+      throw new Error('RbacService: generateTemporaryPassword requires Stage F deps.');
+    }
+
+    const target = await this.admins.findById(scope, params.targetAdminUserId);
+    if (!target || target.deletedAt) {
+      throw new DomainError('NOT_FOUND', 'Admin user not found.');
+    }
+    this.assertMayManageTarget(target, params.actorIsSuperAdmin);
+
+    const temporaryPassword = this.stageF.generateTemporaryPassword();
+    const passwordHash = await this.stageF.passwordHasher.hash(temporaryPassword);
+
+    await this.stageF.users.setPassword(target.userId, passwordHash);
+    await this.admins.setMustChangePassword(scope, target.id, true);
+    await this.sessions.revokeAllForUser(target.userId);
+
+    await this.audit.write(scope, {
+      actorUserId: params.actorUserId,
+      actorType: 'ADMIN',
+      action: 'admin_user.temporary_password_generated',
+      resourceType: 'admin_user',
+      resourceId: target.id,
+      // Who did it, on whom — never the password itself.
+    });
+
+    return { temporaryPassword };
   }
 
   /**
@@ -141,7 +235,7 @@ export class RbacService {
       actorIsSuperAdmin: boolean;
       passwordResetContinueUrl?: string;
     },
-  ): Promise<{ passwordResetLink: string }> {
+  ): Promise<{ passwordResetLink: string; emailStatus: 'SENT' | 'SKIPPED' | 'FAILED' }> {
     const target = await this.admins.findById(scope, params.targetAdminUserId);
     if (!target || target.deletedAt) {
       throw new DomainError('NOT_FOUND', 'Admin user not found.');
@@ -154,15 +248,34 @@ export class RbacService {
       continueUrl: params.passwordResetContinueUrl,
     });
 
+    // Stage F: actually attempt delivery through the configured channel,
+    // rather than only ever handing the link back for the admin to copy —
+    // reported HONESTLY either way (never claims SENT when it wasn't; see
+    // `EmailChannel`'s doc comment for why no real provider exists yet in
+    // every environment). The link itself is still always returned too, as
+    // a fallback the admin can relay manually regardless of email status.
+    let emailStatus: 'SENT' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
+    if (this.stageF?.emailChannel && target.email) {
+      const result = await this.stageF.emailChannel.send({
+        recipient: { userId: target.userId, email: target.email },
+        templateKey: 'admin_password_reset',
+        variables: { full_name: target.fullName, reset_link: passwordResetLink },
+        locale: 'en-IN',
+        dedupeKey: `admin_password_reset:${target.userId}:${Date.now()}`,
+      });
+      emailStatus = result.status === 'SENT' ? 'SENT' : result.status === 'FAILED' ? 'FAILED' : 'SKIPPED';
+    }
+
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
       actorType: 'ADMIN',
       action: 'admin_user.password_reset_issued',
       resourceType: 'admin_user',
       resourceId: target.id,
+      metadata: { email_status: emailStatus },
     });
 
-    return { passwordResetLink };
+    return { passwordResetLink, emailStatus };
   }
 
   async setRoles(

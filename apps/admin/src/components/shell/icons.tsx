@@ -110,6 +110,15 @@ export function AuditIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+      <path d="M16.2 10c0 .4 0 .8-.1 1.2l1.5 1.2-1.5 2.6-1.8-.5c-.6.5-1.3.9-2 1.2l-.3 1.8H9.2l-.3-1.8c-.7-.3-1.4-.7-2-1.2l-1.8.5-1.5-2.6 1.5-1.2c-.1-.4-.1-.8-.1-1.2s0-.8.1-1.2L3.6 7.6l1.5-2.6 1.8.5c.6-.5 1.3-.9 2-1.2L9.2 2.5h3.6l.3 1.8c.7.3 1.4.7 2 1.2l1.8-.5 1.5 2.6-1.5 1.2c.1.4.1.8.1 1.2Z" />
+    </Icon>
+  );
+}
+
 export function MenuIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
