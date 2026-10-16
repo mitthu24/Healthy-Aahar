@@ -279,10 +279,27 @@ export function createApp(options: CreateAppOptions): Hono<AppBindings> {
 
   // Explicit origin allow-list. No wildcard, no regex — the env schema
   // rejects wildcards outright in production (docs/23 §7).
+  //
+  // A rejected origin still gets a 200 (or whatever the route returns) —
+  // Hono's cors() just omits Access-Control-Allow-Origin, which the
+  // browser alone enforces by discarding the response from JS. That is
+  // invisible here: no log line, no non-2xx status, nothing a server-side
+  // health check or curl would ever see (incident: the deployed frontend
+  // silently failed to load the catalogue because its exact origin was
+  // missing from ALLOWED_ORIGINS, and nothing in these logs said so).
+  // Logging the rejection here is the only way an operator reading
+  // Railway logs — rather than a browser's network tab — can find this.
   app.use(
     '*',
     cors({
-      origin: (origin) => (env.ALLOWED_ORIGINS.includes(origin) ? origin : null),
+      origin: (origin, c) => {
+        if (env.ALLOWED_ORIGINS.includes(origin)) return origin;
+        c.get('logger')?.warn(
+          { msg: 'request.cors_origin_rejected', origin },
+          'CORS: origin not in ALLOWED_ORIGINS',
+        );
+        return null;
+      },
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: [
         'Authorization',

@@ -1,7 +1,8 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
 import type { PrismaClient } from '@healthy-aahar/db';
+import type { Logger } from '@healthy-aahar/observability';
 import { createLogger } from '@healthy-aahar/observability';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from './app.js';
 
@@ -272,6 +273,54 @@ describe('CORS', () => {
     // Native mobile clients send no Origin. CORS must not stand in their way.
     const res = await buildApp().request('/v1/health');
     expect(res.status).toBe(200);
+  });
+
+  it('logs a rejected origin — the only server-side trace of an otherwise silent browser-only failure', async () => {
+    // Incident: a deployed frontend's exact origin was missing from
+    // ALLOWED_ORIGINS. The request still returned 200 (CORS is enforced
+    // by the browser discarding the response, not by the server
+    // refusing it), so nothing in the server logs showed it — only the
+    // browser's own network tab did. This asserts the fix: the rejection
+    // is now logged server-side too.
+    const warn = vi.fn();
+    const fakeLogger = {
+      child: () => ({ warn, info: vi.fn(), error: vi.fn() }),
+    } as unknown as Logger;
+
+    const app = createApp({
+      env: testEnv(),
+      prisma: fakePrisma(),
+      logger: fakeLogger,
+      businessId: BUSINESS_ID,
+    });
+
+    await app.request('/v1/health', { headers: { Origin: 'https://evil.example.com' } });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: 'request.cors_origin_rejected',
+        origin: 'https://evil.example.com',
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('does NOT log anything for an allowed origin', async () => {
+    const warn = vi.fn();
+    const fakeLogger = {
+      child: () => ({ warn, info: vi.fn(), error: vi.fn() }),
+    } as unknown as Logger;
+
+    const app = createApp({
+      env: testEnv(),
+      prisma: fakePrisma(),
+      logger: fakeLogger,
+      businessId: BUSINESS_ID,
+    });
+
+    await app.request('/v1/health', { headers: { Origin: 'http://localhost:3001' } });
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
