@@ -13,7 +13,12 @@ export { Tabs, TabList, Tab, TabPanel } from './tabs.js';
 export { Dialog, type DialogProps } from './dialog.js';
 export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog.js';
 export { DropdownMenu, type DropdownItem } from './dropdown-menu.js';
-export { DateRangePicker, type DateRange, type DateRangePreset } from './date-range-picker.js';
+export {
+  DateRangePicker,
+  rangeForPreset,
+  type DateRange,
+  type DateRangePreset,
+} from './date-range-picker.js';
 export { Pagination, type PaginationMeta } from './pagination.js';
 export { FilterBar } from './filter-bar.js';
 export { ResponsiveContainer } from './responsive-container.js';

@@ -43,6 +43,7 @@ function row(overrides: Partial<AdminUserRow> = {}): AdminUserRow {
     userId: '0193dddd-0000-7000-8000-000000000001',
     email: 'staff@example.test',
     loginId: null,
+    employeeCode: null,
     fullName: 'Staff Member',
     designation: null,
     department: null,
@@ -247,6 +248,7 @@ describe('RbacService.deactivate', () => {
         targetAdminUserId: ACTOR_ADMIN_ID,
         actorAdminUserId: ACTOR_ADMIN_ID,
         actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: true,
       }),
     ).rejects.toMatchObject({ code: 'CANNOT_DEACTIVATE_SELF' });
 
@@ -262,6 +264,7 @@ describe('RbacService.deactivate', () => {
       targetAdminUserId: target.id,
       actorAdminUserId: ACTOR_ADMIN_ID,
       actorUserId: ACTOR_USER_ID,
+      actorIsSuperAdmin: true,
     });
 
     expect(updated.deletedAt).not.toBeNull();
@@ -279,6 +282,7 @@ describe('RbacService.deactivate', () => {
         targetAdminUserId: target.id,
         actorAdminUserId: ACTOR_ADMIN_ID,
         actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: true,
       }),
     ).rejects.toMatchObject({ code: 'LAST_SUPER_ADMIN' });
   });
@@ -292,6 +296,7 @@ describe('RbacService.reactivate', () => {
     const updated = await service.reactivate(BUSINESS_ID, {
       targetAdminUserId: target.id,
       actorUserId: ACTOR_USER_ID,
+      actorIsSuperAdmin: true,
     });
 
     expect(updated.deletedAt).toBeNull();
@@ -306,6 +311,7 @@ describe('RbacService.reactivate', () => {
       service.reactivate(BUSINESS_ID, {
         targetAdminUserId: target.id,
         actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: true,
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
@@ -373,6 +379,97 @@ describe('RbacService.setRoles', () => {
   });
 });
 
+describe('RbacService target-authorization scoping (Stage E)', () => {
+  it('refuses a non-Super-Admin resetting a Super Admin’s password', async () => {
+    const target = row({ id: 'super-target', isSuperAdmin: true });
+    admins.rows.set(target.id, target);
+    const svc = new RbacService(
+      admins,
+      roles,
+      { issueToken: async () => 'token' } as unknown as PasswordResetService,
+      sessions,
+      audit,
+    );
+
+    await expect(
+      svc.resetAdminPassword(BUSINESS_ID, {
+        targetAdminUserId: target.id,
+        actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: false,
+      }),
+    ).rejects.toMatchObject({ code: 'CANNOT_MANAGE_SUPER_ADMIN' });
+  });
+
+  it('allows a Super Admin resetting another Super Admin’s password', async () => {
+    const target = row({ id: 'super-target-2', isSuperAdmin: true });
+    admins.rows.set(target.id, target);
+    const svc = new RbacService(
+      admins,
+      roles,
+      { issueToken: async () => 'token' } as unknown as PasswordResetService,
+      sessions,
+      audit,
+    );
+
+    await expect(
+      svc.resetAdminPassword(BUSINESS_ID, {
+        targetAdminUserId: target.id,
+        actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: true,
+      }),
+    ).resolves.toMatchObject({ passwordResetLink: 'token' });
+  });
+
+  it('refuses a non-Super-Admin deactivating a Super Admin', async () => {
+    const target = row({ id: 'super-target-3', isSuperAdmin: true });
+    admins.rows.set(target.id, target);
+    admins.activeSuperAdminCount = 5;
+
+    await expect(
+      service.deactivate(BUSINESS_ID, {
+        targetAdminUserId: target.id,
+        actorAdminUserId: ACTOR_ADMIN_ID,
+        actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: false,
+      }),
+    ).rejects.toMatchObject({ code: 'CANNOT_MANAGE_SUPER_ADMIN' });
+  });
+
+  it('refuses a non-Super-Admin updating a Super Admin’s details', async () => {
+    const target = row({ id: 'super-target-4', isSuperAdmin: true });
+    admins.rows.set(target.id, target);
+
+    await expect(
+      service.updateDetails(BUSINESS_ID, {
+        targetAdminUserId: target.id,
+        fullName: 'New Name',
+        actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: false,
+      }),
+    ).rejects.toMatchObject({ code: 'CANNOT_MANAGE_SUPER_ADMIN' });
+  });
+
+  it('does not restrict acting on a non-Super-Admin target', async () => {
+    const target = row({ id: 'plain-target', isSuperAdmin: false });
+    admins.rows.set(target.id, target);
+    const svc = new RbacService(
+      admins,
+      roles,
+      { issueToken: async () => 'token' } as unknown as PasswordResetService,
+      sessions,
+      audit,
+    );
+
+    await expect(
+      svc.resetAdminPassword(BUSINESS_ID, {
+        targetAdminUserId: target.id,
+        actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: false,
+      }),
+    ).resolves.toMatchObject({ passwordResetLink: 'token' });
+  });
+});
+
 describe('RbacService.updateDetails', () => {
   it('updates name/designation/department without touching roles', async () => {
     const target = row({ id: 'target-8', roleKeys: ['OPERATIONS'] });
@@ -384,6 +481,7 @@ describe('RbacService.updateDetails', () => {
       designation: 'Ops Lead',
       department: 'Operations',
       actorUserId: ACTOR_USER_ID,
+      actorIsSuperAdmin: true,
     });
 
     expect(updated.fullName).toBe('New Name');
@@ -401,6 +499,7 @@ describe('RbacService.updateDetails', () => {
         targetAdminUserId: 'does-not-exist',
         fullName: 'X',
         actorUserId: ACTOR_USER_ID,
+        actorIsSuperAdmin: true,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });

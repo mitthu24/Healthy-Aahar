@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { moneySchema, paginatedSchema, slugSchema, uuidSchema } from './common.js';
+import { unitCodeSchema } from './units.js';
 
 /**
  * Admin catalogue management (Phase 04B).
@@ -20,6 +21,10 @@ export const adminCategorySchema = z.object({
   slug: slugSchema,
   description: z.string().nullable(),
   image_url: z.string().nullable(),
+  /** STAGE E: subcategory support — a category with a non-null `parent_id`
+   *  is itself a leaf; the service layer enforces exactly two levels
+   *  (BR-C1), never deeper. */
+  parent_id: uuidSchema.nullable(),
   display_order: z.number().int(),
   is_active: z.boolean(),
   product_count: z.number().int(),
@@ -43,6 +48,9 @@ export const createCategoryBodySchema = z.object({
   slug: slugSchema,
   description: z.string().trim().max(2000).optional(),
   image_url: z.string().trim().url().max(2048).optional(),
+  /** Set to make this a subcategory. The service refuses a parent that
+   *  itself already has a parent — exactly two levels (BR-C1). */
+  parent_id: uuidSchema.optional(),
   display_order: z.number().int().min(0).default(0),
 });
 export type CreateCategoryBody = z.infer<typeof createCategoryBodySchema>;
@@ -51,6 +59,7 @@ export const updateCategoryBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   image_url: z.string().trim().url().max(2048).nullable().optional(),
+  parent_id: uuidSchema.nullable().optional(),
   display_order: z.number().int().min(0).optional(),
   is_active: z.boolean().optional(),
 });
@@ -66,6 +75,9 @@ export const adminVariantSchema = z.object({
   unit_value: z.string(),
   mrp: moneySchema.nullable(),
   price: moneySchema,
+  /** Basis points (1/100 of a percent) — e.g. 500 = 5%. Default 0 (no tax
+   *  configured yet) rather than inferring a rate from anywhere else. */
+  tax_rate_bps: z.number().int(),
   availability: z.enum(['AVAILABLE', 'OUT_OF_STOCK', 'DISCONTINUED']),
   is_default: z.boolean(),
   display_order: z.number().int(),
@@ -83,13 +95,23 @@ export const adminVariantSchema = z.object({
 });
 export type AdminVariantDto = z.infer<typeof adminVariantSchema>;
 
+/** `g-k_01` etc — letters, digits, hyphens and underscores only, matching
+ *  how SKUs are actually formatted in practice; never blank/whitespace. */
+const skuSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .regex(/^[A-Za-z0-9_-]+$/, 'SKU may only contain letters, digits, hyphens and underscores');
+
 export const createVariantBodySchema = z.object({
-  sku: z.string().trim().min(1).max(60),
+  sku: skuSchema,
   name: z.string().trim().min(1).max(120),
-  unit: z.string().trim().min(1).max(20),
+  unit: unitCodeSchema,
   unit_value: z.number().positive(),
   mrp_paise: z.number().int().positive().optional(),
   price_paise: z.number().int().positive(),
+  tax_rate_bps: z.number().int().min(0).max(10_000).optional(),
   is_default: z.boolean().optional(),
   max_order_quantity: z.number().int().positive().optional(),
   /** Omitted or zero: no stock tracked yet, set separately via the inventory endpoint. */
@@ -99,10 +121,11 @@ export type CreateVariantBody = z.infer<typeof createVariantBodySchema>;
 
 export const updateVariantBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  unit: z.string().trim().min(1).max(20).optional(),
+  unit: unitCodeSchema.optional(),
   unit_value: z.number().positive().optional(),
   mrp_paise: z.number().int().positive().nullable().optional(),
   price_paise: z.number().int().positive().optional(),
+  tax_rate_bps: z.number().int().min(0).max(10_000).optional(),
   availability: z.enum(['AVAILABLE', 'OUT_OF_STOCK', 'DISCONTINUED']).optional(),
   is_default: z.boolean().optional(),
   max_order_quantity: z.number().int().positive().nullable().optional(),

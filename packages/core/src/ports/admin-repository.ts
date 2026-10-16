@@ -8,6 +8,10 @@ export type AdminUserRow = {
   email: string | null;
   /** STAGE C: email-free login identifier, see schema.prisma's `User.loginId` doc comment. */
   loginId: string | null;
+  /** STAGE E: founder-assigned employee ID, unique within the business.
+   *  Required on invite, distinct from login ID (which gates authentication;
+   *  this is an HR/ops identifier a business may already use elsewhere). */
+  employeeCode: string | null;
   fullName: string;
   designation: string | null;
   department: string | null;
@@ -38,6 +42,10 @@ export type InviteAdminInput = {
    *  `RbacService.inviteAdmin`, not this repository. */
   email?: string | undefined;
   loginId?: string | undefined;
+  /** Required for a staff invite (`inviteAdminBodySchema`); the delivery-
+   *  partner creation flow reuses this same repository method but doesn't
+   *  require one. */
+  employeeCode?: string | undefined;
   fullName: string;
   designation?: string | undefined;
   department?: string | undefined;
@@ -49,6 +57,7 @@ export type UpdateAdminDetailsInput = {
   fullName?: string | undefined;
   designation?: string | undefined;
   department?: string | undefined;
+  employeeCode?: string | undefined;
 };
 
 export type AdminUserListFilter = {
@@ -65,7 +74,8 @@ export type AdminUserListFilter = {
  * `ADMIN_ALREADY_INVITED` code instead of an unhandled 500.
  */
 export type InviteAdminResult =
-  { ok: true; admin: AdminUserRow } | { ok: false; reason: 'EMAIL_TAKEN' | 'LOGIN_ID_TAKEN' };
+  | { ok: true; admin: AdminUserRow }
+  | { ok: false; reason: 'EMAIL_TAKEN' | 'LOGIN_ID_TAKEN' | 'EMPLOYEE_CODE_TAKEN' };
 
 export interface AdminRepository {
   findByUserId(

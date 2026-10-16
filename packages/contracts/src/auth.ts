@@ -134,11 +134,19 @@ export const passwordSetupBodySchema = z.object({
 
 // ── Admin users (RBAC) ───────────────────────────────────────────────────
 
+// STAGE E: founder-assigned employee/HR identifier — distinct from
+// `login_id` (which gates authentication). Case is preserved (unlike
+// `login_id`): businesses commonly already use a specific-case employee
+// code scheme (e.g. "EMP-014") elsewhere, and normalizing it here would
+// make the stored value diverge from whatever the founder actually types.
+export const employeeCodeSchema = z.string().trim().min(1).max(40);
+
 export const adminUserSchema = z.object({
   id: uuidSchema,
   user_id: uuidSchema,
   email: z.string().nullable(),
   login_id: z.string().nullable(),
+  employee_code: z.string().nullable(),
   full_name: z.string(),
   designation: z.string().nullable(),
   department: z.string().nullable(),
@@ -154,6 +162,8 @@ export const inviteAdminBodySchema = z
      *  account with no email address supplies this instead. At least one
      *  of the two is required (enforced by `.refine` below). */
     login_id: loginIdSchema.optional(),
+    /** STAGE E: required for every employee record, unique within the business. */
+    employee_code: employeeCodeSchema,
     full_name: z.string().trim().min(1).max(120),
     designation: z.string().trim().max(120).optional(),
     department: z.string().trim().max(120).optional(),
@@ -170,6 +180,7 @@ export const updateAdminDetailsBodySchema = z.object({
   full_name: z.string().trim().min(1).max(120).optional(),
   designation: z.string().trim().max(120).optional(),
   department: z.string().trim().max(120).optional(),
+  employee_code: employeeCodeSchema.optional(),
 });
 
 export const listAdminUsersQuerySchema = z.object({

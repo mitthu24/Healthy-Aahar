@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 
 function DetailsForm({ employee, onSaved }: { employee: AdminUser; onSaved: () => void }) {
   const [fullName, setFullName] = useState(employee.full_name);
+  const [employeeCode, setEmployeeCode] = useState(employee.employee_code ?? '');
   const [designation, setDesignation] = useState(employee.designation ?? '');
   const [department, setDepartment] = useState(employee.department ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,7 @@ function DetailsForm({ employee, onSaved }: { employee: AdminUser; onSaved: () =
     try {
       await apiClient.updateAdminUser(employee.id, {
         full_name: fullName,
+        employee_code: employeeCode.trim() || undefined,
         designation: designation || undefined,
         department: department || undefined,
       });
@@ -42,6 +44,15 @@ function DetailsForm({ employee, onSaved }: { employee: AdminUser; onSaved: () =
           className="mt-1"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor="edit-employee-code">Employee ID</FieldLabel>
+        <Input
+          id="edit-employee-code"
+          className="mt-1"
+          value={employeeCode}
+          onChange={(e) => setEmployeeCode(e.target.value)}
         />
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -210,7 +221,11 @@ export default function EmployeeDetailPage() {
         <div>
           <h1 className="font-display text-heading-lg text-sand-900">{employee.full_name}</h1>
           <p className="text-body-sm text-sand-600 mt-1">
-            {[employee.email, employee.login_id ? `Login ID: ${employee.login_id}` : null]
+            {[
+              employee.email,
+              employee.login_id ? `Login ID: ${employee.login_id}` : null,
+              employee.employee_code ? `Employee ID: ${employee.employee_code}` : null,
+            ]
               .filter(Boolean)
               .join(' · ') || 'No email or login ID on file'}
           </p>

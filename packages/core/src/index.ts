@@ -80,6 +80,7 @@ export type {
   OrderStatusHistoryRow,
   OrderRow,
   OrderListFilter,
+  OrderStatusCountRow,
   TransitionInput,
   OrderRepository,
 } from './ports/order-repository.js';

@@ -66,13 +66,19 @@ registerRoute({
   permission: 'catalog:create',
   summary: 'Create a category',
   phase: '04b',
-  errors: ['SLUG_ALREADY_IN_USE', 'VALIDATION_FAILED'],
+  errors: [
+    'SLUG_ALREADY_IN_USE',
+    'VALIDATION_FAILED',
+    'CATEGORY_NOT_FOUND',
+    'INVALID_CATEGORY_PARENT',
+  ],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: createCategoryBodySchema },
     responses: {
       201: { description: 'Created', schema: adminCategorySchema },
       409: jsonError('Slug in use'),
+      422: jsonError('parent_id names a category that is itself a subcategory'),
     },
   },
 });
@@ -101,13 +107,14 @@ registerRoute({
   permission: 'catalog:update',
   summary: 'Update a category',
   phase: '04b',
-  errors: ['CATEGORY_NOT_FOUND'],
+  errors: ['CATEGORY_NOT_FOUND', 'INVALID_CATEGORY_PARENT'],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: updateCategoryBodySchema },
     responses: {
       200: { description: 'Updated', schema: adminCategorySchema },
       404: jsonError('Not found'),
+      422: jsonError('Invalid parent_id — self-reference, 3rd level, or has its own subcategories'),
     },
   },
 });
@@ -186,6 +193,27 @@ registerRoute({
     tags: ['Admin: Catalogue'],
     request: { body: updateProductBodySchema },
     responses: { 200: { description: 'Updated', schema: adminProductSchema } },
+  },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/v1/admin/products/{id}',
+  audience: 'admin',
+  permission: 'catalog:delete',
+  summary: 'Delete a product with no order history (prefer archiving otherwise)',
+  phase: 'stage-e',
+  errors: ['PRODUCT_NOT_FOUND', 'PRODUCT_REFERENCED_BY_ORDERS'],
+  openapi: {
+    description:
+      'Soft-deletes the product and its variants. Refused with 409 if any variant has ' +
+      'ever appeared in an order, a combo, or an inventory movement — archive ' +
+      '(POST .../status with ARCHIVED) instead, which never touches order history.',
+    tags: ['Admin: Catalogue'],
+    responses: {
+      204: { description: 'Deleted' },
+      409: jsonError('This product has order or inventory history — archive it instead'),
+    },
   },
 });
 
@@ -290,11 +318,14 @@ registerRoute({
   permission: 'catalog:create',
   summary: 'Add a variant to a product',
   phase: '04b',
-  errors: ['PRODUCT_NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['PRODUCT_NOT_FOUND', 'VALIDATION_FAILED', 'SKU_TAKEN'],
   openapi: {
     tags: ['Admin: Catalogue'],
     request: { body: createVariantBodySchema },
-    responses: { 201: { description: 'Variant created', schema: adminVariantSchema } },
+    responses: {
+      201: { description: 'Variant created', schema: adminVariantSchema },
+      409: jsonError('SKU already in use'),
+    },
   },
 });
 
@@ -310,6 +341,27 @@ registerRoute({
     tags: ['Admin: Catalogue'],
     request: { body: updateVariantBodySchema },
     responses: { 200: { description: 'Variant updated', schema: adminVariantSchema } },
+  },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/v1/admin/variants/{id}',
+  audience: 'admin',
+  permission: 'catalog:delete',
+  summary: 'Delete a variant with no order history (prefer discontinuing otherwise)',
+  phase: 'stage-e',
+  errors: ['VARIANT_NOT_FOUND', 'VARIANT_REFERENCED_BY_ORDERS'],
+  openapi: {
+    description:
+      'Soft-deletes the variant. Refused with 409 if it has ever appeared in an order, ' +
+      'a combo, or an inventory movement — set it DISCONTINUED instead (PATCH with ' +
+      'availability), which never touches order history.',
+    tags: ['Admin: Catalogue'],
+    responses: {
+      204: { description: 'Deleted' },
+      409: jsonError('This variant has order or inventory history — discontinue it instead'),
+    },
   },
 });
 
@@ -370,6 +422,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         slug: body.slug,
         description: body.description,
         imageUrl: body.image_url,
+        parentId: body.parent_id,
         displayOrder: body.display_order,
       },
       actor.userId,
@@ -397,6 +450,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.description !== undefined ? { description: body.description } : {}),
         ...(body.image_url !== undefined ? { imageUrl: body.image_url } : {}),
+        ...(body.parent_id !== undefined ? { parentId: body.parent_id } : {}),
         ...(body.display_order !== undefined ? { displayOrder: body.display_order } : {}),
         ...(body.is_active !== undefined ? { isActive: body.is_active } : {}),
       },
@@ -490,6 +544,17 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
     return c.json(toAdminProductView(product));
   });
 
+  app.delete('/products/:id', async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+    await c.env.services.adminCatalogue.deleteProduct(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      actor.userId,
+    );
+    return c.body(null, 204);
+  });
+
   app.post('/products/:id/status', async (c) => {
     const body = setProductStatusBodySchema.parse(await c.req.json());
     const actor = c.get('actor');
@@ -578,6 +643,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         unitValue: body.unit_value,
         mrpPaise: body.mrp_paise,
         pricePaise: body.price_paise,
+        taxRateBps: body.tax_rate_bps,
         isDefault: body.is_default,
         maxOrderQuantity: body.max_order_quantity,
         initialQuantityOnHand: body.initial_quantity_on_hand,
@@ -601,6 +667,7 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
         ...(body.unit_value !== undefined ? { unitValue: body.unit_value } : {}),
         ...(body.mrp_paise !== undefined ? { mrpPaise: body.mrp_paise } : {}),
         ...(body.price_paise !== undefined ? { pricePaise: body.price_paise } : {}),
+        ...(body.tax_rate_bps !== undefined ? { taxRateBps: body.tax_rate_bps } : {}),
         ...(body.availability !== undefined ? { availability: body.availability } : {}),
         ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}),
         ...(body.max_order_quantity !== undefined
@@ -610,6 +677,17 @@ export function adminCatalogueRoutes(): Hono<AppBindings> {
       actor.userId,
     );
     return c.json(toAdminVariantView(variant));
+  });
+
+  app.delete('/variants/:id', async (c) => {
+    const actor = c.get('actor');
+    if (actor.kind !== 'ADMIN') throw new Error('unreachable: adminAuth guarantees ADMIN');
+    await c.env.services.adminCatalogue.deleteVariant(
+      businessScope(c.env.businessId),
+      c.req.param('id'),
+      actor.userId,
+    );
+    return c.body(null, 204);
   });
 
   app.post('/variants/:id/stock', async (c) => {

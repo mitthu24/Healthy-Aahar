@@ -90,6 +90,9 @@ class FakeOrderRepository implements OrderRepository {
   async getForAdmin(): Promise<never> {
     throw new Error('not used');
   }
+  async getStatusCounts(): Promise<never> {
+    throw new Error('not used');
+  }
   async listForPartner(
     _scope: BusinessScope,
     partnerAdminUserId: string,

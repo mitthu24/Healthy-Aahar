@@ -18,6 +18,7 @@ export type AdminCategoryRow = {
   slug: string;
   description: string | null;
   imageUrl: string | null;
+  parentId: string | null;
   displayOrder: number;
   isActive: boolean;
   productCount: number;
@@ -30,6 +31,7 @@ export type CategoryInput = {
   slug: string;
   description?: string | undefined;
   imageUrl?: string | undefined;
+  parentId?: string | undefined;
   displayOrder: number;
 };
 
@@ -44,6 +46,7 @@ export type CategoryUpdateInput = Partial<{
   name: string;
   description: string | null;
   imageUrl: string | null;
+  parentId: string | null;
   displayOrder: number;
   isActive: boolean;
 }>;
@@ -52,6 +55,8 @@ export interface AdminCategoryRepository {
   list(scope: BusinessScope, filter: CategoryListFilter): Promise<AdminCategoryRow[]>;
   findById(scope: BusinessScope, id: string): Promise<AdminCategoryRow | null>;
   findBySlug(scope: BusinessScope, slug: string): Promise<AdminCategoryRow | null>;
+  /** Whether any non-deleted category currently has `categoryId` as its parent. */
+  hasChildren(scope: BusinessScope, categoryId: string): Promise<boolean>;
   create(
     scope: BusinessScope,
     input: CategoryInput,
@@ -84,6 +89,7 @@ export type AdminVariantRow = {
   unitValue: string;
   mrpPaise: bigint | null;
   pricePaise: bigint;
+  taxRateBps: number;
   availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
   isDefault: boolean;
   displayOrder: number;
@@ -98,6 +104,7 @@ export type VariantInput = {
   unitValue: number;
   mrpPaise?: number | undefined;
   pricePaise: number;
+  taxRateBps?: number | undefined;
   isDefault?: boolean | undefined;
   maxOrderQuantity?: number | undefined;
   initialQuantityOnHand?: number | undefined;
@@ -109,6 +116,7 @@ export type VariantUpdateInput = Partial<{
   unitValue: number;
   mrpPaise: number | null;
   pricePaise: number;
+  taxRateBps: number;
   availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
   isDefault: boolean;
   maxOrderQuantity: number | null;
@@ -122,6 +130,18 @@ export interface AdminVariantRepository {
     input: VariantUpdateInput,
   ): Promise<AdminVariantRow>;
   findById(scope: BusinessScope, variantId: string): Promise<AdminVariantRow | null>;
+
+  /**
+   * Atomically verifies zero references AND soft-deletes (`deleted_at`),
+   * inside one transaction: locks the variant row (`SELECT ... FOR UPDATE`),
+   * THEN checks for references, THEN writes — checkout's own variant
+   * lookup takes the same row lock before it inserts an order item
+   * (`prisma-checkout-repository.ts`), so whichever of the two operations
+   * gets here first forces the other to wait and act on committed data,
+   * rather than racing it. Returns `false` (no row changed) when the
+   * variant is referenced, already deleted, or not in this business.
+   */
+  deleteIfUnreferenced(scope: BusinessScope, variantId: string): Promise<boolean>;
 
   /**
    * Sets on-hand stock to an ABSOLUTE value via a conditional UPDATE
@@ -242,6 +262,17 @@ export interface AdminProductRepository {
     input: { url: string; altText?: string | undefined; displayOrder: number },
   ): Promise<AdminProductRow>;
   removeImage(scope: BusinessScope, productId: string, imageId: string): Promise<AdminProductRow>;
+
+  /**
+   * Atomically verifies none of this product's variants are referenced AND
+   * soft-deletes the product and all its variants (`deleted_at`) — same
+   * lock-then-check-then-write transaction shape as
+   * `AdminVariantRepository.deleteIfUnreferenced`, locking the product row
+   * and every one of its variant rows before checking references. Returns
+   * `false` when any variant is referenced, the product is already
+   * deleted, or it isn't in this business.
+   */
+  deleteIfUnreferenced(scope: BusinessScope, productId: string): Promise<boolean>;
 
   /**
    * Device-upload counterpart to `addImage` (PHASE 05). `addImage` is for

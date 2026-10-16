@@ -10,6 +10,7 @@ export default function InviteEmployeePage() {
   const [roles, setRoles] = useState<Role[] | null>(null);
   const [email, setEmail] = useState('');
   const [loginId, setLoginId] = useState('');
+  const [employeeCode, setEmployeeCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [designation, setDesignation] = useState('');
   const [department, setDepartment] = useState('');
@@ -40,11 +41,16 @@ export default function InviteEmployeePage() {
       setError('Enter an email or a login ID.');
       return;
     }
+    if (!employeeCode.trim()) {
+      setError('Enter an employee ID.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const result = await apiClient.inviteAdminUser({
         email: email.trim() || undefined,
         login_id: loginId.trim() || undefined,
+        employee_code: employeeCode.trim(),
         full_name: fullName,
         designation: designation || undefined,
         department: department || undefined,
@@ -151,6 +157,17 @@ export default function InviteEmployeePage() {
             Provide an email, a login ID, or both — at least one is required so this employee can
             sign in.
           </p>
+          <div>
+            <FieldLabel htmlFor="emp-employee-code">Employee ID</FieldLabel>
+            <Input
+              id="emp-employee-code"
+              required
+              className="mt-1"
+              placeholder="e.g. EMP-014"
+              value={employeeCode}
+              onChange={(e) => setEmployeeCode(e.target.value)}
+            />
+          </div>
           <div>
             <FieldLabel htmlFor="emp-name">Full name</FieldLabel>
             <Input

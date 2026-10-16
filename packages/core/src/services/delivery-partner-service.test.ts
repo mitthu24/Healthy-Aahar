@@ -59,6 +59,7 @@ class FakeAdminRepository implements AdminRepository {
       userId: `user-${id}`,
       email: input.email ?? null,
       loginId: input.loginId ?? null,
+      employeeCode: input.employeeCode ?? null,
       fullName: input.fullName,
       designation: input.designation ?? null,
       department: input.department ?? null,

@@ -87,6 +87,26 @@ export class AdminCatalogueService {
     return category;
   }
 
+  /**
+   * BR-C1: exactly two levels — a category that is itself a subcategory
+   * (has a parent) may never be made a parent of another. The DB's own
+   * `categories_no_self_parent` CHECK blocks a category from parenting
+   * itself; this is the depth rule, which only the service layer can know
+   * (the schema allows arbitrary nesting on purpose — see Category's doc
+   * comment).
+   */
+  private async assertValidParent(scope: BusinessScope, categoryId: string | null) {
+    if (categoryId === null) return;
+    const parent = await this.categories.findById(scope, categoryId);
+    if (!parent) throw new DomainError('CATEGORY_NOT_FOUND', 'Parent category not found.');
+    if (parent.parentId !== null) {
+      throw new DomainError(
+        'INVALID_CATEGORY_PARENT',
+        'A subcategory cannot itself have subcategories — categories are at most two levels deep.',
+      );
+    }
+  }
+
   async createCategory(scope: BusinessScope, input: CategoryInput, actorUserId: string) {
     const existing = await this.categories.findBySlug(scope, input.slug);
     if (existing) {
@@ -94,6 +114,7 @@ export class AdminCatalogueService {
         details: [{ field: 'slug', issue: 'already in use' }],
       });
     }
+    await this.assertValidParent(scope, input.parentId ?? null);
 
     const created = await this.categories.create(scope, input, actorUserId);
 
@@ -116,6 +137,20 @@ export class AdminCatalogueService {
     actorUserId: string,
   ) {
     await this.getCategory(scope, id);
+
+    if (input.parentId !== undefined) {
+      if (input.parentId === id) {
+        throw new DomainError('INVALID_CATEGORY_PARENT', 'A category cannot be its own parent.');
+      }
+      await this.assertValidParent(scope, input.parentId);
+      if (input.parentId !== null && (await this.categories.hasChildren(scope, id))) {
+        throw new DomainError(
+          'INVALID_CATEGORY_PARENT',
+          'This category has its own subcategories and cannot itself become a subcategory.',
+        );
+      }
+    }
+
     const updated = await this.categories.update(scope, id, input, actorUserId);
 
     await this.audit.write(scope, {
@@ -260,6 +295,38 @@ export class AdminCatalogueService {
     });
 
     return updated;
+  }
+
+  /**
+   * Delete vs. archive (Stage E): refused when any variant of this product
+   * is referenced by an order item, combo component or inventory movement —
+   * directing the admin to archive (`setProductStatus(..., 'ARCHIVED')`)
+   * instead, which never touches order history or financial records. Only
+   * a product with zero real-world order activity is actually removable.
+   */
+  async deleteProduct(scope: BusinessScope, id: string, actorUserId: string) {
+    const product = await this.getProduct(scope, id);
+
+    const deleted = await this.products.deleteIfUnreferenced(scope, id);
+    if (!deleted) {
+      // Distinguish "referenced" from "someone else already deleted it"
+      // purely for an accurate error — this re-check has no bearing on the
+      // atomic gate above, which already made the real decision.
+      await this.getProduct(scope, id);
+      throw new DomainError(
+        'PRODUCT_REFERENCED_BY_ORDERS',
+        'This product has order or inventory history and cannot be deleted. Archive it instead.',
+      );
+    }
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'product.deleted',
+      resourceType: 'product',
+      resourceId: id,
+      metadata: { name: product.name, slug: product.slug },
+    });
   }
 
   async addProductImage(
@@ -489,6 +556,37 @@ export class AdminCatalogueService {
     });
 
     return updated;
+  }
+
+  /**
+   * Delete vs. archive (Stage E): refused when this variant is referenced
+   * by an order item, combo component or inventory movement — directing
+   * the admin to set it `DISCONTINUED` (via `updateVariant`'s
+   * `availability`) instead, which never touches order history.
+   */
+  async deleteVariant(scope: BusinessScope, variantId: string, actorUserId: string) {
+    const existing = await this.getVariant(scope, variantId);
+
+    const deleted = await this.variants.deleteIfUnreferenced(scope, variantId);
+    if (!deleted) {
+      // Distinguish "referenced" from "someone else already deleted it"
+      // purely for an accurate error — this re-check has no bearing on the
+      // atomic gate above, which already made the real decision.
+      await this.getVariant(scope, variantId);
+      throw new DomainError(
+        'VARIANT_REFERENCED_BY_ORDERS',
+        'This variant has order or inventory history and cannot be deleted. Mark it discontinued instead.',
+      );
+    }
+
+    await this.audit.write(scope, {
+      actorUserId,
+      actorType: 'ADMIN',
+      action: 'variant.deleted',
+      resourceType: 'product_variant',
+      resourceId: variantId,
+      metadata: { sku: existing.sku },
+    });
   }
 
   async setVariantStock(

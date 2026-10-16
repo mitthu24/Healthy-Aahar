@@ -62,9 +62,9 @@ registerRoute({
   path: '/v1/admin/admin-users/{id}',
   audience: 'admin',
   permission: 'admin_users:update',
-  summary: "Update a staff member's name, designation, or department (never roles)",
+  summary: "Update a staff member's name, designation, employee ID or department (never roles)",
   phase: '05',
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'CANNOT_MANAGE_SUPER_ADMIN', 'EMPLOYEE_CODE_TAKEN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema, body: updateAdminDetailsBodySchema },
@@ -82,14 +82,20 @@ registerRoute({
   permission: 'admin_users:create',
   summary: 'Invite a staff member (creates the user row + assigns roles; no password until setup)',
   phase: '03',
-  errors: ['FORBIDDEN', 'VALIDATION_FAILED', 'ADMIN_ALREADY_INVITED', 'LOGIN_ID_TAKEN'],
+  errors: [
+    'FORBIDDEN',
+    'VALIDATION_FAILED',
+    'ADMIN_ALREADY_INVITED',
+    'LOGIN_ID_TAKEN',
+    'EMPLOYEE_CODE_TAKEN',
+  ],
   openapi: {
     tags: ['Admin: Staff'],
     request: { body: inviteAdminBodySchema },
     responses: {
       201: { description: 'Invited', schema: inviteAdminResponseSchema },
       403: jsonError('Only a Super Admin may grant role management or Super Admin access'),
-      409: jsonError('An admin account with this email or login ID already exists'),
+      409: jsonError('An admin account with this email, login ID or employee ID already exists'),
       422: jsonError('Validation failed'),
     },
   },
@@ -102,12 +108,13 @@ registerRoute({
   permission: 'admin_users:update',
   summary: 'Issue a new password-setup token for an existing staff member (Fix #2)',
   phase: '03',
-  errors: ['NOT_FOUND'],
+  errors: ['NOT_FOUND', 'CANNOT_MANAGE_SUPER_ADMIN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema, body: resetAdminPasswordBodySchema },
     responses: {
       200: { description: 'Token issued', schema: passwordSetupLinkResponseSchema },
+      403: jsonError('Only a Super Admin may reset another Super Admin’s password'),
       404: jsonError('Not found'),
     },
   },
@@ -120,7 +127,13 @@ registerRoute({
   permission: 'admin_users:update',
   summary: "Replace a staff member's roles",
   phase: '03',
-  errors: ['FORBIDDEN', 'NOT_FOUND', 'CANNOT_MODIFY_OWN_ROLES', 'LAST_SUPER_ADMIN'],
+  errors: [
+    'FORBIDDEN',
+    'NOT_FOUND',
+    'CANNOT_MODIFY_OWN_ROLES',
+    'LAST_SUPER_ADMIN',
+    'CANNOT_MANAGE_SUPER_ADMIN',
+  ],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema, body: setAdminRolesBodySchema },
@@ -140,7 +153,7 @@ registerRoute({
   permission: 'admin_users:deactivate',
   summary: 'Deactivate a staff account (revokes every active session immediately)',
   phase: '03',
-  errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN', 'CANNOT_DEACTIVATE_SELF'],
+  errors: ['NOT_FOUND', 'LAST_SUPER_ADMIN', 'CANNOT_DEACTIVATE_SELF', 'CANNOT_MANAGE_SUPER_ADMIN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema },
@@ -160,7 +173,7 @@ registerRoute({
   permission: 'admin_users:deactivate',
   summary: 'Reactivate a previously deactivated staff account',
   phase: '05',
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'CANNOT_MANAGE_SUPER_ADMIN'],
   openapi: {
     tags: ['Admin: Staff'],
     request: { params: idParamSchema },
@@ -178,6 +191,7 @@ function toResponse(row: AdminUserRow) {
     user_id: row.userId,
     email: row.email,
     login_id: row.loginId,
+    employee_code: row.employeeCode,
     full_name: row.fullName,
     designation: row.designation,
     department: row.department,
@@ -214,6 +228,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     const { admin, passwordResetLink } = await c.env.services.rbac.inviteAdmin(scope, {
       email: body.email,
       loginId: body.login_id,
+      employeeCode: body.employee_code,
       fullName: body.full_name,
       designation: body.designation,
       department: body.department,
@@ -238,7 +253,9 @@ export function adminUsersRoutes(): Hono<AppBindings> {
       fullName: body.full_name,
       designation: body.designation,
       department: body.department,
+      employeeCode: body.employee_code,
       actorUserId: actor.userId,
+      actorIsSuperAdmin: actor.isSuperAdmin,
     });
 
     return c.json(toResponse(updated));
@@ -272,6 +289,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     const { passwordResetLink } = await c.env.services.rbac.resetAdminPassword(scope, {
       targetAdminUserId: params.id,
       actorUserId: actor.userId,
+      actorIsSuperAdmin: actor.isSuperAdmin,
       passwordResetContinueUrl: body.password_setup_continue_url,
     });
 
@@ -291,6 +309,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
       targetAdminUserId: params.id,
       actorAdminUserId: actor.adminUserId,
       actorUserId: actor.userId,
+      actorIsSuperAdmin: actor.isSuperAdmin,
     });
 
     return c.json(toResponse(updated));
@@ -305,6 +324,7 @@ export function adminUsersRoutes(): Hono<AppBindings> {
     const updated = await c.env.services.rbac.reactivate(scope, {
       targetAdminUserId: params.id,
       actorUserId: actor.userId,
+      actorIsSuperAdmin: actor.isSuperAdmin,
     });
 
     return c.json(toResponse(updated));

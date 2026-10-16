@@ -32,6 +32,7 @@ const VARIANT_SELECT = {
   unitValue: true,
   mrpPaise: true,
   pricePaise: true,
+  taxRateBps: true,
   availability: true,
   isDefault: true,
   displayOrder: true,
@@ -62,6 +63,7 @@ function toVariantRow(raw: RawVariant): AdminVariantRow {
     unitValue: raw.unitValue.toString(),
     mrpPaise: raw.mrpPaise,
     pricePaise: raw.pricePaise,
+    taxRateBps: raw.taxRateBps,
     availability: raw.availability,
     isDefault: raw.isDefault,
     displayOrder: raw.displayOrder,
@@ -156,6 +158,13 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
     return row ? this.toRow(row) : null;
   }
 
+  async hasChildren(scope: BusinessScope, categoryId: string): Promise<boolean> {
+    const count = await this.prisma.category.count({
+      where: { parentId: categoryId, businessId: scope, deletedAt: null },
+    });
+    return count > 0;
+  }
+
   async create(
     scope: BusinessScope,
     input: CategoryInput,
@@ -170,6 +179,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
           slug: input.slug,
           description: input.description ?? null,
           imageUrl: input.imageUrl ?? null,
+          parentId: input.parentId ?? null,
           displayOrder: input.displayOrder,
           createdBy: actorUserId,
         },
@@ -196,6 +206,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
         ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         updatedBy: actorUserId,
@@ -217,6 +228,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
     slug: string;
     description: string | null;
     imageUrl: string | null;
+    parentId: string | null;
     displayOrder: number;
     isActive: boolean;
     createdAt: Date;
@@ -233,6 +245,7 @@ export class PrismaAdminCategoryRepository implements AdminCategoryRepository {
       slug: row.slug,
       description: row.description,
       imageUrl: row.imageUrl,
+      parentId: row.parentId,
       displayOrder: row.displayOrder,
       isActive: row.isActive,
       productCount,
@@ -419,6 +432,59 @@ export class PrismaAdminProductRepository implements AdminProductRepository {
     return toProductRow(updated);
   }
 
+  async deleteIfUnreferenced(scope: BusinessScope, productId: string): Promise<boolean> {
+    const businessId: string = scope;
+    return this.prisma.$transaction(async (tx) => {
+      // Lock the product row AND every one of its variant rows first, each
+      // as its own statement — mirrors
+      // `AdminVariantRepository.deleteIfUnreferenced`'s lock-then-check-
+      // then-write shape (see its comment for why folding the check into
+      // the final UPDATE's WHERE clause as a NOT EXISTS is unsafe: a
+      // reference that commits while we were blocked on the lock would be
+      // invisible to that subquery once we wake). Locking every variant
+      // row too is what makes this contend correctly with checkout's own
+      // per-variant `SELECT ... FOR UPDATE`.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT p.id FROM products p
+        WHERE p.id = ${productId}::uuid AND p.business_id = ${businessId}::uuid
+          AND p.deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (locked.length === 0) return false;
+
+      await tx.$queryRaw`
+        SELECT id FROM product_variants WHERE product_id = ${productId}::uuid FOR UPDATE
+      `;
+
+      const [refs] = await tx.$queryRaw<Array<{ referenced: boolean }>>`
+        SELECT (
+          EXISTS (
+            SELECT 1 FROM order_items oi
+            JOIN product_variants pv ON pv.id = oi.variant_id
+            WHERE pv.product_id = ${productId}::uuid
+          )
+          OR EXISTS (
+            SELECT 1 FROM combo_items ci
+            JOIN product_variants pv ON pv.id = ci.variant_id
+            WHERE pv.product_id = ${productId}::uuid
+          )
+          OR EXISTS (
+            SELECT 1 FROM inventory_movements im
+            JOIN product_variants pv ON pv.id = im.variant_id
+            WHERE pv.product_id = ${productId}::uuid
+          )
+        ) AS referenced
+      `;
+      if (refs?.referenced) return false;
+
+      await tx.$executeRaw`
+        UPDATE products SET deleted_at = now() WHERE id = ${productId}::uuid
+      `;
+      await tx.productVariant.updateMany({ where: { productId }, data: { deletedAt: now() } });
+      return true;
+    });
+  }
+
   async createPendingImage(
     scope: BusinessScope,
     productId: string,
@@ -485,43 +551,51 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
     productId: string,
     input: VariantInput,
   ): Promise<AdminVariantRow> {
-    const created = await this.prisma.$transaction(async (tx) => {
-      const variant = await tx.productVariant.create({
-        data: {
-          id: newId(),
-          businessId: scope,
-          productId,
-          sku: input.sku,
-          name: input.name,
-          unit: input.unit,
-          unitValue: input.unitValue,
-          mrpPaise: input.mrpPaise !== undefined ? BigInt(input.mrpPaise) : null,
-          pricePaise: BigInt(input.pricePaise),
-          isDefault: input.isDefault ?? false,
-          maxOrderQuantity: input.maxOrderQuantity ?? null,
-        },
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const variant = await tx.productVariant.create({
+          data: {
+            id: newId(),
+            businessId: scope,
+            productId,
+            sku: input.sku,
+            name: input.name,
+            unit: input.unit,
+            unitValue: input.unitValue,
+            mrpPaise: input.mrpPaise !== undefined ? BigInt(input.mrpPaise) : null,
+            pricePaise: BigInt(input.pricePaise),
+            taxRateBps: input.taxRateBps ?? 0,
+            isDefault: input.isDefault ?? false,
+            maxOrderQuantity: input.maxOrderQuantity ?? null,
+          },
+        });
+
+        await tx.inventory.create({
+          data: {
+            id: newId(),
+            businessId: scope,
+            variantId: variant.id,
+            locationCode: 'MAIN',
+            quantityOnHand: input.initialQuantityOnHand ?? 0,
+            quantityReserved: 0,
+            trackInventory: true,
+            allowBackorder: false,
+          },
+        });
+
+        return tx.productVariant.findUniqueOrThrow({
+          where: { id: variant.id },
+          select: VARIANT_SELECT,
+        });
       });
 
-      await tx.inventory.create({
-        data: {
-          id: newId(),
-          businessId: scope,
-          variantId: variant.id,
-          locationCode: 'MAIN',
-          quantityOnHand: input.initialQuantityOnHand ?? 0,
-          quantityReserved: 0,
-          trackInventory: true,
-          allowBackorder: false,
-        },
-      });
-
-      return tx.productVariant.findUniqueOrThrow({
-        where: { id: variant.id },
-        select: VARIANT_SELECT,
-      });
-    });
-
-    return toVariantRow(created);
+      return toVariantRow(created);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error, 'sku')) {
+        throw new DomainError('SKU_TAKEN', 'A variant with this SKU already exists.');
+      }
+      throw error;
+    }
   }
 
   async update(
@@ -540,6 +614,7 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
           ? { mrpPaise: input.mrpPaise !== null ? BigInt(input.mrpPaise) : null }
           : {}),
         ...(input.pricePaise !== undefined ? { pricePaise: BigInt(input.pricePaise) } : {}),
+        ...(input.taxRateBps !== undefined ? { taxRateBps: input.taxRateBps } : {}),
         ...(input.availability !== undefined ? { availability: input.availability } : {}),
         ...(input.isDefault !== undefined ? { isDefault: input.isDefault } : {}),
         ...(input.maxOrderQuantity !== undefined
@@ -560,6 +635,48 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
     return row ? toVariantRow(row) : null;
   }
 
+  async deleteIfUnreferenced(scope: BusinessScope, variantId: string): Promise<boolean> {
+    const businessId: string = scope;
+    return this.prisma.$transaction(async (tx) => {
+      // Lock the row FIRST, as its own statement — this is what checkout's
+      // `SELECT ... FOR UPDATE` (prisma-checkout-repository.ts) contends
+      // with: whichever of the two transactions gets here first forces the
+      // other to wait for it to commit or roll back.
+      //
+      // The reference check below MUST be a fresh statement run only after
+      // that lock is acquired, not folded into the final UPDATE's WHERE
+      // clause as a NOT EXISTS: when an UPDATE blocks on a row lock and
+      // then wakes, Postgres's EvalPlanQual re-checks that one row's own
+      // columns against the latest version, but subqueries against OTHER
+      // tables (order_items, combo_items, inventory_movements) keep using
+      // the ORIGINAL pre-wait snapshot — so a reference that committed
+      // while we were blocked would silently stay invisible. Splitting the
+      // lock, the check and the write into separate statements inside one
+      // transaction avoids that trap: the check runs on a snapshot taken
+      // strictly after the lock was ours.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM product_variants
+        WHERE id = ${variantId}::uuid AND business_id = ${businessId}::uuid AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (locked.length === 0) return false;
+
+      const [refs] = await tx.$queryRaw<Array<{ referenced: boolean }>>`
+        SELECT (
+          EXISTS (SELECT 1 FROM order_items WHERE variant_id = ${variantId}::uuid)
+          OR EXISTS (SELECT 1 FROM combo_items WHERE variant_id = ${variantId}::uuid)
+          OR EXISTS (SELECT 1 FROM inventory_movements WHERE variant_id = ${variantId}::uuid)
+        ) AS referenced
+      `;
+      if (refs?.referenced) return false;
+
+      await tx.$executeRaw`
+        UPDATE product_variants SET deleted_at = now() WHERE id = ${variantId}::uuid
+      `;
+      return true;
+    });
+  }
+
   async setStock(
     scope: BusinessScope,
     variantId: string,
@@ -574,6 +691,24 @@ export class PrismaAdminVariantRepository implements AdminVariantRepository {
     const businessId: string = scope;
 
     await this.prisma.$transaction(async (tx) => {
+      // Lock the variant row first — without this, a stock adjustment can
+      // create a brand-new `inventory_movements` row (the exact kind of
+      // reference `deleteIfUnreferenced` checks for) in the same window an
+      // admin delete already decided "unreferenced," landing the same
+      // soft-deleted-but-referenced race that fix closes for checkout.
+      // Contends on the same row with `deleteIfUnreferenced`'s lock. Re-check
+      // existence fresh, after the lock (not the caller's pre-lock read) —
+      // if a delete won the race and committed while this was blocked,
+      // this variant is now gone and must not get a new stock record.
+      const stillThere = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM product_variants
+        WHERE id = ${variantId}::uuid AND business_id = ${businessId}::uuid AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (stillThere.length === 0) {
+        throw new DomainError('VARIANT_NOT_FOUND', 'Variant not found.');
+      }
+
       const existing = await tx.inventory.findUnique({
         where: { variantId_locationCode: { variantId, locationCode: 'MAIN' } },
       });

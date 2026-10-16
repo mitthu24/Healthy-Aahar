@@ -6,6 +6,7 @@ import type {
   AdminDeliverySlotDto,
   AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderCountsResponse,
   AdminOrderDto,
   AdminOrderListResponse,
   AdminProductDto,
@@ -195,7 +196,13 @@ export class ApiClient {
       );
     }
 
-    return (await res.json()) as T;
+    // A 204 (or any genuinely empty body) has nothing for `res.json()` to
+    // parse — it throws on empty input otherwise. Every `Promise<void>`
+    // caller (deleteCategory, deleteProduct, deleteVariant, ...) relies on
+    // this returning cleanly rather than rejecting a successful request.
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   // ── Health ──────────────────────────────────────────────────────────────
@@ -432,11 +439,18 @@ export class ApiClient {
       status?: string;
       assigned_partner_id?: string;
       unassigned?: boolean;
+      from?: string;
+      to?: string;
     } = {},
   ): Promise<AdminOrderListResponse> {
     return this.request(
       `/v1/admin/orders${this.query({ ...params, unassigned: params.unassigned === undefined ? undefined : String(params.unassigned) })}`,
     );
+  }
+
+  /** Per-status order counts for the Orders dashboard's tabs — same `from`/`to` business-date pair as `listAdminOrders`. */
+  getAdminOrderCounts(params: { from: string; to: string }): Promise<AdminOrderCountsResponse> {
+    return this.request(`/v1/admin/orders/counts${this.query(params)}`);
   }
 
   getAdminOrder(id: string): Promise<AdminOrderDto> {
@@ -610,6 +624,8 @@ export class ApiClient {
     slug: string;
     description?: string;
     image_url?: string;
+    /** Set to make this a subcategory — the parent must not itself already have a parent. */
+    parent_id?: string;
     display_order?: number;
   }): Promise<AdminCategoryDto> {
     return this.request('/v1/admin/categories', { method: 'POST', body: JSON.stringify(body) });
@@ -621,6 +637,7 @@ export class ApiClient {
       name: string;
       description: string | null;
       image_url: string | null;
+      parent_id: string | null;
       display_order: number;
       is_active: boolean;
     }>,
@@ -688,6 +705,11 @@ export class ApiClient {
     });
   }
 
+  /** Refused with 409 (PRODUCT_REFERENCED_BY_ORDERS) if any variant has order or inventory history — archive via `setProductStatus` instead. */
+  deleteProduct(id: string): Promise<void> {
+    return this.request(`/v1/admin/products/${id}`, { method: 'DELETE' });
+  }
+
   addProductImage(
     id: string,
     body: { url: string; alt_text?: string; display_order?: number },
@@ -734,6 +756,8 @@ export class ApiClient {
       unit_value: number;
       mrp_paise?: number;
       price_paise: number;
+      /** Basis points (1/100%), e.g. 500 = 5%. Omitted = 0 (no tax configured). */
+      tax_rate_bps?: number;
       is_default?: boolean;
       max_order_quantity?: number;
       initial_quantity_on_hand?: number;
@@ -753,6 +777,7 @@ export class ApiClient {
       unit_value: number;
       mrp_paise: number | null;
       price_paise: number;
+      tax_rate_bps: number;
       availability: 'AVAILABLE' | 'OUT_OF_STOCK' | 'DISCONTINUED';
       is_default: boolean;
       max_order_quantity: number | null;
@@ -762,6 +787,11 @@ export class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+  }
+
+  /** Refused with 409 (VARIANT_REFERENCED_BY_ORDERS) if it has order or inventory history — set it DISCONTINUED via `updateVariant` instead. */
+  deleteVariant(id: string): Promise<void> {
+    return this.request(`/v1/admin/variants/${id}`, { method: 'DELETE' });
   }
 
   setVariantStock(
@@ -840,6 +870,7 @@ export class ApiClient {
   inviteAdminUser(body: {
     email?: string;
     login_id?: string;
+    employee_code: string;
     full_name: string;
     designation?: string;
     department?: string;
@@ -851,7 +882,12 @@ export class ApiClient {
 
   updateAdminUser(
     id: string,
-    body: { full_name?: string; designation?: string; department?: string },
+    body: {
+      full_name?: string;
+      designation?: string;
+      department?: string;
+      employee_code?: string;
+    },
   ): Promise<AdminUser> {
     return this.request(`/v1/admin/admin-users/${id}`, {
       method: 'PATCH',
@@ -936,6 +972,7 @@ export type {
   AdminDeliverySlotDto,
   AdminDeliverySlotListResponse,
   AdminMe,
+  AdminOrderCountsResponse,
   AdminOrderDto,
   AdminOrderListResponse,
   AdminProductDto,

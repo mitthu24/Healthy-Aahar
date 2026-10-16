@@ -3,10 +3,21 @@ import { DomainError } from '../domain/errors.js';
 import { money } from '../domain/money.js';
 import { buildPage, decodeCursor } from '../domain/pagination.js';
 import { canTransition, type OrderStatusValue } from '../domain/order-status.js';
+import { resolveBusinessDateRange, type BusinessDate } from '../domain/time.js';
 import type { OrderRepository } from '../ports/order-repository.js';
 import { toAdminOrderView } from './order-view.js';
 
 export type OrderFulfilmentServiceDeps = { orders: OrderRepository };
+
+/** Same bound the dashboard's date-range queries use — keeps every
+ *  business-date-range report in this codebase subject to one documented
+ *  ceiling (Stage D §5). */
+const MAX_RANGE_DAYS = 366;
+
+export type OrderCountsView = {
+  total: number;
+  by_status: Array<{ status: OrderStatusValue; count: number }>;
+};
 
 /**
  * Admin order fulfilment (docs/15 §4.1; Phase 04 requirement change).
@@ -31,6 +42,9 @@ export class OrderFulfilmentService {
       status?: OrderStatusValue;
       assignedPartnerId?: string;
       unassigned?: boolean;
+      /** Business-date pair (`YYYY-MM-DD`); both required together or omitted together — enforced by the route's contract. */
+      from?: BusinessDate;
+      to?: BusinessDate;
       limit: number;
       cursor?: string;
     },
@@ -41,6 +55,9 @@ export class OrderFulfilmentService {
       ...(filter.status ? { status: filter.status } : {}),
       ...(filter.assignedPartnerId ? { assignedPartnerId: filter.assignedPartnerId } : {}),
       ...(filter.unassigned ? { unassigned: filter.unassigned } : {}),
+      ...(filter.from && filter.to
+        ? { placedRange: this.resolveRange({ from: filter.from, to: filter.to }) }
+        : {}),
     });
 
     const built = buildPage(page.data, filter.limit, (row) => ({
@@ -66,6 +83,35 @@ export class OrderFulfilmentService {
 
   async get(scope: BusinessScope, orderId: string) {
     return toAdminOrderView(await this.getOrThrow(scope, orderId));
+  }
+
+  /**
+   * Per-status order counts for the Orders dashboard's tabs, computed by a
+   * single aggregated query (never by paging through `list()` client-side —
+   * ADR: avoid N+1 / unbounded retrieval). Keyed on `placed_at`, matching
+   * `list()`'s own date-filter field, so the tab counts and the order list
+   * always agree on which orders are "in range."
+   */
+  async getCounts(
+    scope: BusinessScope,
+    input: { from: BusinessDate; to: BusinessDate },
+  ): Promise<OrderCountsView> {
+    const range = this.resolveRange(input);
+    const rows = await this.orders.getStatusCounts(scope, range);
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    return { total, by_status: rows.map((row) => ({ status: row.status, count: row.count })) };
+  }
+
+  private resolveRange(input: { from: BusinessDate; to: BusinessDate }): {
+    from: Date;
+    to: Date;
+  } {
+    return resolveBusinessDateRange(input, {
+      maxRangeDays: MAX_RANGE_DAYS,
+      onInvalid: (message) => {
+        throw new DomainError('VALIDATION_FAILED', message);
+      },
+    });
   }
 
   /** Move the order forward (preparing / ready / out-for-delivery / delivered / failed-retry). */

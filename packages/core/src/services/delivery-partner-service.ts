@@ -65,6 +65,7 @@ export class DeliveryPartnerService {
     const { admin, passwordResetLink } = await this.rbac.inviteAdmin(scope, {
       email: params.email,
       loginId: params.loginId,
+      employeeCode: params.employeeCode,
       fullName: params.fullName,
       roleIds: [role.id],
       invitedByUserId: params.actorUserId,
@@ -114,6 +115,11 @@ export class DeliveryPartnerService {
       targetAdminUserId: params.adminUserId,
       actorAdminUserId: params.actorAdminUserId,
       actorUserId: params.actorUserId,
+      // A delivery partner is never a Super Admin (fixed DELIVERY_PARTNER
+      // role, no roles:manage grant) — passed false defensively, same as
+      // `invitedByIsSuperAdmin` above; the target-is-Super-Admin guard this
+      // satisfies can never actually trigger for this call site.
+      actorIsSuperAdmin: false,
     });
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,
@@ -130,6 +136,7 @@ export class DeliveryPartnerService {
     await this.rbac.reactivate(scope, {
       targetAdminUserId: params.adminUserId,
       actorUserId: params.actorUserId,
+      actorIsSuperAdmin: false,
     });
     await this.audit.write(scope, {
       actorUserId: params.actorUserId,

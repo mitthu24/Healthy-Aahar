@@ -1,10 +1,12 @@
 import type { ServerEnv } from '@healthy-aahar/config/env/server';
-import { now } from '@healthy-aahar/core';
+import { now, PERMISSIONS } from '@healthy-aahar/core';
 import type { PrismaClient } from '@healthy-aahar/db';
 import {
   createTestClient,
+  seedAdminUser,
   seedBusiness,
   seedCustomerUser,
+  seedPermissions,
   setupTestDatabase,
   testId,
   truncateAll,
@@ -14,6 +16,7 @@ import type { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
+import { loginAsAdmin } from './test-support/admin-session.js';
 import type { AppBindings } from './types.js';
 
 /**
@@ -471,5 +474,61 @@ describe('delivery-slot validation (Phase 04 — delivery-slot-only checkout)', 
     const body = (await second.json()) as { error: { code: string } };
     expect(body.error.code).toBe('SLOT_CAPACITY_EXCEEDED');
     expect(await prisma.order.count()).toBe(1);
+  });
+});
+
+describe('checkout vs. admin variant deletion — concurrency (Stage E fix regression)', () => {
+  it('never lands a CONFIRMED order item against a variant the admin concurrently deleted, nor vice versa', async () => {
+    // The TOCTOU this fix closes: admin's delete and a customer's checkout
+    // both read-then-write the same variant row. Run many times because
+    // which side the database schedules first is nondeterministic — the
+    // invariant below must hold regardless of the interleaving.
+    await seedPermissions(prisma, PERMISSIONS);
+
+    for (let i = 0; i < 10; i++) {
+      const { variant } = await seedOrderableProduct({ quantityOnHand: 10 });
+      const { pincode, slot } = await seedDeliverySetup();
+      const token = await registerCustomerAndGetToken(`race-${i}@example.test`);
+      const address = await createAddress(token, pincode);
+      await addToCart(token, variant.id, 1);
+
+      const admin = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
+      const adminHeaders = (await loginAsAdmin(app, admin)).headers;
+
+      const [checkoutRes, deleteRes] = await Promise.all([
+        checkout(
+          token,
+          { address_id: address.id, delivery_slot_id: slot.id, service_date: '2026-12-01' },
+          `checkout-race-${i}`,
+        ),
+        app.request(`/v1/admin/variants/${variant.id}`, {
+          method: 'DELETE',
+          headers: adminHeaders,
+        }),
+      ]);
+
+      expect([200, 201, 409]).toContain(checkoutRes.status);
+      expect([204, 409]).toContain(deleteRes.status);
+
+      const variantRow = await prisma.productVariant.findUniqueOrThrow({
+        where: { id: variant.id },
+      });
+      const referenced = (await prisma.orderItem.count({ where: { variantId: variant.id } })) > 0;
+
+      // The invariant the fix exists to guarantee: a soft-deleted variant
+      // must never have a live order item referencing it, and a referenced
+      // variant must never be soft-deleted — whichever of the two
+      // operations the database happened to serialize first, the other
+      // was correctly refused (checkout: ITEM_NOT_AVAILABLE; delete:
+      // VARIANT_REFERENCED_BY_ORDERS) rather than racing past it.
+      if (variantRow.deletedAt !== null) {
+        expect(referenced).toBe(false);
+        expect(checkoutRes.status).not.toBe(201);
+      }
+      if (referenced) {
+        expect(variantRow.deletedAt).toBeNull();
+        expect(deleteRes.status).toBe(409);
+      }
+    }
   });
 });

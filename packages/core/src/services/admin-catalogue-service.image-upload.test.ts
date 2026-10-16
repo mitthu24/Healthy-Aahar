@@ -86,6 +86,9 @@ class FakeProductRepository implements AdminProductRepository {
   async update(): Promise<AdminProductRow> {
     throw new Error('not used in these tests');
   }
+  async deleteIfUnreferenced(): Promise<boolean> {
+    throw new Error('not used in these tests');
+  }
   async setStatus(): Promise<AdminProductRow> {
     throw new Error('not used in these tests');
   }

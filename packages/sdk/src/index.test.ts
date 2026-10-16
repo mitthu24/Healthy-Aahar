@@ -51,6 +51,30 @@ describe('ApiClient', () => {
     ).toThrow('Illegal invocation');
   });
 
+  describe('204 No Content responses', () => {
+    /**
+     * Regression test for a live bug found verifying the Stage E product/
+     * variant/category delete flows in a real browser: every DELETE route
+     * returns `c.body(null, 204)` (no body at all), but `request()`
+     * unconditionally called `res.json()` on every response — which throws
+     * a SyntaxError on an empty body. The HTTP call itself succeeded (the
+     * row really was deleted), but the SDK surfaced it to the caller as a
+     * failure, so the UI showed "Could not delete this product" right after
+     * actually deleting it.
+     */
+    function emptyBodyFetch() {
+      return (async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    }
+
+    it('resolves (not throws) for a 204 No Content response', async () => {
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.test',
+        fetchImpl: emptyBodyFetch(),
+      });
+      await expect(client.deleteCategory('cat-1')).resolves.toBeUndefined();
+    });
+  });
+
   describe('admin CSRF token — captured from response header, not a cookie read', () => {
     /**
      * Regression test for a live production bug: the admin app and API are
