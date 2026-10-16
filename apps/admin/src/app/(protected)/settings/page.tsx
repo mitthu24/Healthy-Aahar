@@ -68,9 +68,8 @@ function CatalogueTaxRateCard() {
     <Card className="p-5">
       <h2 className="text-heading-sm text-sand-900">Catalogue tax rate</h2>
       <p className="text-body-sm text-sand-600 mt-1">
-        The highest tax rate a product variant may be assigned. Affects every new or edited
-        variant — existing variants above a lowered ceiling keep their current rate until next
-        edited.
+        The highest tax rate a product variant may be assigned. Affects every new or edited variant
+        — existing variants above a lowered ceiling keep their current rate until next edited.
       </p>
       {settings === null && !error ? (
         <p className="text-caption text-sand-400 mt-4">Loading…</p>
@@ -114,8 +113,8 @@ export default function SettingsPage() {
           <Card className="p-5">
             <h2 className="text-heading-sm text-sand-900">Units of measurement</h2>
             <p className="text-body-sm text-sand-600 mt-1">
-              The units available when creating or editing a product variant (g, kg, ml, L,
-              piece, pack, and any you add).
+              The units available when creating or editing a product variant (g, kg, ml, L, piece,
+              pack, and any you add).
             </p>
             <Link href="/settings/units" className="mt-4 inline-block">
               <Button size="sm" variant="secondary">

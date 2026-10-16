@@ -125,10 +125,9 @@ export function adminSettingsRoutes(): Hono<AppBindings> {
 
   app.get('/settings/units', async (c) => {
     const query = listUnitsQuerySchema.parse({ active_only: c.req.query('active_only') });
-    const units = await c.env.services.adminSettings.listUnits(
-      businessScope(c.env.businessId),
-      { activeOnly: query.active_only },
-    );
+    const units = await c.env.services.adminSettings.listUnits(businessScope(c.env.businessId), {
+      activeOnly: query.active_only,
+    });
     return c.json({ data: units.map(toUnitView) });
   });
 

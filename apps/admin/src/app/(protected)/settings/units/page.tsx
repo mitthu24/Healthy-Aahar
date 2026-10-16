@@ -195,9 +195,7 @@ export default function UnitsSettingsPage() {
           description="Used by product variant forms across the catalogue. A unit already assigned to a variant keeps displaying correctly even if later deactivated."
           breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Units' }]}
           action={
-            !showCreate ? (
-              <Button onClick={() => setShowCreate(true)}>New unit</Button>
-            ) : undefined
+            !showCreate ? <Button onClick={() => setShowCreate(true)}>New unit</Button> : undefined
           }
         />
 

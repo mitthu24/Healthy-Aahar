@@ -157,9 +157,9 @@ export default function EmployeeDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<string | null>(null);
-  const [resetEmailStatus, setResetEmailStatus] = useState<
-    'SENT' | 'SKIPPED' | 'FAILED' | null
-  >(null);
+  const [resetEmailStatus, setResetEmailStatus] = useState<'SENT' | 'SKIPPED' | 'FAILED' | null>(
+    null,
+  );
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [tempPasswordCopied, setTempPasswordCopied] = useState(false);
   const [confirmingTempPassword, setConfirmingTempPassword] = useState(false);
@@ -306,8 +306,8 @@ export default function EmployeeDetailPage() {
       {temporaryPassword ? (
         <Card className="mt-4 p-4">
           <p className="text-body-sm text-sand-700">
-            Temporary password — share it securely, not shown again. The employee must change it
-            at first sign-in; every existing session for this account has been signed out.
+            Temporary password — share it securely, not shown again. The employee must change it at
+            first sign-in; every existing session for this account has been signed out.
           </p>
           <p className="border-sand-200 bg-sand-50 text-body-md mt-2 break-all rounded-md border p-2 font-mono">
             {temporaryPassword}

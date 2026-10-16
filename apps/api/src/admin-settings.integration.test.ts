@@ -119,7 +119,10 @@ describe('GET /v1/admin/settings/units', () => {
   });
 
   it('requires settings:read', async () => {
-    const role = await seedRole(prisma, businessId, { key: 'NO_SETTINGS', permissionKeys: ['orders:read'] });
+    const role = await seedRole(prisma, businessId, {
+      key: 'NO_SETTINGS',
+      permissionKeys: ['orders:read'],
+    });
     const plainAdmin = await seedAdminUser(prisma, businessId, { roleIds: [role.id] });
     const plainHeaders = (await loginAsAdmin(app, plainAdmin)).headers;
 

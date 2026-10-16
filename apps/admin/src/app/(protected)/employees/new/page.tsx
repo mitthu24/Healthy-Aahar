@@ -106,9 +106,9 @@ export default function InviteEmployeePage() {
         <h1 className="font-display text-heading-lg text-sand-900">Employee invited</h1>
         <Card className="mt-5 p-5">
           <p className="text-body-sm text-sand-700">
-            <strong>{invitedWithPassword}</strong>&rsquo;s account was created with the password
-            you set. Share it with them through a secure channel (not a public one) — they will
-            be required to choose a new password the first time they sign in.
+            <strong>{invitedWithPassword}</strong>&rsquo;s account was created with the password you
+            set. Share it with them through a secure channel (not a public one) — they will be
+            required to choose a new password the first time they sign in.
           </p>
           <div className="mt-5 flex gap-3">
             <a

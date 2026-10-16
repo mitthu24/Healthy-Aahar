@@ -449,7 +449,10 @@ describe('invite with an initial password (Stage F — alternative to the setup-
     expect(loginBody.must_change_password).toBe(true);
 
     const newHeaders = (
-      await loginAsAdmin(app, { email: 'new.hire2@example.test', password: 'a-chosen-initial-password' })
+      await loginAsAdmin(app, {
+        email: 'new.hire2@example.test',
+        password: 'a-chosen-initial-password',
+      })
     ).headers;
     const blocked = await app.request('/v1/admin/orders', { headers: newHeaders });
     expect(blocked.status).toBe(403);
@@ -540,7 +543,7 @@ describe('invite with an initial password (Stage F — alternative to the setup-
 });
 
 describe('generate temporary password (Stage F)', () => {
-  it('generates a password, forces a change, and revokes the target\'s existing sessions', async () => {
+  it("generates a password, forces a change, and revokes the target's existing sessions", async () => {
     const actor = await seedAdminUser(prisma, businessId, { isSuperAdmin: true });
     const actorHeaders = (await loginAsAdmin(app, actor)).headers;
 

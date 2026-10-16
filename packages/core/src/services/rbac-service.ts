@@ -263,7 +263,8 @@ export class RbacService {
         locale: 'en-IN',
         dedupeKey: `admin_password_reset:${target.userId}:${Date.now()}`,
       });
-      emailStatus = result.status === 'SENT' ? 'SENT' : result.status === 'FAILED' ? 'FAILED' : 'SKIPPED';
+      emailStatus =
+        result.status === 'SENT' ? 'SENT' : result.status === 'FAILED' ? 'FAILED' : 'SKIPPED';
     }
 
     await this.audit.write(scope, {

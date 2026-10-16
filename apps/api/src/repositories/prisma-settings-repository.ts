@@ -104,7 +104,12 @@ export class PrismaSettingRepository implements SettingRepository {
     return row ? row.value : null;
   }
 
-  async setValue(scope: BusinessScope, key: string, value: unknown, updatedBy: string): Promise<void> {
+  async setValue(
+    scope: BusinessScope,
+    key: string,
+    value: unknown,
+    updatedBy: string,
+  ): Promise<void> {
     await this.prisma.setting.upsert({
       where: { businessId_key: { businessId: scope, key } },
       create: {
